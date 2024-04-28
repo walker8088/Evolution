@@ -1,0 +1,29 @@
+<!DOCTYPE RCC><RCC version="1.0">
+<qresource>
+    <file>../Images/app.ico</file>
+    <file>../Images/board.png</file>
+    <file>../Images/a.png</file>
+    <file>../Images/b.png</file>
+    <file>../Images/c.png</file>
+    <file>../Images/k.png</file>
+    <file>../Images/n.png</file>
+    <file>../Images/p.png</file>
+    <file>../Images/r.png</file>
+    <file>../Images/over.png</file>
+    <file>../Images/done.png</file>
+    <file>../Images/select.png</file>
+    <file>../Images/step.png</file>
+    <file>../Images/point.png</file>
+    <file>../Images/edit.png</file>
+    <file>../Images/openbook.png</file>
+    <file>../Images/endbook.png</file>
+    <file>../Images/mybook.png</file>
+    <file>../Images/bookmark.png</file>
+    <file>../Images/restart.png</file>
+    <file>../Images/left_right.png</file>
+    <file>../Images/up_down.png</file>
+    <file>../Images/exit.png</file>
+    <file>../Images/search.png</file>
+    <file>../Images/online.png</file>
+</qresource>
+</RCC>
