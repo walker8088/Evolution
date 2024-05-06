@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 
-import sys, time
+import os
+import sys
+import time
 
 from PySide6 import *
 from PySide6.QtCore import *
@@ -13,16 +15,21 @@ from .Utils import *
 from .Storage import *
 from .Resource import *
 
-#from .Dialogs import *
-
-
 #-----------------------------------------------------#
 class DockWidget(QDockWidget):
     def __init__(self, parent, dock_areas):
         super().__init__(parent)
         self.setAllowedAreas(dock_areas)
 
-
+#-----------------------------------------------------#
+class DocksWidget(DockWidget):
+    def __init__(self, parent, inner, dock_areas):
+        super().__init__(parent)
+        self.setAllowedAreas(dock_areas)
+        self.inner = inner
+        self.setWidget(self.inner)
+        self.setWindowTitle(self.inner.title)
+        
 #-----------------------------------------------------#
 class HistoryWidget(QWidget):
     positionSelSignal = Signal(int)
@@ -173,14 +180,16 @@ class HistoryWidget(QWidget):
 
     def onSaveDbBtnClick(self):
         self.parent.saveGameToDB()
-        QMessageBox.information(self, getTitle(), '该棋谱已成功保存到对局库.')
-
+        msgbox = TimerMessageBox("当前棋谱已成功保存到对局库.", timeout = 0.5)
+        msgbox.exec()
+        
     def onAddBookmarkBtnClick(self):
 
         fen = self.parent.board.to_fen()
 
         if self.storage.isFenInBookmark(fen):
-            QMessageBox.information(self, getTitle(), '收藏中已经有该局面存在.')
+            msgbox = TimerMessageBox("收藏中已经有该局面存在.", timeout = 1)
+            msgbox.exec()
             return
 
         name, ok = QInputDialog.getText(self, getTitle(), '请输入收藏名称:')
@@ -188,7 +197,8 @@ class HistoryWidget(QWidget):
             return
 
         if self.storage.isNameInBookmark(name):
-            QMessageBox.information(None, f'{getTitle()}, 收藏中已经有[{name}]存在.')
+            msgbox = TimerMessageBox(f'收藏中已经有[{name}]存在.', timeout = 1)
+            msgbox.exec()
             return
 
         self.storage.saveBookmark(name, fen)
@@ -259,6 +269,7 @@ class BoardHistoryWidget(QWidget):
         #self.title = "棋谱记录"
         #self.parent = parent
         #self.storage = self.parent.storage
+        
         self.boardView = ChessBoardView(self)
         self.historyView = HistoryWidget(self)
 
@@ -275,7 +286,6 @@ class BoardHistoryWidget(QWidget):
         for it in moves:
             self.historyView.onNewPostion(it)
 
-
 #-----------------------------------------------------#
 class DockHistoryWidget(DockWidget):
     def __init__(self, parent):
@@ -285,7 +295,6 @@ class DockHistoryWidget(DockWidget):
         self.setWidget(self.inner)
         self.setWindowTitle(self.inner.title)
 
-
 #-----------------------------------------------------#
 class ChessEngineWidget(QDockWidget):
     def __init__(self, parent, engine_mgr):
@@ -294,7 +303,8 @@ class ChessEngineWidget(QDockWidget):
 
         self.parent = parent
         self.engine_mgr = engine_mgr
-
+        self.storage = parent.storage
+        
         self.dockedWidget = QWidget(self)
         self.setWidget(self.dockedWidget)
 
@@ -303,34 +313,45 @@ class ChessEngineWidget(QDockWidget):
         self.engineLabel = QLabel()
         self.engineLabel.setAlignment(Qt.AlignCenter)
 
-        self.threadsSpinBox = QSpinBox()
-        self.threadsSpinBox.setSingleStep(2)
-        self.threadsSpinBox.setValue(4)
-        self.threadsSpinBox.setRange(1, 12)
-        self.threadsSpinBox.valueChanged.connect(self.onThreadsChanged)
+        self.threadsSpin = QSpinBox()
+        max_threads =  os.cpu_count()
+        self.threadsSpin.setSingleStep(1)
+        self.threadsSpin.setValue(max_threads * 3 // 4)
+        self.threadsSpin.setRange(1, max_threads)
+        self.threadsSpin.valueChanged.connect(self.onThreadsChanged)
 
-        self.memorySpinBox = QSpinBox()
-        self.memorySpinBox.setSingleStep(100)
-        self.memorySpinBox.setValue(500)
-        self.memorySpinBox.setRange(100, 2000)
-        self.memorySpinBox.valueChanged.connect(self.onMemoryChanged)
+        self.memorySpin = QSpinBox()
+        self.memorySpin.setSingleStep(100)
+        self.memorySpin.setRange(500, 8000)
+        self.memorySpin.valueChanged.connect(self.onMemoryChanged)
+        mem = get_free_memory_mb()/2
+        m_count = int((mem // 100 ) * 100)
+        if m_count > 4000: m_count = 8000
+        self.memorySpin.setValue(m_count)
+        
+        self.multiPVSpin = QSpinBox()
+        self.multiPVSpin.setSingleStep(1)
+        self.multiPVSpin.setValue(1)
+        self.multiPVSpin.setRange(1, 10)
+        self.multiPVSpin.valueChanged.connect(self.onMultiPVChanged)
 
         self.eRedBox = QCheckBox("执红")
         self.eBlackBox = QCheckBox("执黑")
-        self.showInfoBox = QCheckBox("局面分析")
+        self.analysisModeBox = QCheckBox("分析模式")
         self.configBtn = QPushButton("参数")
         self.reviewBtn = QPushButton("复盘分析")
 
         hbox.addWidget(self.configBtn, 0)
         hbox.addWidget(QLabel(' 线程数:'), 0)
-        hbox.addWidget(self.threadsSpinBox, 0)
+        hbox.addWidget(self.threadsSpin, 0)
         hbox.addWidget(QLabel(' 存储:'), 0)
-        hbox.addWidget(self.memorySpinBox, 0)
-        hbox.addWidget(QLabel('MB'), 0)
-
+        hbox.addWidget(self.memorySpin, 0)
+        hbox.addWidget(QLabel('MB  分支:'), 0)
+        hbox.addWidget(self.multiPVSpin, 0)
+        
         hbox.addWidget(self.eRedBox, 0)
         hbox.addWidget(self.eBlackBox, 0)
-        hbox.addWidget(self.showInfoBox, 0)
+        hbox.addWidget(self.analysisModeBox, 0)
         hbox.addWidget(self.engineLabel, 2)
         hbox.addWidget(self.reviewBtn, 0)
 
@@ -349,7 +370,7 @@ class ChessEngineWidget(QDockWidget):
 
         self.engine_mgr.engine_ready_signal.connect(self.onEngineReady)
         self.branchs = []
-
+                
     def contextMenuEvent(self, event):
 
         menu = QMenu(self)
@@ -359,21 +380,27 @@ class ChessEngineWidget(QDockWidget):
             self.onViewBranch()
 
     def onThreadsChanged(self, num):
-        #self.engine_mgr.set_param()
-        #print('Threads', num)
-        pass
-
+        self.engine_mgr.set_engine_option(0, 'Threads', num)
+        self.saveEngineOptions()
+        
     def onMemoryChanged(self, num):
-        #self.engine_mgr.set_param()
-        #print('Threads', num)
-        pass
-
+        self.engine_mgr.set_engine_option(0, 'Hash', num)
+        self.saveEngineOptions()
+        
+    def onMultiPVChanged(self, num):
+        self.engine_mgr.set_engine_option(0, 'MultiPV', num)
+        self.saveEngineOptions()
+        
+    def saveEngineOptions(self): 
+        options = {}
+        self.storage.saveEngineOptions(0, options)
+     
     def onViewBranch(self):
         self.parent.onViewBranch()
 
     def onEngineMoveInfo(self, fen, move_info):
 
-        if not self.showInfoBox.isChecked():
+        if not self.analysisModeBox.isChecked():
             return
 
         board = ChessBoard()
@@ -390,8 +417,8 @@ class ChessEngineWidget(QDockWidget):
                 moves_text.append(move.to_text())
                 board.next_turn()
             else:
-                moves_text.append(f'err:{move_info["move"]}')
-                break
+                #moves_text.append(f'err:{move_info["move"]}')
+                return
 
         move_info['move_text'] = ','.join(moves_text)
 
@@ -427,28 +454,36 @@ class ChessEngineWidget(QDockWidget):
     def append_info(self, info):
         self.positionView.addItem(info)
 
-    def onEngineReady(self, engine_id, name):
-        self.onThreadsChanged(self.threadsSpinBox.value())
-        self.engineLabel.setText(name)
+    def onEngineReady(self, engine_id, name, engine_options):
+        
+        #for it in engine_options:
+        #    print(it)
 
+        self.engineLabel.setText(name)
+        
+        self.engine_mgr.set_config(engine_id, {'depth': 24})
+        
+        self.onThreadsChanged(self.threadsSpin.value())
+        self.onMemoryChanged(self.memorySpin.value())
+        self.onMultiPVChanged(self.multiPVSpin.value())
+        
     def clear(self):
         self.positionView.clear()
 
     def sizeHint(self):
         return QSize(500, 150)
 
-
 #------------------------------------------------------------------#
 class MoveDbWidget(QDockWidget):
     #move_select_signal = Signal(int)
 
     def __init__(self, parent):
-        super().__init__("对局库", parent)
+        super().__init__("我的棋谱库", parent)
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
 
         self.parent = parent
         self.storage = parent.storage
-
+        
         self.moveListView = QTreeWidget()
         self.moveListView.setColumnCount(1)
         self.moveListView.setHeaderLabels(["备选着法", "红优分", '', '备注'])
@@ -458,14 +493,14 @@ class MoveDbWidget(QDockWidget):
         self.moveListView.setColumnWidth(3, 100)
 
         self.moveListView.clicked.connect(self.onSelectIndex)
-
+        
         self.importFollowMode = False
 
-        self.setWidget(self.moveListView)
+        self.setWidget( self.moveListView)
 
     def clear(self):
         self.moveListView.clear()
-
+        
     def contextMenuEvent(self, event):
 
         menu = QMenu(self)
@@ -488,8 +523,8 @@ class MoveDbWidget(QDockWidget):
         self.moveListView.setCurrentItem(item, 0)
         self.onSelectIndex(0)
 
-    def setData(self, book_moves):
-        self.clear()
+    def updateBookMoves(self, book_moves):
+        self.moveListView.clear()
         self.position_len = len(book_moves)
         for move_info in book_moves:
             item = QTreeWidgetItem(self.moveListView)
@@ -511,7 +546,7 @@ class MoveDbWidget(QDockWidget):
                 QTimer.singleShot(500, self.onImportFollowContinue)
             else:
                 self.importFollowMode = False
-
+       
     def onSelectIndex(self, index):
         item = self.moveListView.currentItem()
         move_info = item.data(0, Qt.UserRole)
@@ -520,6 +555,69 @@ class MoveDbWidget(QDockWidget):
     def sizeHint(self):
         return QSize(150, 500)
 
+#------------------------------------------------------------------#
+class CloudDbWidget(QDockWidget):
+    #move_select_signal = Signal(int)
+
+    def __init__(self, parent):
+        super().__init__("云库", parent)
+        self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+
+        self.parent = parent
+        self.storage = parent.storage
+        
+        
+        self.cloudMovesView = QTreeWidget()
+        self.cloudMovesView.setColumnCount(1)
+        self.cloudMovesView.setHeaderLabels(["备选着法", "红优分", '', '备注'])
+        self.cloudMovesView.setColumnWidth(0, 80)
+        self.cloudMovesView.setColumnWidth(1, 60)
+        self.cloudMovesView.setColumnWidth(2, 1)
+        self.cloudMovesView.setColumnWidth(3, 100)
+        self.cloudMovesView.clicked.connect(self.onSelectIndex)
+
+        #self.tab = QTabWidget(parent)
+        
+        #self.tab.addTab(self.moveListView, '对局库')
+        #self.tab.addTab(self.cloudMovesView, '云库')
+        
+        self.importFollowMode = False
+
+        self.setWidget( self.cloudMovesView)
+
+    def clear(self):
+        self.cloudMovesView.clear()
+
+    def contextMenuEvent(self, event):
+
+        menu = QMenu(self)
+        importBestAction = menu.addAction("导入最优分支")
+        action = menu.exec_(self.mapToGlobal(event.pos()))
+        if action == importBestAction:
+            self.onImportBest()
+
+    def onImportBest(self):
+        #self.importFollowMode = True
+        #self.onSelectIndex(0)
+        pass
+        
+    def updateCloudMoves(self, moves):
+        self.cloudMovesView.clear()
+        for move_info in moves:
+            item = QTreeWidgetItem(self.cloudMovesView)
+            item.setText(0, move_info['text'])    
+            item.setText(1, str(move_info['score']))
+            item.setTextAlignment(1, Qt.AlignRight)
+
+            item.setData(0, Qt.UserRole, move_info)
+       
+    def onSelectIndex(self, index):
+        item = self.cloudMovesView.currentItem()
+        move_info = item.data(0, Qt.UserRole)
+        self.parent.onBookMove(move_info)
+        
+    def sizeHint(self):
+        return QSize(150, 500)
 
 #------------------------------------------------------------------#
 class EndBookWidget(QDockWidget):
@@ -591,11 +689,6 @@ class EndBookWidget(QDockWidget):
             item.setText(game['name'])
             item.setData(Qt.UserRole, game)
             self.bookView.addItem(item)
-            #done = game.get('done', False)
-            #if done:
-            #   self.bookModel.setData(self.bookModel.index(i, 0), QBrush(QColor("#00bbcc")), Qt.ForegroundRole);
-        #TODO Read from config
-        #self.bookView.setCurrentIndex(index);
 
     def onItemDoubleClicked(self, index):
         index_row = index.row()

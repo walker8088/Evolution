@@ -11,7 +11,6 @@ from PySide6.QtWidgets import QApplication
 
 from .Main import *
 
-
 #-----------------------------------------------------#
 class ChessApp(QApplication):
     def __init__(self):

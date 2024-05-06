@@ -24,7 +24,7 @@ from .Widgets import *
 from .Dialogs import *
 from .Manager import *
 from .Storage import *
-
+from .Online import *
 
 #-----------------------------------------------------#
 class MainWindow(QMainWindow, QtStyleTools):
@@ -43,13 +43,17 @@ class MainWindow(QMainWindow, QtStyleTools):
 
         self.setWindowIcon(QIcon(':Images/app.ico'))
         self.setWindowTitle(self.app.APP_NAME_TEXT)
-
+        
+        logging.basicConfig(filename = f'{self.app.APP_NAME}.log', filemode = 'w', level=logging.DEBUG)
+        
+        '''
         fh = logging.FileHandler(f'{self.app.APP_NAME}.log')
         fh.setFormatter(
             logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
         logging.getLogger().addHandler(fh)
         fh.setLevel(logging.DEBUG)
-
+    '''
+        
         if platform.system() == "Windows":
             #在Windows状态栏上正确显示图标
             myappid = 'mycompany.myproduct.subproduct.version'
@@ -80,6 +84,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             self.onSelectEndGameIndex)
 
         self.moveDbView = MoveDbWidget(self)
+        self.cloudDbView = CloudDbWidget(self)
 
         self.bookmarkView = BookmarkWidget(self)
         self.bookmarkView.setVisible(False)
@@ -94,11 +99,12 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.engineView.reviewBtn.clicked.connect(self.onReviewGame)
         self.engineView.eRedBox.stateChanged.connect(self.onRedBoxChanged)
         self.engineView.eBlackBox.stateChanged.connect(self.onBlackBoxChanged)
-        self.engineView.showInfoBox.stateChanged.connect(
-            self.onShowInfoBoxChanged)
+        self.engineView.analysisModeBox.stateChanged.connect(
+            self.onAnalysisModeBoxChanged)
 
-        self.addDockWidget(Qt.RightDockWidgetArea, self.historyView)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.historyView)
         self.addDockWidget(Qt.RightDockWidgetArea, self.moveDbView)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.cloudDbView)
         #self.addDockWidget(Qt.RightDockWidgetArea, self.gameReviewView)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.endBookView)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.bookmarkView)
@@ -224,30 +230,26 @@ class MainWindow(QMainWindow, QtStyleTools):
             init_fen = self.init_fen
 
         self.init_fen = init_fen
-
-        board = ChessBoard(self.init_fen)
-
-        self.boardView.from_fen(self.init_fen)
-        self.currPosition = {
-            'fen': self.init_fen,
-            'index': 0,
-            'move_side': board.move_player.color
-        }
-        self.positionList.append(self.currPosition)
-        self.historyView.inner.onNewPostion(self.currPosition)
-        self.searchBookMoves(self.init_fen)
-
+      
         if self.game_mode == 'end_book':
             self.engineView.eRedBox.setChecked(False)
             self.engineView.eBlackBox.setChecked(True)
-            self.engineView.showInfoBox.setChecked(False)
+            self.engineView.analysisModeBox.setChecked(False)
         else:
             self.engineView.eRedBox.setChecked(False)
             self.engineView.eBlackBox.setChecked(False)
-            self.engineView.showInfoBox.setChecked(False)
-
-        self.runEngine()
-
+            self.engineView.analysisModeBox.setChecked(False)
+        
+        self.boardView.from_fen(self.init_fen)
+        
+        position = {
+            'fen': self.init_fen,
+            'index': 0,
+            'move_side': self.boardView.get_move_color()
+            }
+        
+        self.onPositionChanged(position, is_new = True)
+ 
     def onGameOver(self, win_side):
 
         if self.game_mode == 'end_book':
@@ -288,7 +290,7 @@ class MainWindow(QMainWindow, QtStyleTools):
 
         self.engineView.eRedBox.setChecked(False)
         self.engineView.eBlackBox.setChecked(False)
-        self.engineView.showInfoBox.setChecked(True)
+        self.engineView.analysisModeBox.setChecked(True)
         self.engineView.reviewBtn.setText('停止分析')
         #self.ReviewGameView.show()
         self.historyView.inner.selectIndex(0)
@@ -307,7 +309,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         if not isCanceled:
             msgbox = TimerMessageBox("  复盘分析完成。  ", timeout=1)
             msgbox.exec()
-            self.engineView.showInfoBox.setChecked(False)
+            self.engineView.analysisModeBox.setChecked(False)
 
     def saveGameToDB(self):
         self.storage.saveMovesToBook(self.positionList[1:])
@@ -367,11 +369,11 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.detectRunEngine()
 
     def onConfigEngine(self):
-        params = self.engine_mgr.get_config(0)
+        params = self.engine_manager.get_config(0)
 
         dlg = EngineConfigDialog()
         if dlg.config(params):
-            self.engine_mgr.update_config(0, params)
+            self.engine_manager.update_config(0, params)
 
     def onRedBoxChanged(self, state):
         self.engine_play(0, RED, Qt.CheckState(state) == Qt.Checked)
@@ -379,7 +381,7 @@ class MainWindow(QMainWindow, QtStyleTools):
     def onBlackBoxChanged(self, state):
         self.engine_play(0, BLACK, Qt.CheckState(state) == Qt.Checked)
 
-    def onShowInfoBoxChanged(self, state):
+    def onAnalysisModeBoxChanged(self, state):
         self.engine_analyze(Qt.CheckState(state) == Qt.Checked)
 
     def onViewBranch(self, branch):
@@ -403,18 +405,15 @@ class MainWindow(QMainWindow, QtStyleTools):
             self.historyMode = True
             self.boardView.set_view_only(True)
 
-        fen = self.currPosition['fen']
-
         if 'move' in self.currPosition:
             move = self.currPosition['move']
             self.boardView.from_fen(move.board.to_fen())
             self.boardView.show_move(move.p_from, move.p_to)
 
-        self.boardView.from_fen(fen)
-        self.searchBookMoves(fen)
-        self.engineView.clear()
-        self.runEngine()
-
+        #self.boardView.from_fen(fen)
+        
+        self.onPositionChanged(self.currPosition, is_new = False)
+        
     def deleteHistoryFollow(self, move_step):
         self.positionList = self.positionList[:move_step + 1]
 
@@ -445,14 +444,18 @@ class MainWindow(QMainWindow, QtStyleTools):
 
     def onEngineBestMove(self, engine_id, move_info):
 
+        if not self.board.is_valid_iccs_move(move_info['move']):
+            return
+            
+        move_color = self.board.get_move_color()
+        
         if self.currPosition['index'] > 0:
             if 'score' not in move_info:
                 print("score not found:", move_info)
             else:
                 score = move_info['score']
-                p_color = self.currPosition['move_side']
                 self.currPosition[
-                    'score'] = score if p_color == BLACK else -score
+                    'score'] = score if move_color == BLACK else -score
                 self.currPosition['move_scores'] = move_info['move_scores']
 
         self.historyView.inner.onUpdatePosition(self.currPosition)
@@ -464,33 +467,25 @@ class MainWindow(QMainWindow, QtStyleTools):
         if self.historyMode:
             return
 
+        if self.bind_engines[move_color] != engine_id:
+            return
+
         move_from, move_to = Move.from_iccs(move_info['move'])
-        if not self.board.is_valid_move(move_from, move_to):
-            return
-
-        piece = self.board.get_piece(move_from)
-        if not piece:
-            return
-
-        if self.bind_engines[piece.color] != engine_id:
-            return
-
         self.onMoveGo(move_from, move_to)
 
     def onBookMove(self, move_info):
 
         if self.historyMode:
             return
-
-        move_iccs = move_info['move']
-        move_from, move_to = Move.from_iccs(move_iccs)
-
-        if not self.board.is_valid_move(move_from, move_to):
+            
+        if not self.board.is_valid_iccs_move( move_info['move']):
             return
 
+        move_from, move_to = Move.from_iccs(move_info['move'])
         self.onMoveGo(move_from, move_to, move_info['score'])
 
     def searchBookMoves(self, fen):
+    
         def key_func(it):
             try:
                 return int(it['score'])
@@ -516,79 +511,100 @@ class MainWindow(QMainWindow, QtStyleTools):
             for act in it['actions']:
                 act['text'] = board.copy().move_iccs(act['move']).to_text()
                 book_moves.append(act)
-        book_moves.sort(key=key_func, reverse=True)
-        self.moveDbView.setData(book_moves)
+                
+        is_reverse  = True if board.get_move_color() == RED else False        
+        book_moves.sort(key=key_func, reverse = is_reverse)
+        
+        self.moveDbView.updateBookMoves(book_moves)
+    
+    def searchCloudMoves(self, fen):
+        
+        self.cloudDbView.clear()
+        board = ChessBoard(fen)
+        moves = QueryFromCloudDB(fen)
+        move_color = board.get_move_color()
+        
+        for move in moves:
+            p_from, p_to = Move.from_iccs(move['move'])
+            move_it = board.copy().move(p_from, p_to)
+            if move_it:
+                move['text'] = move_it.to_text()
+            if move_color == BLACK:
+                move['score'] = str(-int(move['score']))
+                
+        self.cloudDbView.updateCloudMoves(moves)
 
     #-----------------------------------------------------------
     #走子核心逻辑
-    def onMoveBegin(self, move):
-        return True
+    def onPositionChanged(self, position, is_new = True):   
+        
+        self.currPosition = position        
+        fen = position['fen']
+        
+        if is_new:
+            self.positionList.append(position)
+            self.historyView.inner.onNewPostion(self.currPosition)
+            
+            if 'move' in position:
+                move = position['move']            
+                if move.is_checking:
+                    if move.is_checkmate:
+                        msg = "将死！"
+                        self.playSound('mate')
+                    else:
+                        self.playSound('check')
+                        msg = "将军！"
+                elif move.captured:
+                    self.playSound('capture')
+                    msg = f"吃{fench_to_text(move.captured)}"
+                else:
+                    self.playSound('move')
+                    msg = ""
+                self.statusBar().showMessage(msg)
 
-    def onMoveEnd(self, move):
-
-        new_fen = self.board.to_fen()
+        self.boardView.from_fen(fen)    
         self.engineView.clear()
-
-        if move.is_checking:
-            if move.is_checkmate:
-                msg = "将死！"
-                self.playSound('mate')
-            else:
-                self.playSound('check')
-                msg = "将军！"
-        elif move.captured:
-            self.playSound('capture')
-            msg = f"吃{fench_to_text(move.captured)}"
-        else:
-            self.playSound('move')
-            msg = ""
-
-        self.statusBar().showMessage(msg)
-
-        if move.is_checkmate:
-            self.onGameOver(move.board.move_player)
-
+        
+        self.searchBookMoves(fen)
+        self.searchCloudMoves(fen)
         self.runEngine()
-        self.searchBookMoves(new_fen)
-        #QueryFromCloudDB(new_fen)
-
-        return True
-
+    
     def onMoveGo(self, move_from, move_to, score=''):
 
         self.historyMode = True  #用historyMode保护在此期间引擎输出的move信息被忽略
-
+         
         self.boardView.show_move(move_from, move_to)
+        
+        #--------------------------------
         #self.board在做了这个move动作后，棋子已经更新到新位置了
         move = self.board.move(move_from, move_to)
-        self.board.next_turn()
         #board是下个走子的position了
-
-        if not self.onMoveBegin(move):
-            return
-
-        fen = move.board.to_fen()
-        move_iccs = move.to_iccs()
+        self.board.next_turn()
+        #--------------------------------
+        
+        #fen = move.board.to_fen()
+        #move_iccs = move.to_iccs()
 
         #这一行必须有,否则引擎不能工作
         hist = [x['move'] for x in self.positionList[1:]]
         move.prepare_for_engine(move.board.move_player.opposite(), hist)
 
+        self.historyMode = False  #结束保护
+        
         position = {
             'fen': self.board.to_fen(),
+            'fen_prev': move.board.to_fen(),
             'move': move,
             'score': score,
             'index': len(self.positionList),
             'move_side': move.board.move_player.color
         }
-
-        self.positionList.append(position)
-        self.currPosition = position
-        self.historyView.inner.onNewPostion(position)
-        self.historyMode = False  #结束保护
-
-        self.onMoveEnd(move)
-
+        
+        self.onPositionChanged(position)
+      
+        if move.is_checkmate:
+            self.onGameOver(move.board.move_player)
+      
     #------------------------------------------------------------------------------
     #UI Events
     def onDoOpenBook(self):
@@ -599,7 +615,9 @@ class MainWindow(QMainWindow, QtStyleTools):
 
     def onDoOnline(self):
         self.switchGameMode("online_game")
-
+        dlg = OnlineDialog(self)
+        dlg.show()
+        
     def onRestartGame(self):
         self.initGame()
 
@@ -796,27 +814,16 @@ class MainWindow(QMainWindow, QtStyleTools):
 
         self.menuBar().addSeparator()
 
-        self.showHistoryWinAct = QAction('棋谱记录', checkable=True)
-        self.showHistoryWinAct.setChecked(True)
-        self.showHistoryWinAct.toggled.connect(self.onShowHistoryWin)
-
-        self.showEngineWinAct = QAction('引擎', checkable=True)
-        self.showEngineWinAct.setChecked(True)
-        self.showEngineWinAct.toggled.connect(self.onShowEngineWin)
-
-        self.showMoveDBWinAct = QAction('对局库', checkable=True)
-        self.showMoveDBWinAct.setChecked(True)
-        self.showMoveDBWinAct.toggled.connect(self.onShowMoveDBWin)
-
         self.showMoveSoundAct = QAction('走子音效', checkable=True)
         self.showMoveSoundAct.setChecked(
             True if self.soundVolume > 0 else False)
         self.showMoveSoundAct.toggled.connect(self.onShowMoveSound)
 
         self.winMenu = self.menuBar().addMenu("窗口")
-        self.winMenu.addAction(self.showHistoryWinAct)
-        self.winMenu.addAction(self.showEngineWinAct)
-        self.winMenu.addAction(self.showMoveDBWinAct)
+        self.winMenu.addAction(self.historyView.toggleViewAction()) 
+        self.winMenu.addAction(self.engineView.toggleViewAction())
+        self.winMenu.addAction(self.moveDbView.toggleViewAction())
+        self.winMenu.addAction(self.cloudDbView.toggleViewAction())
         self.winMenu.addAction(self.showMoveSoundAct)
 
         self.helpMenu = self.menuBar().addMenu("帮助")
@@ -867,15 +874,6 @@ class MainWindow(QMainWindow, QtStyleTools):
 
         self.statusBar().showMessage("Ready")
 
-    def onShowHistoryWin(self, yes):
-        self.historyView.setVisible(yes)
-
-    def onShowEngineWin(self, yes):
-        self.engineView.setVisible(yes)
-
-    def onShowMoveDBWin(self, yes):
-        self.moveDbView.setVisible(yes)
-
     def onShowMoveSound(self, yes):
         self.soundVolume = 30 if yes else 0
 
@@ -906,20 +904,24 @@ class MainWindow(QMainWindow, QtStyleTools):
 
         yes = bool(self.settings.value("moveDBView", True))
         self.moveDbView.setVisible(yes)
+        
+        yes = bool(self.settings.value("cloudDBView", True))
+        self.cloudDbView.setVisible(yes)
 
-        self.soundVolume = self.settings.value("soundVolume", 50)
+        self.soundVolume = self.settings.value("soundVolume", 30)
 
     def writeSettings(self):
         self.settings.setValue("geometry", self.saveGeometry())
         self.settings.setValue("historyView", self.historyView.isVisible())
         self.settings.setValue("engineView", self.engineView.isVisible())
         self.settings.setValue("moveDBView", self.moveDbView.isVisible())
+        self.settings.setValue("cloudDBView", self.moveDbView.isVisible())
         self.settings.setValue("soundVolume", self.soundVolume)
 
     def about(self):
         QMessageBox.about(
             self, f"关于 {self.app.APP_NAME}",
-            f"{self.app.APP_NAME_TEXT}\n走子AI分析，棋谱管家，棋力提升利器\n问题反馈,联系作者：1053386709@qq.com"
+            f"{self.app.APP_NAME_TEXT}\n棋谱管家，AI分析，云库分析，棋力提升利器\n问题反馈,联系作者：1053386709@qq.com"
         )
 
 

@@ -12,7 +12,7 @@ from .Utils import *
 #-----------------------------------------------------#
 class EngineManager(QObject):
 
-    engine_ready_signal = Signal(int, str)
+    engine_ready_signal = Signal(int, str, list)
     best_move_signal = Signal(int, dict)
     move_probe_signal = Signal(int, dict)
     checkmate_signal = Signal(int, dict)
@@ -23,19 +23,19 @@ class EngineManager(QObject):
         self.parent = parent
         self.engines = []
         self.engine_fens = []
-        self.engine_params = []
+        self.go_param = []
         self.stoped = True
         #self.score_mode = False
         self.score_moves = []
 
     def get_config(self, engine_id):
-        return self.engine_params[engine_id].copy()
+        return self.go_param[engine_id].copy()
 
     def set_config(self, engine_id, params):
-        self.engine_params[engine_id] = params
-
+        self.go_param[engine_id] = params
+    
     def update_config(self, engine_id, params):
-        self.engine_params[engine_id].update(params)
+        self.go_param[engine_id].update(params)
 
     def load_engine(self, engine_path):
         engine = UciEngine('')
@@ -43,11 +43,19 @@ class EngineManager(QObject):
         if engine.load(engine_path):
             self.engines.append(engine)
             self.score_moves.append({})
-            self.engine_params.append({'depth': 22})
+            self.go_param.append({})
             return True
         else:
             return False
-
+    
+    def set_engine_option(self, engine_id, name, value):
+        if (engine_id < 0) or (engine_id >= len(self.engines)):
+            return False
+        
+        engine = self.engines[engine_id]
+        engine.set_option(name, value)
+        return True
+        
     def go_from(self, engine_id, fen):
         if (engine_id < 0) or (engine_id >= len(self.engines)):
             return False
@@ -59,7 +67,7 @@ class EngineManager(QObject):
 
         self.score_moves[engine_id].clear()
 
-        params = self.engine_params[engine_id]
+        params = self.go_param[engine_id]
         self.engines[engine_id].go_from(fen, params)
 
     def stop_thinking(self):
@@ -95,7 +103,7 @@ class EngineManager(QObject):
                 score_move = self.score_moves[engine_id]
                 if action == 'ready':
                     self.engine_ready_signal.emit(engine_id,
-                                                  engine.ids['name'])
+                                                  engine.ids['name'], engine.options)
                 elif action == 'bestmove':
                     if 'move' in eg_out:
                         move_iccs = eg_out['move']

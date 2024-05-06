@@ -1,26 +1,63 @@
 # -*- coding: utf-8 -*-
 
 import os
+import sys
 import time
 from pathlib import Path
 import logging
 import uuid
+import traceback 
 from collections import OrderedDict
 
+import psutil
 import requests
+import numpy as np
+import cv2 as cv
+from PIL import Image
 
 from PySide6 import *
 from PySide6.QtCore import *
 from PySide6.QtGui import *
 from PySide6.QtWidgets import *
 
+#-----------------------------------------------------#
+def cv2qt_image(image):
 
+    size = image.shape
+    step = int(image.size / size[0])
+    qformat = QImage.Format_Indexed8
+
+    if len(size) == 3:
+        if size[2] == 4:
+            qformat = QImage.Format_RGBA8888
+        else:
+            qformat = QImage.Format_RGB888
+
+    img = QImage(image, size[1], size[0], step, qformat).rgbSwapped()
+
+    return img
+
+def cv2pil_image(cv_img): 
+    return Image.fromarray(cv.cvtColor(cv_img, cv.COLOR_BGR2RGB))
+
+def pil2cv_image(pil_img): 
+    return cv.cvtColor(np.array(pil_img), cv.COLOR_RGB2BGR)
+
+#-----------------------------------------------------#
+def cv_to_image(img: np.ndarray) -> Image:
+    return Image.fromarray(cv.cvtColor(img, cv.COLOR_BGR2RGB))
+    
+def image_to_cv(img: Image) -> np.ndarray:
+    return cv.cvtColor(np.array(img), cv.COLOR_RGB2BGR)
+    
 #-----------------------------------------------------#
 def get_mac_address():
     mac = uuid.UUID(int=uuid.getnode()).hex[-12:]
     return ":".join([mac[e:e + 2] for e in range(0, 11, 2)])
 
-
+def get_free_memory_mb():
+    return psutil.virtual_memory().available/1024/1024
+        
 #-----------------------------------------------------#
 def getTitle():
     return QApplication.instance().APP_NAME_TEXT
@@ -61,7 +98,7 @@ def load_eglib(lib_file):
 
 #-----------------------------------------------------#
 class TimerMessageBox(QMessageBox):
-    def __init__(self, text, timeout=2):
+    def __init__(self, text, timeout = 2):
         super().__init__()
         self.setWindowTitle(getTitle())
         self.time_to_wait = timeout
@@ -103,7 +140,28 @@ def QueryFromCloudDB(fen):
     url = 'http://www.chessdb.cn/chessdb.php'
     param = {"action": 'queryall'}
     param['board'] = fen
-    resp = requests.get(url, params=param)
-    moves = resp.text.split('|')
-    for it in moves:
-        print(it)
+    
+    try:
+        resp = requests.get(url, params=param)
+    except Exception as e:
+        print(e)
+        return []
+        
+    text = resp.text.rstrip('\0')
+    if text.lower() in ['', 'unknown']:
+        return []
+    
+    moves = []
+    try:
+        steps = text.split('|')
+        for it in steps:
+            segs = it.strip().split(',')
+            items =[x.split(':') for x in segs]
+            it_dict = {key:value for key, value in items}
+            #print(it_dict)
+            moves.append(it_dict)
+    except Exception as e:
+        #traceback.print_exc()
+        traceback.print_exception(*sys.exc_info())
+        print('cloud query result:', text, "len:", len(text))    
+    return  moves        

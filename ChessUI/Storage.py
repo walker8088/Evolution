@@ -15,10 +15,24 @@ class DataStore():
         self.bookmark_table = self.db.table('bookmark')
         self.endbook_table = self.db.table('endbook')
         self.position_table = self.db.table('position')
+        self.engine_option_table = self.db.table('engine')
 
     def close(self):
         self.db.close()
 
+    #------------------------------------------------------------------------------
+    #EngineConfig
+    def loadEngineOptions(self, engine_id):
+        ret = self.engine_option_table.search(Query().engine_id == engine_id) 
+        
+        if len(ret) == 0:
+            return None
+        
+        return ret[0]
+        
+    def saveEngineOptions(self, engine_id, options):
+        self.engine_option_table.update({'engine_id': engine_id, 'options': options }) 
+          
     #------------------------------------------------------------------------------
     #EndBooks
     def getAllEndBooks(self):

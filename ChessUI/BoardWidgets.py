@@ -12,6 +12,7 @@ from cchess import *
 from .Utils import *
 from .Resource import *
 
+import numpy as np
 
 #-----------------------------------------------------#
 def scaled_image(img, scale):
@@ -23,7 +24,6 @@ def scaled_image(img, scale):
     new_img = img.scaledToHeight(new_height, mode=Qt.SmoothTransformation)
 
     return new_img
-
 
 #-----------------------------------------------------#
 class ChessBoardBase(QWidget):
@@ -96,7 +96,10 @@ class ChessBoardBase(QWidget):
 
     def to_fen(self):
         return self._board.to_fen()
-
+    
+    def get_move_color(self):
+        return self._board.get_move_color()
+        
     def clear_pickup(self):
         self.last_pickup = None
         self.update()
@@ -159,6 +162,7 @@ class ChessBoardBase(QWidget):
             self.start_y = 0
 
     def paintEvent(self, ev):
+        #return
         painter = QPainter(self)
         painter.drawPixmap(self.start_x, self.start_y, self._board_img)
 
@@ -292,7 +296,7 @@ class ChessBoardView(ChessBoardBase):
 
     def paintEvent(self, ev):
         super().paintEvent(ev)
-
+        
         painter = QPainter(self)
         '''
         if self.text != '':
@@ -624,3 +628,262 @@ class ChessBoardEditWidget(ChessBoardBase):
 
     def mouseReleaseEvent(self, mouseEvent):
         pass
+
+#-----------------------------------------------------#
+from PIL.ImageQt import ImageQt
+
+class ScreenBoardView(QWidget):
+    def __init__(self, parent = None):
+
+        super().__init__(parent)
+    
+        self.setAutoFillBackground(True)
+
+        p = self.palette()
+        p.setColor(self.backgroundRole(), QColor(40, 40, 40))
+        self.setPalette(p)
+    
+        self._board = ChessBoard()
+
+        self.flip_board = False
+        self.mirror_board = False
+
+        self.last_pickup = None
+
+        self.start_x = 0
+        self.start_y = 0
+        self.paint_scale = 1.0
+
+        self.base_space = 56
+        self.base_boader = 15
+        self.base_piece_size = 53
+        
+        self.base_win_width = 530
+        self.win_width = 530
+        
+        self.base_win_height = 586
+        self.win_height = 586
+    
+        self.base_win_img = None
+        self.win_img = None
+
+    def scale_board(self, scale):
+
+        if scale < 0.5:
+            scale = 0.5
+
+        self.paint_scale = int(scale * 9) / 9.0
+        if self.base_win_img:
+            self.win_img = scaled_image(self.base_win_img, self.paint_scale)
+            self.win_width = self.win_img.width()
+            self.win_height = self.win_img.height()
+            
+    def to_fen(self):
+        return self._board.to_fen()
+
+    def logic_to_board(self, x, y):
+
+        board_x = self.boader + x * self.space + self.start_x
+        board_y = self.boader + (9 - y) * self.space + self.start_y
+
+        return (board_x, board_y)
+
+    def board_to_logic(self, bx, by):
+
+        x = (bx - self.boader - self.start_x) // self.space
+        y = 9 - ((by - self.boader - self.start_y) // self.space)
+
+        if self.flip_board:
+            x = 8 - x
+            y = 9 - y
+
+        if self.mirror_board:
+            x = 8 - x
+
+        return (x, y)
+    
+    def setFlipBoard(self, fliped):
+
+        if fliped != self.flip_board:
+            self.flip_board = fliped
+            self.update()
+
+    def setMirrorBoard(self, mirrored):
+
+        if mirrored != self.mirror_board:
+            self.mirror_board = mirrored
+            self.update()
+
+    def resizeEvent(self, ev):
+
+        new_width = ev.size().width()
+        new_height = ev.size().height()
+        
+        new_scale = min(new_width / self.base_win_width,
+                        new_height / self.base_win_height)
+
+        self.scale_board(new_scale)
+
+        self.start_x = (new_width - self.win_width) // 2
+        if self.start_x < 0:
+            self.start_x = 0
+
+        self.start_y = (new_height - self.win_height) // 2
+        if self.start_y < 0:
+            self.start_y = 0
+
+    def update_img(self, img):
+        
+        self.cv_img = pil2cv_image(img)
+        
+        self.base_win_img =  QPixmap.fromImage(ImageQt(img))
+        
+        self.base_win_width =  self.base_win_img.width()
+        self.base_win_height =  self.base_win_img.height()
+        
+        self.scale_board( self.paint_scale)
+
+        self.update()
+        
+    def paintEvent(self, ev):
+        painter = QPainter(self)
+        if self.win_img:
+            painter.drawPixmap(self.start_x,  self.start_y, self.win_img)
+
+    def detectBoard(self):
+        img_src = self.cv_img.copy()
+        
+        gray_img = cv.cvtColor(img_src, cv.COLOR_BGR2GRAY)
+        dst = cv.equalizeHist(gray_img)
+        # 高斯滤波降噪
+        gaussian = cv.GaussianBlur(dst, (5, 5), 0)
+        # 边缘检测
+        edges = cv.Canny(gaussian, 70, 150)
+        
+        # Hough 直线检测
+        # 重点注意第四个参数 阈值，只有累加后的值高于阈值时才被认为是一条直线，也可以把它看成能检测到的直线的最短长度（以像素点为单位）
+        # 在霍夫空间理解为：至少有多少条正弦曲线交于一点才被认为是直线
+        #lines = cv.HoughLines(edges, 1.0, np.pi/180, 150)
+        lines = cv.HoughLinesP(edges, 1.0, np.pi/180, 350)
+        
+        #for line in lines: # line[0]存储的是点到直线的极径和极角，其中极角是弧度表示的，theta是弧度 rho, theta = line[0] # 下述代码为获取 (x0,y0) 具体值 a = np.cos(theta) b = np.sin(theta) x0 = a*rho y0 = b*rho # 下图 1000 的目的是为了将线段延长 # 以 (x0,y0) 为基础，进行延长 x1 = int(x0+1000*(-b)) y1 = int(y0+1000*a) x2 = int(x0-1000*(-b)) y2 = int(y0-1000*a) cv.line(src, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        
+        
+        r_min = img_src.shape[1] // 60
+        r_max = int(r_min * 4)
+        print(r_min, r_max)
+        # 图像预处理
+        gray = cv.cvtColor(img_src, cv.COLOR_BGR2GRAY)
+        #img = cv.medianBlur(gray, 7)
+        gaussian = cv.GaussianBlur(gray, (7, 7),0)
+        circles = cv.HoughCircles(gaussian,cv.HOUGH_GRADIENT,1, r_min, param1=100, param2=50, minRadius=r_min, maxRadius=r_max)
+        
+        if circles is None:
+            return False
+            
+        #圆检测
+        ims = []
+        y_counts = {}
+        #circles = np.uint16(np.around(circles))
+        for x, y, r in circles[0,:]: 
+            x, y, r = int(x), int(y), int(r) 
+            print(x, y, r)
+            cv.circle(img_src, (x, y), r, (0, 255, 0), 1, cv.LINE_AA)
+            #im = img_src[y - r : y + r, x - r : x + r] 
+            #ims.append((im, x, y, r))
+            
+            find_y = False
+            for y_key, y_count in y_counts.items():
+                if abs(y - y_key) < r_min:
+                    y_counts[y_key].append((x, y, r)) 
+                    find_y = True
+                    continue
+            if not find_y:
+                y_counts[y] = [(x, y, r)]
+
+       # for line in lines: 
+       #    x1, y1, x2, y2 = line[0] 
+       #    cv.line(img_src, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+        #cv.imshow('CIRCLE BOARD', img_src)
+        #cv.waitKey(0)
+        '''
+        x_points = []
+        y_points = []
+        r_min = -1
+        
+        img_src = self.cv_img.copy()
+                
+        for y_key, it in y_counts.items():
+            if len(it) == 9:
+                for x, y, r in it:
+                    cv.circle(img_src, (x, y), r, (255, 0, 0), 1, cv.LINE_AA)
+                    x_points.append(x)
+                    y_points.append(y)
+                        
+                    if r_min < 0 or r < r_min:
+                        r_min = r
+    '''
+        #self.update_img(cv2pil_image(edges))
+        self.update_img(cv2pil_image(img_src))
+        return
+        
+        board_rect = [min(x_points), min(y_points), max(x_points), max(y_points)]
+        
+        self.img_size = self.cv_img.shape[:2]
+        self.board_begin = board_rect[:2]
+        self.board_end = board_rect[2:]
+        #self.calc_grid()
+        #self.piece_size = r_min
+        
+        #cv.rectangle(img_src, self.board_begin, self.board_end, (255, 0, 0), 2)
+        
+        
+        return
+        for x in range(9):
+            for y in range(10):
+                cv.circle(img_src, self.board_to_img(x, y), self.piece_size, (0, 0, 255), 1, cv.LINE_AA)
+                pass
+                
+        '''
+        cv.imshow('CIRCLE BOARD', img_src)
+        cv.waitKey(0)
+        
+        #使用红色分量检测红黑分界线
+        self.flip = False
+        
+        red_img = cv.split(self.get_piece_img(0, 0, gray = False))[2]
+        red_hist = cv.calcHist([red_img],[0],None,[256],[0,256])
+        red_sum = np.uint16(np.around(np.cumsum(red_hist)))
+        
+        black_img = cv.split(self.get_piece_img(0, 9, gray = False))[2]
+        black_hist = cv.calcHist([black_img],[0],None,[256],[0,256])
+        black_sum = np.uint16(np.around(np.cumsum(black_hist)))
+        
+        black_count = [0,0]
+        for i in range(200):
+            #print(black_sum[i],red_sum[i]) 
+            if black_sum[i] == 0 and red_sum[i] == 0:
+                black_count[0] = i
+            
+            elif black_sum[i] > 0 and red_sum[i] == 0: 
+                black_count[1] = i
+        #print('black_count', black_count)        
+        
+        self.black_index = (black_count[0] + black_count[1]) // 2
+        
+        self.init_pieces_template()
+
+        return True
+    ''' 
+
+    def mousePressEvent(self, mouseEvent):
+        pass
+        
+    def mouseMoveEvent(self, mouseEvent):
+        pass
+
+    def mouseReleaseEvent(self, mouseEvent):
+        pass
+    
+     
