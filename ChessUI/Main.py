@@ -21,7 +21,6 @@ from cchess import *
 from .Utils import *
 from .BoardWidgets import *
 from .Widgets import *
-from .Dialogs import *
 from .Manager import *
 from .Storage import *
 from .Online import *
@@ -45,15 +44,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.setWindowTitle(self.app.APP_NAME_TEXT)
         
         logging.basicConfig(filename = f'{self.app.APP_NAME}.log', filemode = 'w', level=logging.DEBUG)
-        
-        '''
-        fh = logging.FileHandler(f'{self.app.APP_NAME}.log')
-        fh.setFormatter(
-            logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
-        logging.getLogger().addHandler(fh)
-        fh.setLevel(logging.DEBUG)
-    '''
-        
+                
         if platform.system() == "Windows":
             #在Windows状态栏上正确显示图标
             myappid = 'mycompany.myproduct.subproduct.version'
@@ -64,7 +55,6 @@ class MainWindow(QMainWindow, QtStyleTools):
 
         self.engine_manager = EngineManager(self)
 
-        #TODO 挪到下面
         self.initGameDB()
 
         self.board = ChessBoard()
@@ -72,7 +62,7 @@ class MainWindow(QMainWindow, QtStyleTools):
 
         self.boardView = ChessBoardView(self.board)
         self.setCentralWidget(self.boardView)
-        self.boardView.try_move_signal.connect(self.onMoveGo)
+        self.boardView.try_move_signal.connect(self.onBoardMove)
 
         self.historyView = DockHistoryWidget(self)
         self.historyView.inner.positionSelSignal.connect(
@@ -110,13 +100,9 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.addDockWidget(Qt.LeftDockWidgetArea, self.bookmarkView)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.myGameView)
         self.addDockWidget(Qt.BottomDockWidgetArea, self.engineView)
-
-        engine_path = Path('Engine', 'pikafish', 'pikafish')
-        ok = self.engine_manager.load_engine(engine_path)
-
-        if not ok:
-            raise Exception(f'引擎加载失败：{engine_path}')
-
+        
+        self.initEngine()
+        
         self.engine_manager.best_move_signal.connect(self.onEngineBestMove)
         self.engine_manager.move_probe_signal.connect(self.onEngineMoveProbe)
         self.engine_manager.checkmate_signal.connect(self.onEngineCheckmate)
@@ -152,7 +138,18 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.moveDbView.clear()
         self.engineView.clear()
         self.boardView.set_view_only(False)
-
+    
+    def initEngine(self):
+        with open(Path('Engine', 'engine.conf')) as f:
+            try:
+                engine_conf = yaml.safe_load(f)
+            except yaml.YAMLError as exc:
+                print(exc)
+                return False
+        engine_path = engine_conf['engine']['run']
+        ok = self.engine_manager.load_engine(Path('Engine', engine_path))
+        return ok
+        
     def initGameDB(self):
         self.storage = DataStore()
         self.storage.open(Path('Game', 'localbook.db'))
@@ -292,16 +289,21 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.engineView.eBlackBox.setChecked(False)
         self.engineView.analysisModeBox.setChecked(True)
         self.engineView.reviewBtn.setText('停止分析')
-        #self.ReviewGameView.show()
         self.historyView.inner.selectIndex(0)
-        self.historyView.inner.onNextBtnClick()
-
+        self.onReviewGameStep()
+        
     def onReviewGameStep(self):
-        sel_index = self.historyView.inner.selectionIndex
-        if sel_index >= (len(self.positionList) - 1):  #已到最后一步
-            self.onReviewGameEnd()
-        else:
-            self.historyView.inner.onNextBtnClick()
+        sel_index = self.historyView.inner.selectionIndex + 1
+        while True:
+            if sel_index >= (len(self.positionList) - 1):  #已到最后一步
+                self.onReviewGameEnd()
+                return
+            pos = self.positionList[sel_index]
+            if 'score' in pos and pos['score'] != '':
+                sel_index +=  1
+                continue
+            else:            
+                self.historyView.inner.selectIndex(sel_index)
 
     def onReviewGameEnd(self, isCanceled=False):
         self.reviewMode = False
@@ -315,14 +317,13 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.storage.saveMovesToBook(self.positionList[1:])
 
     def loadBookGame(self, name, game_info):
+    
         fen = game_info['fen']
-        self.initGame(fen, is_only_once=True)
+        self.initGame(fen, is_only_once = True)
         if 'moves' in game_info:
             iccs_moves = game_info['moves']
             for iccs in iccs_moves:
-                #print(iccs)
-                p_from, p_to = Move.from_iccs(iccs)
-                self.onMoveGo(p_from, p_to)
+                self.onMoveGo(iccs)
 
         self.setWindowTitle(f'{self.app.APP_NAME_TEXT} -- {name}')
 
@@ -470,8 +471,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         if self.bind_engines[move_color] != engine_id:
             return
 
-        move_from, move_to = Move.from_iccs(move_info['move'])
-        self.onMoveGo(move_from, move_to)
+        self.onMoveGo(move_info['move'])
 
     def onBookMove(self, move_info):
 
@@ -481,8 +481,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         if not self.board.is_valid_iccs_move( move_info['move']):
             return
 
-        move_from, move_to = Move.from_iccs(move_info['move'])
-        self.onMoveGo(move_from, move_to, move_info['score'])
+        self.onMoveGo( move_info['move'])#, move_info['score'])
 
     def searchBookMoves(self, fen):
     
@@ -518,20 +517,36 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.moveDbView.updateBookMoves(book_moves)
     
     def searchCloudMoves(self, fen):
-        
+    
         self.cloudDbView.clear()
-        board = ChessBoard(fen)
-        moves = QueryFromCloudDB(fen)
-        move_color = board.get_move_color()
         
-        for move in moves:
-            p_from, p_to = Move.from_iccs(move['move'])
-            move_it = board.copy().move(p_from, p_to)
-            if move_it:
-                move['text'] = move_it.to_text()
-            if move_color == BLACK:
-                move['score'] = str(-int(move['score']))
-                
+        moves = QueryFromCloudDB(fen)
+        if  len(moves) == 0:
+            return
+            
+        if self.currPosition['index'] >  0:
+            prevPosition = self.positionList[ self.currPosition['index'] - 1]
+            curr_iccs = self.currPosition['move'].to_iccs()
+            curr_score = moves[0]['score']
+            self.currPosition['score'] = curr_score
+           
+            if 'next_moves' in prevPosition:
+                best_moves = prevPosition['next_moves']
+            
+            if curr_iccs in best_moves:
+                self.currPosition['diff'] = best_moves[curr_iccs]['diff']
+                #print(self.currPosition['diff'])
+            else:
+                pass  
+        
+        #构造着法得分供下一个着法查询    
+        move_dict = {}    
+        for it in moves:
+            move_dict[it['move']] = {'score': it['score'], 'diff': it['diff']}
+        self.currPosition['next_moves'] = move_dict
+        
+        self.historyView.inner.onUpdatePosition(self.currPosition)
+   
         self.cloudDbView.updateCloudMoves(moves)
 
     #-----------------------------------------------------------
@@ -569,10 +584,16 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.searchCloudMoves(fen)
         self.runEngine()
     
-    def onMoveGo(self, move_from, move_to, score=''):
+    def onBoardMove(self,  move_from,  move_to):
+        move_iccs = ChessBoard.pos_to_iccs(move_from, move_to)
+        self.onMoveGo(move_iccs)
+        
+    def onMoveGo(self,  move_iccs, score = ''):
 
         self.historyMode = True  #用historyMode保护在此期间引擎输出的move信息被忽略
-         
+        
+        move_from, move_to = Move.from_iccs(move_iccs)
+        
         self.boardView.show_move(move_from, move_to)
         
         #--------------------------------
@@ -581,10 +602,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         #board是下个走子的position了
         self.board.next_turn()
         #--------------------------------
-        
-        #fen = move.board.to_fen()
-        #move_iccs = move.to_iccs()
-
+      
         #这一行必须有,否则引擎不能工作
         hist = [x['move'] for x in self.positionList[1:]]
         move.prepare_for_engine(move.board.move_player.opposite(), hist)
@@ -919,9 +937,11 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.settings.setValue("soundVolume", self.soundVolume)
 
     def about(self):
+        from .Version import release_version
+        
         QMessageBox.about(
             self, f"关于 {self.app.APP_NAME}",
-            f"{self.app.APP_NAME_TEXT}\n棋谱管家，AI分析，云库分析，棋力提升利器\n问题反馈,联系作者：1053386709@qq.com"
+            f"{self.app.APP_NAME_TEXT} Version{release_version}\n棋谱管家，\n 云库支持:\n 引擎支持：皮卡鱼(https://pikafish.org/)\n 问题反馈,联系作者：1053386709@qq.com"
         )
 
 

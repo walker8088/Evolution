@@ -11,6 +11,19 @@ from PySide6.QtWidgets import QApplication
 
 from .Main import *
 
+def my_message_handler(mode, context, message):
+    if mode == QtCore.QtInfoMsg:
+        mode = 'Info'
+    elif mode == QtCore.QtWarningMsg:
+        mode = 'Warning'
+    elif mode == QtCore.QtCriticalMsg:
+        mode = 'critical'
+    elif mode == QtCore.QtFatalMsg:
+        mode = 'fatal'
+    else:
+        mode = 'Debug'
+    print("%s: %s (%s:%d, %s)" % (mode, message, context.file, context.line, context.file))
+
 #-----------------------------------------------------#
 class ChessApp(QApplication):
     def __init__(self):
@@ -29,12 +42,14 @@ class ChessApp(QApplication):
         splash.showMessage("Established connections")
         QCoreApplication.processEvents()
     '''
-
+    
+ 
         self.mainWin = MainWindow(self)
         self.mainWin.show()
 
 
 #-----------------------------------------------------#
 def run():
+    QtCore.qInstallMessageHandler(my_message_handler)
     app = ChessApp()
     sys.exit(app.exec_())

@@ -20,6 +20,8 @@ from PySide6.QtCore import *
 from PySide6.QtGui import *
 from PySide6.QtWidgets import *
 
+from cchess import *
+
 #-----------------------------------------------------#
 def cv2qt_image(image):
 
@@ -62,7 +64,6 @@ def get_free_memory_mb():
 def getTitle():
     return QApplication.instance().APP_NAME_TEXT
 
-
 #-----------------------------------------------------#
 class ThreadRunner(QThread):
     def __init__(self, runner):
@@ -71,7 +72,6 @@ class ThreadRunner(QThread):
 
     def run(self):
         self.runner.run()
-
 
 #-----------------------------------------------------#
 def load_eglib(lib_file):
@@ -141,8 +141,9 @@ def QueryFromCloudDB(fen):
     param = {"action": 'queryall'}
     param['board'] = fen
     
+    #数据获取
     try:
-        resp = requests.get(url, params=param)
+        resp = requests.get(url, params=param,  timeout = 3)
     except Exception as e:
         print(e)
         return []
@@ -150,8 +151,12 @@ def QueryFromCloudDB(fen):
     text = resp.text.rstrip('\0')
     if text.lower() in ['', 'unknown']:
         return []
-    
+
+    board = ChessBoard(fen)
+    move_color = board.get_move_color()    
     moves = []
+    
+    #数据分割
     try:
         steps = text.split('|')
         for it in steps:
@@ -163,5 +168,19 @@ def QueryFromCloudDB(fen):
     except Exception as e:
         #traceback.print_exc()
         traceback.print_exception(*sys.exc_info())
-        print('cloud query result:', text, "len:", len(text))    
+        print('cloud query result:', text, "len:", len(text))
+    
+    #添加中文走子标记       
+    for move in moves:
+        p_from, p_to = Move.from_iccs(move['move'])
+        move_it = board.copy().move(p_from, p_to)
+        if move_it:
+            move['text'] = move_it.to_text()
+        move['score'] = -int(move['score'])  if move_color == BLACK  else  int(move['score'])
+
+    score_base = moves[0]['score']    
+    for it in moves:
+        it['diff'] =  it['score'] - score_base
+        if move_color == BLACK :
+            it['diff'] = -it['diff']
     return  moves        

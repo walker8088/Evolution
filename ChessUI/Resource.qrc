@@ -25,5 +25,9 @@
     <file>../Images/exit.png</file>
     <file>../Images/search.png</file>
     <file>../Images/online.png</file>
+    <file>../Images/star.png</file>
+    <file>../Images/good.png</file>
+    <file>../Images/sad.png</file>
+    <file>../Images/bad.png</file>   
 </qresource>
 </RCC>
