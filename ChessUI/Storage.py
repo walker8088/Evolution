@@ -1,8 +1,29 @@
 # -*- coding: utf-8 -*-
+import sqlite3
+import json
 
+import cchess
+
+from peewee import *
+from playhouse.sqlite_ext import *
 from tinydb import TinyDB, Query
 
+#------------------------------------------------------------------------------
+book_db = SqliteExtDatabase('game/openbook.db', pragmas=(
+    ('cache_size', -1024 * 64),  # 64MB page-cache.
+    ('journal_mode', 'wal'),  # Use WAL-mode (you should always use this!).
+    #('foreign_keys', 1),
+    ))  # Enforce foreign-key constraints.
 
+#------------------------------------------------------------------------------
+class PosMove(Model):
+    fen = CharField(unique=True, index=True)
+    step = IntegerField()
+    moves = JSONField()
+   
+    class Meta:
+        database = book_db
+        
 #------------------------------------------------------------------------------
 class DataStore():
     def __init__(self):
@@ -180,7 +201,36 @@ class DataStore():
             else:
                 print('database eeeor', ret)
 
+    #------------------------------------------------------------------------------
+    #OpenBook
+    def getBookMoves(self, fen):
+        
+        board = cchess.ChessBoard(fen)
+        for b in [board, board.mirror()]:
+            try:
+                query = PosMove.get(PosMove.fen == b.to_fen())
+            except PosMove.DoesNotExist:
+                query = None
+                continue
+        
+        if (query is None )or len(query.moves) == 0:
+            return []
+            
+        move_color = b.get_move_color()        
+        ret = []
+        score_base = query.moves[0][1]
+        for it in query.moves:
+            m = {}
+            m['move'] = it[0]
+            m['score'] = it[1]
+            p_from, p_to = cchess.Move.from_iccs(m['move'])
+            move_it = b.copy().move(p_from, p_to)
+            m['text'] = move_it.to_text()
+            m['diff'] = score_base - m['score'] if move_color == cchess.RED else score_base - m['score']
+            ret.append(m)
 
+        return ret
+        
 #------------------------------------------------------------------------------
 
 

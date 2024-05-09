@@ -8,7 +8,6 @@ from cchess import *
 
 from .Utils import *
 
-
 #-----------------------------------------------------#
 class EngineManager(QObject):
 
@@ -118,7 +117,8 @@ class EngineManager(QObject):
                     if len(eg_out['move']) == 0:
                         continue
                     move_iccs = eg_out['move'][0]
-                    score_move[move_iccs] = eg_out['score']
+                    if 'score' in eg_out:
+                        score_move[move_iccs] = eg_out['score']
                     self.move_probe_signal.emit(engine_id, eg_out)
                 elif action == 'info':
                     #print(eg_out)

@@ -230,7 +230,7 @@ class ChessBoardBase(QWidget):
 
 
 #-----------------------------------------------------#
-class ChessBoardView(ChessBoardBase):
+class ChessBoardWidget(ChessBoardBase):
     try_move_signal = Signal(tuple, tuple)
 
     def __init__(self, board):

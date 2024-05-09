@@ -14,6 +14,7 @@ from cchess import *
 from .Utils import *
 from .Storage import *
 from .Resource import *
+from .BoardWidgets import *
 
 #-----------------------------------------------------#
 class DockWidget(QDockWidget):
@@ -267,7 +268,7 @@ class BoardHistoryWidget(QWidget):
         #self.parent = parent
         #self.storage = self.parent.storage
         
-        self.boardView = ChessBoardView(self)
+        self.boardView = ChessBoardWidget(self)
         self.historyView = HistoryWidget(self)
 
         splitter = QSplitter(self)

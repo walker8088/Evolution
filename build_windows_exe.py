@@ -18,4 +18,6 @@ for folder in folders:
     shutil.copytree(src_folder, dest_folder)
 
 shutil.rmtree('build')
+os.rename('.\\dist', '.\\Evolution')
+print('请到.\\Evolution目录下查看exe文件。')
 print("Done.")      

@@ -43,7 +43,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.setWindowIcon(QIcon(':Images/app.ico'))
         self.setWindowTitle(self.app.APP_NAME_TEXT)
         
-        logging.basicConfig(filename = f'{self.app.APP_NAME}.log', filemode = 'w', level=logging.DEBUG)
+        logging.basicConfig(filename = f'{self.app.APP_NAME}.log', filemode = 'w', level=logging.INFO)
                 
         if platform.system() == "Windows":
             #在Windows状态栏上正确显示图标
@@ -60,7 +60,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.board = ChessBoard()
         self.game_manager = None
 
-        self.boardView = ChessBoardView(self.board)
+        self.boardView = ChessBoardWidget(self.board)
         self.setCentralWidget(self.boardView)
         self.boardView.try_move_signal.connect(self.onBoardMove)
 
@@ -321,8 +321,11 @@ class MainWindow(QMainWindow, QtStyleTools):
         fen = game_info['fen']
         self.initGame(fen, is_only_once = True)
         if 'moves' in game_info:
-            iccs_moves = game_info['moves']
-            for iccs in iccs_moves:
+            moves = game_info['moves']
+            if not moves:
+                return
+            for move in moves:
+                iccs = move['move']
                 self.onMoveGo(iccs)
 
         self.setWindowTitle(f'{self.app.APP_NAME_TEXT} -- {name}')
@@ -519,8 +522,8 @@ class MainWindow(QMainWindow, QtStyleTools):
     def searchCloudMoves(self, fen):
     
         self.cloudDbView.clear()
-        
-        moves = QueryFromCloudDB(fen)
+        moves = self.storage.getBookMoves(fen)
+        #moves = QueryFromCloudDB(fen)
         if  len(moves) == 0:
             return
             
@@ -533,12 +536,12 @@ class MainWindow(QMainWindow, QtStyleTools):
             if 'next_moves' in prevPosition:
                 best_moves = prevPosition['next_moves']
             
-            if curr_iccs in best_moves:
-                self.currPosition['diff'] = best_moves[curr_iccs]['diff']
-                #print(self.currPosition['diff'])
-            else:
-                pass  
-        
+                if curr_iccs in best_moves:
+                    self.currPosition['diff'] = best_moves[curr_iccs]['diff']
+                    #print(self.currPosition['diff'])
+                else:
+                    pass  
+            
         #构造着法得分供下一个着法查询    
         move_dict = {}    
         for it in moves:
@@ -866,7 +869,7 @@ class MainWindow(QMainWindow, QtStyleTools):
 
         self.gameBar.addAction(self.doEndBookAct)
         self.gameBar.addAction(self.doOpenBookAct)
-        self.gameBar.addAction(self.doOnlineAct)
+        #self.gameBar.addAction(self.doOnlineAct)
         self.gameBar.addAction(self.restartAct)
         self.gameBar.addAction(self.editBoardAct)
         #self.gameBar.addAction(self.searchBoardAct)
