@@ -11,15 +11,17 @@ from peewee import *
 from playhouse.sqlite_ext import *
 
 #---------------------------------------------------------
-book_db = SqliteExtDatabase('../Game/openbook.db', pragmas=(
+book_db = SqliteExtDatabase('openbook.db', pragmas=(
     ('cache_size', -1024 * 64),  # 64MB page-cache.
     ('journal_mode', 'wal'),  # Use WAL-mode (you should always use this!).
     ('foreign_keys', 1)))  # Enforce foreign-key constraints.
 
 class PosMove(Model):
     fen = CharField(unique=True, index=True)
-    step = IntegerField()
-    moves = JSONField()
+    vkey = BigIntegerField(unique=True)
+    step  = IntegerField()
+    score = IntegerField()
+    vmoves = JSONField()
    
     class Meta:
         database = book_db
@@ -77,52 +79,79 @@ def get_pos_moves(fen):
         
 #---------------------------------------------------------------------------
 def is_fen_exist(fen):
-    query = list(PosMove.select().where(PosMove.fen == fen))
+    zhash = z_hash_fen(fen) 
+    query = list(PosMove.select().where(PosMove.vkey == zhash))
     if len(query) > 0:
         return True
     
     board = ChessBoard(fen)
     
-    fen_mirror = board.copy().mirror().to_fen()    
-    query = list(PosMove.select().where(PosMove.fen == fen_mirror))
+    fen_mirror = board.mirror().to_fen()    
+    zhash = z_hash_fen(fen_mirror)
+    query = list(PosMove.select().where(PosMove.vkey == zhash))
     if len(query) > 0:
         print('mirror found.')
         return True
-        
-    fen_swap = board.copy().swap().to_fen()    
-    query = list(PosMove.select().where(PosMove.fen == fen_swap))
-    if len(query) > 0:
-        print('swap found.')
-        return True
-   
-    fen_mirror_swap = board.copy().mirror().swap().to_fen()    
-    query = list(PosMove.select().where(PosMove.fen == fen_mirror_swap))
-    if len(query) > 0:
-        print('mirror swap found.')
-        return True
-
+ 
     return False
     
 #---------------------------------------------------------------------------
-def save_pos_move(fen, step, moves): 
-    step_limits = [10, 10,  15, 15,  20, 20,  20, 20, 20, 20,  20, 20,  20, 20,  20, 20, 20, 20,  20, 20,  20, 20]
+def clean_moves(fen, step, moves):
+    step_limits = [13, ]
     ret = []
-    records = {}
-    for m in moves:
-        if step >= len(step_limits):
-            limit = 30
+    save_moves = {}
+    score_base = moves[0]['score']
+    for i, m in enumerate(moves):
+        if step == 1:
+            if  abs(m['score']) > 5:
+                continue
         else:
-            limit = step_limits[step]
-        if  m['score'] < -limit or m['score'] > limit:
-            continue
-        records[m['move']] = m['score']
+            if i >= 10:
+                continue
+                
+            if (score_base > 5) and (m['score'] < -score_base) and (i > 7):
+                continue
+                
+            diff =  abs( m['score'] - score_base)
+            if diff > 60:
+                continue
+            
+            if score_base > 70 and i > 5:
+                continue
+                
+            if score_base > 110 and i > 3:
+                continue
+            
+            if score_base > 150 and i > 1:
+                continue
+            
+            if score_base <  -100  and i > 2:
+                continue
+            
+            if score_base <  -120 and i > 1:
+                continue
+            
+            if score_base <  -130 :
+                continue
+                
+            if (step > 6) and (i > 6):
+                continue
+            
+        save_moves[ m['move']] = m['score']    
         ret.append({'fen': fen, 'iccs': m['move'], 'score': m['score']})
+    
+    return (score_base, ret, save_moves)
+    
+def save_pos_move(fen, zhash, score, step, records): 
+    
+    if is_fen_exist(fen):
+        print('Inbook:', fen)
+        return False
         
     if len(records) > 0:    
-        PosMove.create(fen = fen, step = step, moves = records)
-        
-    return ret
-
+        PosMove.create(fen = fen, vkey = zhash, score = score, step = step, vmoves = records)   
+    return True
+    
 #---------------------------------------------------------------------------
 
 #get_pos_moves(FULL_INIT_FEN)
@@ -136,16 +165,20 @@ if not Path(table_file).is_file():
     tables = []
     fen = FULL_INIT_FEN
     step = 1 
+    
+    zhash = z_hash_fen(fen)
     moves = QueryFromCloudDB(fen)
     if len(moves) == 0:
         print("None Moves Found in CloundDB.")
         sys.exit(-1)
-    records = save_pos_move(fen, step, moves)
-    for it in records:
-        board = ChessBoard(it['fen'])
-        move = board.move_iccs(it['iccs'])
-        board.next_turn()
-        tables.append(board.to_fen())
+
+    score, records, save_moves = clean_moves(fen, step, moves)
+    if save_pos_move(fen, zhash, score, step, save_moves): 
+        for it in records:
+            board = ChessBoard(it['fen'])
+            move = board.move_iccs(it['iccs'])
+            board.next_turn()
+            tables.append(board.to_fen())
 else:
     with open(table_file, 'rb') as f:
         step, tables = pickle.load(f)
@@ -157,31 +190,32 @@ step += 1
 count = len(tables)
 for index, fen in enumerate(tables):
     #生产数据
-    if is_fen_exist(fen):
-        print(f"Step:{step} Inbook:{fen}")
-        continue
     try_count = 0        
+    zhash = z_hash_fen(fen)    
     while try_count < 5:
-        print(f"Step:{step} {index+1}/{count} Query:{fen}")
+        print(f"Step:{step} {index+1}/{count} Query:{fen} {zhash}")
         moves = QueryFromCloudDB(fen)
         if len(moves) == 0:
             time.sleep(3)
             try_count += 1
         else:
             break
-    
+   
     if len(moves) == 0:
         sys.exit(-1)
-        
-    try_count = 0        
-    records = save_pos_move(fen,step, moves)
-    board = ChessBoard(fen)
-    for it in records:
-        b = board.copy()
-        move = b.move_iccs(it['iccs'])
-        b.next_turn()
-        new_tables.append(b.to_fen())
-    #time.sleep(0.2)
+    
+    score,records, save_moves = clean_moves(fen, step, moves)
+    if save_pos_move(fen, zhash, score, step, save_moves):    
+        print(step, score, save_moves)
+        board = ChessBoard(fen)
+        for it in records:
+            b = board.copy()
+            move = b.move_iccs(it['iccs'])
+            b.next_turn()
+            new_fen = b.to_fen()
+            if not is_fen_exist(new_fen):
+                new_tables.append(new_fen)
+        #time.sleep(0.2)
     
 #保存CheckPoint
 print("table len:", len(new_tables))

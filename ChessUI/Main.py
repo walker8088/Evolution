@@ -6,14 +6,14 @@ import logging
 from pathlib import Path
 import ctypes
 import platform
-
 import yaml
+from dataclasses import dataclass
+from collections import OrderedDict
 
 from PySide6 import *
 from PySide6.QtCore import *
 from PySide6.QtGui import *
 from PySide6.QtMultimedia import *
-
 from qt_material import apply_stylesheet, QtStyleTools
 
 from cchess import *
@@ -24,7 +24,20 @@ from .Widgets import *
 from .Manager import *
 from .Storage import *
 from .Online import *
+from . import Globl
 
+#-----------------------------------------------------#
+
+@dataclass
+class Position:
+    fen: str
+    fen_prev: str
+    iccs:str
+    score: int
+    index: int
+    move_color: int
+    move: Move
+   
 #-----------------------------------------------------#
 class MainWindow(QMainWindow, QtStyleTools):
     initGameSignal = Signal(str)
@@ -43,7 +56,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.setWindowIcon(QIcon(':Images/app.ico'))
         self.setWindowTitle(self.app.APP_NAME_TEXT)
         
-        logging.basicConfig(filename = f'{self.app.APP_NAME}.log', filemode = 'w', level=logging.INFO)
+        logging.basicConfig(filename = f'{self.app.APP_NAME}.log', filemode = 'w', level = logging.INFO) #logging.DEBUG) 
                 
         if platform.system() == "Windows":
             #在Windows状态栏上正确显示图标
@@ -53,13 +66,10 @@ class MainWindow(QMainWindow, QtStyleTools):
 
         #self.apply_stylesheet(self, 'dark_teal.xml')
 
-        self.engine_manager = EngineManager(self)
-
+        Globl.engine_manager = EngineManager(self)
         self.initGameDB()
-
         self.board = ChessBoard()
-        self.game_manager = None
-
+        
         self.boardView = ChessBoardWidget(self.board)
         self.setCentralWidget(self.boardView)
         self.boardView.try_move_signal.connect(self.onBoardMove)
@@ -84,7 +94,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         #self.gameReviewView  = GameReviewWidget(self)
         #self.gameReviewView.setVisible(False)
 
-        self.engineView = ChessEngineWidget(self, self.engine_manager)
+        self.engineView = ChessEngineWidget(self)
         self.engineView.configBtn.clicked.connect(self.onConfigEngine)
         self.engineView.reviewBtn.clicked.connect(self.onReviewGame)
         self.engineView.eRedBox.stateChanged.connect(self.onRedBoxChanged)
@@ -103,9 +113,9 @@ class MainWindow(QMainWindow, QtStyleTools):
         
         self.initEngine()
         
-        self.engine_manager.best_move_signal.connect(self.onEngineBestMove)
-        self.engine_manager.move_probe_signal.connect(self.onEngineMoveProbe)
-        self.engine_manager.checkmate_signal.connect(self.onEngineCheckmate)
+        Globl.engine_manager.best_move_signal.connect(self.onEngineBestMove)
+        Globl.engine_manager.move_probe_signal.connect(self.onEngineMoveProbe)
+        Globl.engine_manager.checkmate_signal.connect(self.onEngineCheckmate)
 
         self.initSound()
         self.engine_working = False
@@ -119,8 +129,11 @@ class MainWindow(QMainWindow, QtStyleTools):
 
         self.game_mode = None
         self.clearAll()
-
-        self.engine_manager.start()
+        
+        self.cloud = CloudDB(self)
+        self.cloud.query_result_signal.connect(self.onCloudQueryResult)
+        
+        Globl.engine_manager.start()
         self.switchGameMode("open_book")
 
         #splash.finish()
@@ -140,20 +153,31 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.boardView.set_view_only(False)
     
     def initEngine(self):
-        with open(Path('Engine', 'engine.conf')) as f:
+        engine_conf_file = Path('Engine', 'engine.conf')
+        if not engine_conf_file.is_file():
+            QMessageBox.critical(self, f'{getTitle()}', f'象棋引擎配置文件[{engine_conf_file}]不存在，请确保该文件存在并配置正确.')
+            return False    
+        with open(engine_conf_file) as f:
             try:
                 engine_conf = yaml.safe_load(f)
-            except yaml.YAMLError as exc:
-                print(exc)
+            except Exception as e:
+                QMessageBox.critical(self, f'{getTitle()}', f'打开象棋引擎配置文件[{engine_conf_file}]出错：{e}')
                 return False
-        engine_path = engine_conf['engine']['run']
-        ok = self.engine_manager.load_engine(Path('Engine', engine_path))
+        if ('engine' not in engine_conf) or  ('run' not in engine_conf['engine']):
+            QMessageBox.critical(self, f'{getTitle()}', f'象棋引擎配置文件格式不正确.')
+            return False     
+        engine_path = Path('Engine', engine_conf['engine']['run'])
+        ok = Globl.engine_manager.load_engine(engine_path)
+        if not ok:
+            QMessageBox.critical(self, f'{getTitle()}', f'加载象棋引擎[{engine_path.absolute()}]出错，请确认该程序能在您的电脑上正确运行。')
         return ok
         
     def initGameDB(self):
-        self.storage = DataStore()
-        self.storage.open(Path('Game', 'localbook.db'))
-
+        Globl.storage = DataStore()
+        Globl.storage.open(Path('Game', 'localbook.db'))
+        self.openbook = OpenBook()
+        self.openbook.loadBookFile('game/openbook.db')
+        
     #-----------------------------------------------------------------------
     #声音播放
     def initSound(self):
@@ -218,7 +242,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         if (fen is not None) and (not is_only_once):
             self.init_fen = fen
 
-        self.engine_manager.stop_thinking()
+        Globl.engine_manager.stop_thinking()
         self.clearAll()
 
         if is_only_once:
@@ -314,7 +338,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             self.engineView.analysisModeBox.setChecked(False)
 
     def saveGameToDB(self):
-        self.storage.saveMovesToBook(self.positionList[1:])
+        Globl.storage.saveMovesToBook(self.positionList[1:])
 
     def loadBookGame(self, name, game_info):
     
@@ -340,32 +364,28 @@ class MainWindow(QMainWindow, QtStyleTools):
                 new_working = True
                 break
 
-        if new_working and (new_working != self.engine_working):
+        if new_working: # and (new_working != self.engine_working):
             self.engine_working = True
             self.runEngine()
 
         self.engine_working = new_working
 
     def runEngine(self):
-
+        self.engineView.clear()
+        
         if not self.engine_working:
             return
-
+        
+        fen_engine = fen = self.currPosition['fen']
         if 'move' in self.currPosition:
             fen_engine = self.currPosition['move'].to_engine_fen()
-        else:
-            fen_engine = self.currPosition['fen']
-
-        self.engine_manager.go_from(0, fen_engine)
-
+        
+        ok = Globl.engine_manager.go_from(0, fen_engine, fen)
+        if not ok:
+            QMessageBox.critical(self, f'{getTitle()}', f'象棋引擎命令出错，请确认该程序能正常运行。')
+        
     def engine_play(self, engine_id, side, yes):
-
-        if yes:
-            self.bind_engines[side] = engine_id
-
-        else:
-            self.bind_engines[side] = None
-
+        self.bind_engines[side] = engine_id if yes else None
         self.detectRunEngine()
 
     def engine_analyze(self, yes):
@@ -373,11 +393,11 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.detectRunEngine()
 
     def onConfigEngine(self):
-        params = self.engine_manager.get_config(0)
+        params = Globl.engine_manager.get_config(0)
 
         dlg = EngineConfigDialog()
         if dlg.config(params):
-            self.engine_manager.update_config(0, params)
+            Globl.engine_manager.update_config(0, params)
 
     def onRedBoxChanged(self, state):
         self.engine_play(0, RED, Qt.CheckState(state) == Qt.Checked)
@@ -411,11 +431,15 @@ class MainWindow(QMainWindow, QtStyleTools):
 
         if 'move' in self.currPosition:
             move = self.currPosition['move']
+            best_show = []
+            if 'best_show' in  self.currPosition:
+                best_show = self.currPosition['best_show']
             self.boardView.from_fen(move.board.to_fen())
-            self.boardView.show_move(move.p_from, move.p_to)
-
-        #self.boardView.from_fen(fen)
-        
+            self.boardView.show_move(move.p_from, move.p_to, best_show)
+        else:
+             self.boardView.clear_pickup()    
+             pass
+             
         self.onPositionChanged(self.currPosition, is_new = False)
         
     def deleteHistoryFollow(self, move_step):
@@ -447,7 +471,10 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.onGameOver(win_side)
 
     def onEngineBestMove(self, engine_id, move_info):
-
+        
+        #Globl.fenMoves[fen] = {'score': score_best, 'actions': cloud_moves}
+        print(move_info)
+        
         if not self.board.is_valid_iccs_move(move_info['move']):
             return
             
@@ -459,7 +486,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             else:
                 score = move_info['score']
                 self.currPosition[
-                    'score'] = score if move_color == BLACK else -score
+                    'score'] = score if move_color == RED else -score
                 self.currPosition['move_scores'] = move_info['move_scores']
 
         self.historyView.inner.onUpdatePosition(self.currPosition)
@@ -480,77 +507,55 @@ class MainWindow(QMainWindow, QtStyleTools):
 
         if self.historyMode:
             return
-            
+       
         if not self.board.is_valid_iccs_move( move_info['move']):
             return
 
-        self.onMoveGo( move_info['move'])#, move_info['score'])
-
-    def searchBookMoves(self, fen):
+        self.onMoveGo( move_info['move'], move_info['score'])
     
-        def key_func(it):
-            try:
-                return int(it['score'])
-            except ValueError:
-                return 0
-            except KeyError:
-                return 0
-
-        self.moveDbView.clear()
-        board = ChessBoard(fen)
-        book_moves = []
-
-        ret = self.storage.getAllBookMoves(fen)
-        if len(ret) == 0:
-            return
-        elif len(ret) > 1:
-            print('database error', fen, ret)
-            return
-
-        for it in ret:
-            if 'actions' not in it:
-                continue
-            for act in it['actions']:
-                act['text'] = board.copy().move_iccs(act['move']).to_text()
-                book_moves.append(act)
-                
-        is_reverse  = True if board.get_move_color() == RED else False        
-        book_moves.sort(key=key_func, reverse = is_reverse)
-        
-        self.moveDbView.updateBookMoves(book_moves)
-    
-    def searchCloudMoves(self, fen):
-    
+    def searchMoves(self, fen):
         self.cloudDbView.clear()
-        moves = self.storage.getBookMoves(fen)
-        #moves = QueryFromCloudDB(fen)
-        if  len(moves) == 0:
+        self.cloud.startQuery(fen)
+        
+    def onCloudQueryResult(self, fen, cloud_moves):
+        
+        if len(cloud_moves) == 0:
             return
-            
-        if self.currPosition['index'] >  0:
-            prevPosition = self.positionList[ self.currPosition['index'] - 1]
-            curr_iccs = self.currPosition['move'].to_iccs()
-            curr_score = moves[0]['score']
-            self.currPosition['score'] = curr_score
+         
+        score_best =list(cloud_moves.values())[0]['score']
+        move_color = get_move_color(fen)
+        Globl.fenMoves[fen] = {'score': score_best, 'actions': cloud_moves}
+       
+        if self.currPosition['fen'] != fen:
+            return
+        
+        self.currPosition['score'] = score_best
            
-            if 'next_moves' in prevPosition:
-                best_moves = prevPosition['next_moves']
+        if self.currPosition['index'] >  0:
             
+            prevPosition = self.positionList[ self.currPosition['index'] - 1]
+            fen_prev = self.currPosition['fen_prev']
+            if fen_prev in Globl.fenMoves:
+                best_moves = Globl.fenMoves[fen_prev]['actions']
+                curr_iccs = self.currPosition['move_iccs']
+                
                 if curr_iccs in best_moves:
+                    self.currPosition['score'] = best_moves[curr_iccs]['score']
                     self.currPosition['diff'] = best_moves[curr_iccs]['diff']
-                    #print(self.currPosition['diff'])
-                else:
-                    pass  
-            
-        #构造着法得分供下一个着法查询    
-        move_dict = {}    
-        for it in moves:
-            move_dict[it['move']] = {'score': it['score'], 'diff': it['diff']}
-        self.currPosition['next_moves'] = move_dict
+                    
+                elif 'score' in prevPosition :
+                     if move_color == BLACK:
+                        self.currPosition['diff'] = score_best - prevPosition['score']
+                     else:
+                        self.currPosition['diff'] = prevPosition['score'] - score_best
+                      
+                if self.currPosition['diff'] < -20:
+                    iccs = list(best_moves.keys())[0]
+                    self.currPosition['best_show'] = [(*iccs2pos(iccs), move_color, iccs)]
         
         self.historyView.inner.onUpdatePosition(self.currPosition)
-   
-        self.cloudDbView.updateCloudMoves(moves)
+        #print(list(cloud_moves.values())[:5])    
+        self.cloudDbView.updateCloudMoves(cloud_moves.values())
 
     #-----------------------------------------------------------
     #走子核心逻辑
@@ -558,9 +563,22 @@ class MainWindow(QMainWindow, QtStyleTools):
         
         self.currPosition = position        
         fen = position['fen']
-        
+         
         if is_new:
-            self.positionList.append(position)
+            if len(self.positionList) > 1:
+                fen_prev = position['fen_prev']
+                if fen_prev in Globl.fenMoves:
+                        best_score = Globl.fenMoves[fen_prev]['score']
+                        best_moves = Globl.fenMoves[fen_prev]['actions']
+                        curr_iccs = position['move_iccs']
+                        if curr_iccs in best_moves:
+                            position['diff'] = best_moves[curr_iccs]['diff']
+                        else:
+                            if position['score'] !=  None :
+                                position['diff'] = position['score'] - best_score
+                                #print(self.currPosition['diff'])
+                                
+            self.positionList.append(position)                        
             self.historyView.inner.onNewPostion(self.currPosition)
             
             if 'move' in position:
@@ -580,28 +598,25 @@ class MainWindow(QMainWindow, QtStyleTools):
                     msg = ""
                 self.statusBar().showMessage(msg)
 
+        self.engineView.clear()        
+        self.moveDbView.onPositionChanged(position, is_new)
         self.boardView.from_fen(fen)    
-        self.engineView.clear()
+        self.detectRunEngine()
+        self.searchMoves(fen)
         
-        self.searchBookMoves(fen)
-        self.searchCloudMoves(fen)
-        self.runEngine()
-    
     def onBoardMove(self,  move_from,  move_to):
-        move_iccs = ChessBoard.pos_to_iccs(move_from, move_to)
+        move_iccs = pos2iccs(move_from, move_to)
         self.onMoveGo(move_iccs)
         
-    def onMoveGo(self,  move_iccs, score = ''):
+    def onMoveGo(self,  move_iccs, score = None):
 
         self.historyMode = True  #用historyMode保护在此期间引擎输出的move信息被忽略
         
-        move_from, move_to = Move.from_iccs(move_iccs)
-        
-        self.boardView.show_move(move_from, move_to)
+        self.boardView.show_move_iccs(move_iccs)
         
         #--------------------------------
         #self.board在做了这个move动作后，棋子已经更新到新位置了
-        move = self.board.move(move_from, move_to)
+        move = self.board.move_iccs(move_iccs)
         #board是下个走子的position了
         self.board.next_turn()
         #--------------------------------
@@ -615,6 +630,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         position = {
             'fen': self.board.to_fen(),
             'fen_prev': move.board.to_fen(),
+            'move_iccs':  move_iccs,
             'move': move,
             'score': score,
             'index': len(self.positionList),
@@ -706,14 +722,14 @@ class MainWindow(QMainWindow, QtStyleTools):
             self,
             "保存对局文件",
             "",
-            "象棋演播室文件(*.xqf);;PGN文件(*.pgn)",
+            "PGN文件(*.pgn)",
             options=options)
 
         if not fileName:
             return
 
         ext = Path(fileName).suffix.lower()
-        print(ext)
+        #print(ext)
 
     def onImportEndBook(self):
         options = QFileDialog.Options()
@@ -728,7 +744,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             return
 
         lib_name = Path(fileName).stem
-        if self.storage.isEndBookExist(lib_name):
+        if Globl.storage.isEndBookExist(lib_name):
             msgbox = TimerMessageBox(f"残局库[{lib_name}]系统中已经存在，不能重复导入。",
                                      timeout=2)
             msgbox.exec()
@@ -739,7 +755,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         #for it in games:
         #    print(it['name'])
 
-        self.storage.saveEndBook(lib_name, games)
+        Globl.storage.saveEndBook(lib_name, games)
         #self.endBookView.update_fen()
 
     #------------------------------------------------------------------------------
@@ -808,11 +824,6 @@ class MainWindow(QMainWindow, QtStyleTools):
                                    statusTip="我的收藏",
                                    triggered=self.onShowBookmark)
 
-        self.upgradeAct = QAction("升级到专业版",
-                                  self,
-                                  statusTip="升级到专业版",
-                                  triggered=self.onUpgradeToProfessional)
-
         self.exitAct = QAction(QIcon(':Images/exit.png'),
                                "退出程序",
                                self,
@@ -848,7 +859,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.winMenu.addAction(self.showMoveSoundAct)
 
         self.helpMenu = self.menuBar().addMenu("帮助")
-        self.helpMenu.addAction(self.upgradeAct)
+        #self.helpMenu.addAction(self.upgradeAct)
         self.helpMenu.addAction(self.aboutAct)
 
     def createToolBars(self):
@@ -898,9 +909,7 @@ class MainWindow(QMainWindow, QtStyleTools):
     def onShowMoveSound(self, yes):
         self.soundVolume = 30 if yes else 0
 
-    def onUpgradeToProfessional(self):
-        pass
-
+  
     def center(self):
         screen = QDesktopWidget().screenGeometry()
         size = self.geometry()
@@ -909,8 +918,8 @@ class MainWindow(QMainWindow, QtStyleTools):
 
     def closeEvent(self, event):
         self.writeSettings()
-        self.engine_manager.stop()
-        self.storage.close()
+        Globl.engine_manager.stop()
+        Globl.storage.close()
 
     def readSettings(self):
         self.settings = QSettings('Company', self.app.APP_NAME)
@@ -944,8 +953,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         
         QMessageBox.about(
             self, f"关于 {self.app.APP_NAME}",
-            f"{self.app.APP_NAME_TEXT} Version{release_version}\n棋谱管家，\n 云库支持:\n 引擎支持：皮卡鱼(https://pikafish.org/)\n 问题反馈,联系作者：1053386709@qq.com"
+            f"{self.app.APP_NAME_TEXT} Version {release_version}\n个人棋谱管家.\n 云库支持：https://www.chessdb.cn/\n 引擎支持：皮卡鱼(https://pikafish.org/)\n\n 联系作者：1053386709@qq.com\n QQ 进群：101947824\n"
         )
-
 
 #-----------------------------------------------------#

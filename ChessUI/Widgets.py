@@ -3,6 +3,7 @@
 import os
 import sys
 import time
+from collections import OrderedDict
 
 from PySide6 import *
 from PySide6.QtCore import *
@@ -15,7 +16,8 @@ from .Utils import *
 from .Storage import *
 from .Resource import *
 from .BoardWidgets import *
-
+from . import Globl
+ 
 #-----------------------------------------------------#
 class DockWidget(QDockWidget):
     def __init__(self, parent, dock_areas):
@@ -41,8 +43,7 @@ class HistoryWidget(QWidget):
 
         self.title = "棋谱记录"
         self.parent = parent
-        self.storage = self.parent.storage
-
+        
         self.positionView = QTreeWidget()
         self.positionView.setColumnCount(1)
         self.positionView.setHeaderLabels(["序号", "着法", "得分", '', "备注"])
@@ -113,12 +114,20 @@ class HistoryWidget(QWidget):
         menu = QMenu(self)
 
         clearFollowAction = menu.addAction("删除后续着法")
-
+        menu.addSeparator()
+        copyFenAction =  menu.addAction("复制(Fen)")
         action = menu.exec_(self.mapToGlobal(event.pos()))
 
         if action == clearFollowAction:
             self.onClearFollowBtnClick()
-
+        elif action == copyFenAction:
+            pos = self.getCurrPosition()
+            #print(pos)
+            if pos:
+                cb = QApplication.clipboard()
+                cb.clear()
+                cb.setText(pos['fen'])
+                    
     def onClearFollowBtnClick(self):
 
         if self.selectionIndex < 0:
@@ -173,7 +182,7 @@ class HistoryWidget(QWidget):
 
         fen = self.parent.board.to_fen()
 
-        if self.storage.isFenInBookmark(fen):
+        if Globl.storage.isFenInBookmark(fen):
             msgbox = TimerMessageBox("收藏中已经有该局面存在.", timeout = 1)
             msgbox.exec()
             return
@@ -182,12 +191,12 @@ class HistoryWidget(QWidget):
         if not ok:
             return
 
-        if self.storage.isNameInBookmark(name):
+        if Globl.storage.isNameInBookmark(name):
             msgbox = TimerMessageBox(f'收藏中已经有[{name}]存在.', timeout = 1)
             msgbox.exec()
             return
 
-        self.storage.saveBookmark(name, fen)
+        Globl.storage.saveBookmark(name, fen)
         self.parent.bookmarkView.updateBookmarks()
 
     def onAddBookmarkBookBtnClick(self):
@@ -198,13 +207,19 @@ class HistoryWidget(QWidget):
         if not ok:
             return
 
-        if self.storage.isNameInBookmark(name):
+        if Globl.storage.isNameInBookmark(name):
             QMessageBox.information(None, f'{getTitle()}, 收藏中已经有[{name}]存在.')
             return
 
-        self.storage.saveBookmark(name, fen, moves)
+        Globl.storage.saveBookmark(name, fen, moves)
         self.parent.bookmarkView.updateBookmarks()
-
+    
+    def getCurrPosition(self):
+        if self.selectionIndex < 0:
+            return None
+        item = self.items[self.selectionIndex]
+        return item.data(1, Qt.UserRole)
+        
     def onNewPostion(self, position):
         item = QTreeWidgetItem(self.positionView)
         item.setTextAlignment(2, Qt.AlignRight)
@@ -218,9 +233,9 @@ class HistoryWidget(QWidget):
                 self.updatePositionItem(it, position)
 
     def updatePositionItem(self, item, position):
-
+        
         index = position['index']
-        #print(index)
+        
         if index % 2 == 1:
             item.setText(0, f"{index//2+1}.")
 
@@ -230,15 +245,15 @@ class HistoryWidget(QWidget):
         else:
             item.setText(1, '=开始=')
 
-        if 'score' in position:
+        if (index > 0) and ('score'in position) and  (position['score'] != None):
             item.setText(2, str(position['score']))
 
         if 'diff' in position:
             diff = position['diff']
-            print(diff)
+            #print(diff)
             if diff > -8:
                 item.setIcon(3, QIcon(":Images/star.png"))
-            elif diff > -45:
+            elif diff > -55:
                 item.setIcon(3, QIcon(":Images/good.png"))
             elif diff > -90:
                 item.setIcon(3, QIcon(":Images/sad.png"))
@@ -246,7 +261,7 @@ class HistoryWidget(QWidget):
                 item.setIcon(3, QIcon(":Images/bad.png"))
             
         item.setData(0, Qt.UserRole, index)
-        #item.setData(1, Qt.UserRole, move)
+        item.setData(1, Qt.UserRole, position)
         self.selectionIndex = index
         self.positionView.setCurrentItem(item)
 
@@ -266,7 +281,6 @@ class BoardHistoryWidget(QWidget):
 
         #self.title = "棋谱记录"
         #self.parent = parent
-        #self.storage = self.parent.storage
         
         self.boardView = ChessBoardWidget(self)
         self.historyView = HistoryWidget(self)
@@ -295,13 +309,12 @@ class DockHistoryWidget(DockWidget):
 
 #-----------------------------------------------------#
 class ChessEngineWidget(QDockWidget):
-    def __init__(self, parent, engine_mgr):
+    def __init__(self, parent):
 
         super().__init__("引擎", parent)
 
         self.parent = parent
-        self.engine_mgr = engine_mgr
-        self.storage = parent.storage
+        #Globl.engine_manager = engine_mgr
         
         self.dockedWidget = QWidget(self)
         self.setWidget(self.dockedWidget)
@@ -342,9 +355,10 @@ class ChessEngineWidget(QDockWidget):
         self.reviewBtn = QPushButton("复盘分析")
 
         hbox.addWidget(self.configBtn, 0)
-        hbox.addWidget(QLabel(' 线程数:'), 0)
+        hbox.addWidget(QLabel('  '), 0)
         hbox.addWidget(self.threadsSpin, 0)
-        hbox.addWidget(QLabel(' 存储:'), 0)
+        #hbox.addWidget(QLabel(' 存储:'), 0)
+        hbox.addWidget(QLabel('线程  '), 0)
         hbox.addWidget(self.memorySpin, 0)
         hbox.addWidget(QLabel('MB  分支:'), 0)
         hbox.addWidget(self.multiPVSpin, 0)
@@ -368,7 +382,7 @@ class ChessEngineWidget(QDockWidget):
 
         vbox.addWidget(self.positionView)
 
-        self.engine_mgr.engine_ready_signal.connect(self.onEngineReady)
+        Globl.engine_manager.engine_ready_signal.connect(self.onEngineReady)
         self.branchs = []
                 
     def contextMenuEvent(self, event):
@@ -380,20 +394,20 @@ class ChessEngineWidget(QDockWidget):
             self.onViewBranch()
 
     def onThreadsChanged(self, num):
-        self.engine_mgr.set_engine_option(0, 'Threads', num)
+        Globl.engine_manager.set_engine_option(0, 'Threads', num)
         self.saveEngineOptions()
         
     def onMemoryChanged(self, num):
-        self.engine_mgr.set_engine_option(0, 'Hash', num)
+        Globl.engine_manager.set_engine_option(0, 'Hash', num)
         self.saveEngineOptions()
         
     def onMultiPVChanged(self, num):
-        self.engine_mgr.set_engine_option(0, 'MultiPV', num)
+        Globl.engine_manager.set_engine_option(0, 'MultiPV', num)
         self.saveEngineOptions()
         
     def saveEngineOptions(self): 
         options = {}
-        self.storage.saveEngineOptions(0, options)
+        Globl.storage.saveEngineOptions(0, options)
      
     def onViewBranch(self):
         self.parent.onViewBranch()
@@ -411,7 +425,7 @@ class ChessEngineWidget(QDockWidget):
 
         moves_text = []
         for step_str in move_info["move"]:
-            move_from, move_to = Move.from_iccs(step_str)
+            move_from, move_to = iccs2pos(step_str)
             if board.is_valid_move(move_from, move_to):
                 move = board.move(move_from, move_to)
                 moves_text.append(move.to_text())
@@ -461,7 +475,7 @@ class ChessEngineWidget(QDockWidget):
 
         self.engineLabel.setText(name)
         
-        self.engine_mgr.set_config(engine_id, {'depth': 24})
+        Globl.engine_manager.set_config(engine_id, {'depth': 24})
         
         self.onThreadsChanged(self.threadsSpin.value())
         self.onMemoryChanged(self.memorySpin.value())
@@ -471,7 +485,7 @@ class ChessEngineWidget(QDockWidget):
         self.positionView.clear()
 
     def sizeHint(self):
-        return QSize(500, 150)
+        return QSize(500, 100)
 
 #------------------------------------------------------------------#
 class MoveDbWidget(QDockWidget):
@@ -482,7 +496,6 @@ class MoveDbWidget(QDockWidget):
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
 
         self.parent = parent
-        self.storage = parent.storage
         
         self.moveListView = QTreeWidget()
         self.moveListView.setColumnCount(1)
@@ -506,20 +519,65 @@ class MoveDbWidget(QDockWidget):
         menu = QMenu(self)
         importFollowAction = menu.addAction("导入分支(单选)")
         #importAllFollowAction = menu.addAction("导入分支(全部)")
-        delFollowAction = menu.addAction("删除该分支")
+        menu.addSeparator()
+        delBranchAction = menu.addAction("!删除该分支!")
         action = menu.exec_(self.mapToGlobal(event.pos()))
         if action == importFollowAction:
             self.onImportFollow()
-        elif action == delFollowAction:
-            self.onDeleteFollow()
+        elif action == delBranchAction:
+            self.onDeleteBranch()
 
     def onImportFollow(self):
         self.importFollowMode = True
         self.onSelectIndex(0)
     
-    def onDeleteFollow(self):
-        pass
-        
+    def onDeleteBranch(self):
+        item = self.moveListView.currentItem()
+        move_info = item.data(0, Qt.UserRole)
+        fen = move_info['fen']
+        iccs = move_info['move']
+        board = ChessBoard()
+        todoList = [(fen, iccs)]
+        todoListNew = []
+        branchs = 1
+        delFens = OrderedDict()
+        if self.moveListView.topLevelItemCount() == 1:
+            delFens[fen] = None
+        else:
+             delFens[fen] = iccs
+            
+        while len(todoList) > 0:
+            for fen, iccs in todoList:
+                board.from_fen(fen)
+                move = board.move_iccs(iccs)
+                board.next_turn()
+                new_fen = board.to_fen()
+                record = Globl.storage.getAllBookMoves(new_fen)
+                if len(record) > 0:
+                    #只删除有后续着法记录
+                    if new_fen not in delFens:
+                        delFens[new_fen] = None
+                for it in record:
+                    #assert it['fen'] == new_fen
+                    actions = it['actions']
+                    if len(actions) > 1:
+                        branchs = branchs + len(actions) - 1
+                    for act in actions:
+                        #print(act)
+                        todoListNew.append((new_fen, act['move']))
+                        
+            if (len(todoListNew) == 0):
+                break
+            todoList = todoListNew
+            todoListNew = []
+                  
+        ok = QMessageBox.question(self, getTitle(), f"此局面后续有{branchs}个分支，{len(delFens)}个局面, 您确定要全部删除吗?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if ok == QMessageBox.Yes:
+            for fen, iccs in delFens.items():
+                Globl.storage.delBookMoves(fen, iccs)
+            QMessageBox.information(self, getTitle(), f"已删除。")
+            self.onPositionChanged(self.curr_pos, is_new = False)
+            
     def onImportFollowContinue(self):
         if self.moveListView.topLevelItemCount() != 1:
             self.importFollowMode = False
@@ -527,7 +585,43 @@ class MoveDbWidget(QDockWidget):
         item = self.moveListView.topLevelItem(0)
         self.moveListView.setCurrentItem(item, 0)
         self.onSelectIndex(0)
+    
+    def onPositionChanged(self, position, is_new):  
 
+        def key_func(it):
+            try:
+                return int(it['score'])
+            except ValueError:
+                return 0
+            except KeyError:
+                return 0
+        
+        self.curr_pos = position
+        fen = position['fen']
+        
+        self.clear()
+        board = ChessBoard(fen)
+        book_moves = []
+
+        ret = Globl.storage.getAllBookMoves(fen)
+        if len(ret) == 0:
+            return
+        elif len(ret) > 1:
+            print('database error', fen, ret)
+        for it in ret:
+            if 'actions' not in it:
+                continue
+            for act in it['actions']:
+                act['fen'] = fen
+                act['text'] = board.copy().move_iccs(act['move']).to_text()
+                book_moves.append(act)
+                
+        is_reverse  = True if board.get_move_color() == RED else False        
+        book_moves.sort(key=key_func, reverse = is_reverse)
+        
+        self.updateBookMoves(book_moves)
+    
+        
     def updateBookMoves(self, book_moves):
         self.moveListView.clear()
         self.position_len = len(book_moves)
@@ -565,13 +659,11 @@ class CloudDbWidget(QDockWidget):
     #move_select_signal = Signal(int)
 
     def __init__(self, parent):
-        super().__init__("云库", parent)
+        super().__init__("开局库", parent)
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
 
         self.parent = parent
-        self.storage = parent.storage
-        
-        
+         
         self.cloudMovesView = QTreeWidget()
         self.cloudMovesView.setColumnCount(1)
         self.cloudMovesView.setHeaderLabels(["备选着法", "得分", '', '备注'])
@@ -608,7 +700,10 @@ class CloudDbWidget(QDockWidget):
             item.setText(0, move_info['text'])    
             item.setText(1, str(move_info['score']))
             item.setTextAlignment(1, Qt.AlignRight)
-
+            if 'memo' in move_info:
+                item.setText(2, str(move_info['memo']))
+                item.setTextAlignment(2, Qt.AlignCenter)
+            
             item.setData(0, Qt.UserRole, move_info)
        
     def onSelectIndex(self, index):
@@ -628,8 +723,7 @@ class EndBookWidget(QDockWidget):
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
 
         self.parent = parent
-        self.storage = parent.storage
-
+        
         self.dockedWidget = QWidget(self)
         self.setWidget(self.dockedWidget)
 
@@ -663,7 +757,7 @@ class EndBookWidget(QDockWidget):
         self.curr_book_name = ''
         self.curr_game = None
 
-        self.books = self.storage.getAllEndBooks()
+        self.books = Globl.storage.getAllEndBooks()
         self.libCombo.clear()
         self.libCombo.addItems(self.books.keys())
 
@@ -766,8 +860,7 @@ class BookmarkWidget(QDockWidget):
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
 
         self.parent = parent
-        self.storage = parent.storage
-
+        
         self.bookmarks = []
         self.curr_bookmark_type = self.bookmark_type[0]
 
@@ -807,7 +900,7 @@ class BookmarkWidget(QDockWidget):
     def updateBookmarks(self):
 
         self.bookmarkView.clear()
-        self.bookmarks = self.storage.getAllBookmarks()
+        self.bookmarks = Globl.storage.getAllBookmarks()
 
         if self.curr_bookmark_type == self.bookmark_type[0]:
             filtered = filter(lambda x: 'moves' not in x, self.bookmarks)
@@ -833,7 +926,7 @@ class BookmarkWidget(QDockWidget):
         fen = item.data(Qt.UserRole)['fen']
 
         if action == removeAction:
-            self.storage.removeBookmark(old_name)
+            Globl.storage.removeBookmark(old_name)
             self.updateBookmarks()
         elif action == renameAction:
             new_name, ok = QInputDialog.getText(self,
@@ -841,7 +934,7 @@ class BookmarkWidget(QDockWidget):
                                                 '请输入新名称:',
                                                 text=old_name)
             if ok:
-                self.storage.changeBookmarkName(fen, new_name)
+                Globl.storage.changeBookmarkName(fen, new_name)
                 self.updateBookmarks()
 
     def onBookmarkChanged(self, book_name):
@@ -868,8 +961,7 @@ class MyGameWidget(QDockWidget):
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
 
         self.parent = parent
-        self.storage = parent.storage
-
+       
         self.dockedWidget = QWidget(self)
         self.setWidget(self.dockedWidget)
 
@@ -889,7 +981,7 @@ class MyGameWidget(QDockWidget):
     def updateMyGames(self):
 
         self.bookView.clear()
-        self.games = self.storage.getAllMyGames()
+        self.games = Globl.storage.getAllMyGames()
         for i, it in enumerate(self.games):
             item = QListWidgetItem()
             item.setText(it['name'])
@@ -909,7 +1001,7 @@ class MyGameWidget(QDockWidget):
         fen = item.data(Qt.UserRole)['fen']
 
         if action == removeAction:
-            self.storage.removeMyBook(old_name)
+            Globl.storage.removeMyBook(old_name)
             self.updateMyGames()
         elif action == renameAction:
             new_name, ok = QInputDialog.getText(self,
@@ -917,7 +1009,7 @@ class MyGameWidget(QDockWidget):
                                                 '请输入新名称:',
                                                 text=old_name)
             if ok:
-                self.storage.changeMyBookName(old_name, new_name)
+                Globl.storage.changeMyBookName(old_name, new_name)
                 self.updateMyGames()
 
     def onDoubleClicked(self):

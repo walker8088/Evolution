@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import sys, time
+import math
 
 from PySide6 import *
 from PySide6.QtCore import *
@@ -26,7 +27,7 @@ def scaled_image(img, scale):
     return new_img
 
 #-----------------------------------------------------#
-class ChessBoardBase(QWidget):
+class ChessBoardBaseWidget(QWidget):
     def __init__(self, board):
 
         super().__init__()
@@ -40,6 +41,7 @@ class ChessBoardBase(QWidget):
 
         self.base_board_img = QPixmap(':Images/board.png')
         self.base_select_img = QPixmap(':Images/select.png')
+        self.base_step_img = QPixmap(':Images/step.png')
         self.base_point_img = QPixmap(':Images/point.png')
         self.base_done_img = QPixmap(':Images/done.png')
         self.base_over_img = QPixmap(':Images/over.png')
@@ -81,6 +83,7 @@ class ChessBoardBase(QWidget):
 
         self._board_img = scaled_image(self.base_board_img, self.paint_scale)
         self.select_img = scaled_image(self.base_select_img, self.paint_scale)
+        self.step_img = scaled_image(self.base_step_img, self.paint_scale)
         self.point_img = scaled_image(self.base_point_img, self.paint_scale)
         self.done_img = scaled_image(self.base_done_img, self.paint_scale)
         self.over_img = scaled_image(self.base_over_img, self.paint_scale)
@@ -90,9 +93,10 @@ class ChessBoardBase(QWidget):
             self.pieces_img[name] = scaled_image(self.base_pieces_img[name],
                                                  self.paint_scale)
 
-    def from_fen(self, fen_str=''):
+    def from_fen(self, fen_str, clear = False):
         self._board.from_fen(fen_str)
-        self.clear_pickup()
+        if clear:
+            self.clear_pickup()
 
     def to_fen(self):
         return self._board.to_fen()
@@ -104,7 +108,7 @@ class ChessBoardBase(QWidget):
         self.last_pickup = None
         self.update()
 
-    def logic_to_board(self, x, y):
+    def logic_to_board(self, x, y, bias = 0):
 
         if self.flip_board:
             x = 8 - x
@@ -116,7 +120,7 @@ class ChessBoardBase(QWidget):
         board_x = self.boader + x * self.space + self.start_x
         board_y = self.boader + (9 - y) * self.space + self.start_y
 
-        return (board_x, board_y)
+        return (board_x + bias, board_y + bias)
 
     def board_to_logic(self, bx, by):
 
@@ -226,11 +230,11 @@ class ChessBoardBase(QWidget):
         pass
 
     def sizeHint(self):
-        return QSize(self.base_board_width + 30, self.base_board_height + 10)
+        return QSize(self.base_board_width + 20, self.base_board_height + 10)
 
 
 #-----------------------------------------------------#
-class ChessBoardWidget(ChessBoardBase):
+class ChessBoardWidget(ChessBoardBaseWidget):
     try_move_signal = Signal(tuple, tuple)
 
     def __init__(self, board):
@@ -241,10 +245,12 @@ class ChessBoardWidget(ChessBoardBase):
         self.text = ''
         self.view_only = False
 
+        self.move_pieces = []
         self.last_pickup = None
         self.last_pickup_moves = []
         self.move_steps_show = []
-
+        self.best_moves = []
+        
         self.done = []
 
         self.move_steps_show = []
@@ -258,15 +264,22 @@ class ChessBoardWidget(ChessBoardBase):
     def set_view_only(self, yes):
         self.view_only = yes
 
-    def show_move(self, p_from, p_to):
+    def show_move_iccs(self, iccs):
+        self.show_move(*iccs2pos(iccs))
+        
+    def show_move(self, p_from, p_to, best_moves = []):
+    
+        self.move_pieces = (p_from, p_to)
         self.last_pickup = None
         self.last_pickup_moves = []
+        self.best_moves = best_moves
         self.make_log_step_move(p_from, p_to)
-        self.last_move = (p_from, p_to)
-
+        
     def clear_pickup(self):
+        self.move_pieces = []
         self.last_pickup = None
         self.last_pickup_moves = []
+        self.best_moves = []
         self.update()
 
     def make_log_step_move(self, p_from, p_to):
@@ -298,20 +311,19 @@ class ChessBoardWidget(ChessBoardBase):
         super().paintEvent(ev)
         
         painter = QPainter(self)
-        '''
-        if self.text != '':
-            painter.setPen(QColor(34, 168, 3))
-            painter.setFont(QFont('Decorative', 16))
-            er = ev.rect()
-            rect = QRect(er.left(), er.top(), er.width(), 30) 
-            painter.drawText(rect, Qt.AlignCenter, self.text)
-    '''
+
         for move_it in self.last_pickup_moves:
             board_x, board_y = self.logic_to_board(*move_it[1])
             painter.drawPixmap(
                 QPoint(board_x, board_y), self.point_img,
                 QRect(0, 0, self.piece_size - 1, self.piece_size - 1))
-
+        
+        for pos in  self.move_pieces:
+            board_x, board_y = self.logic_to_board(*pos)
+            painter.drawPixmap(
+                QPoint(board_x, board_y), self.step_img,
+                QRect(0, 0, self.piece_size - 1, self.piece_size - 1))
+        
         if len(self.move_steps_show) > 0:
             piece, step_point = self.move_steps_show.pop(0)
 
@@ -324,10 +336,56 @@ class ChessBoardWidget(ChessBoardBase):
                 QPoint(step_point[0], step_point[1]),
                 self.pieces_img[piece.fench.lower()],
                 QRect(offset, 0, self.piece_size - 1, self.piece_size - 1))
-            #painter.drawPixmap(
-            #    QPoint(step_point[0], step_point[1]), self.select_img,
-            #    QRect(offset, 0, 52, 52))
+        
+        for p_from, p_to, p_color, iccs in self.best_moves: 
+            #print(iccs)
+            r = self.piece_size//2
+            from_x, from_y = self.logic_to_board(*p_from,r)   
+            to_x, to_y = self.logic_to_board(*p_to, r)   
+            
+            if p_color == RED:
+                color = Qt.darkGreen
+            else:
+                color = Qt.darkRed
+            
+            color = Qt.darkGreen
+            
+            painter.setPen(QPen(color,5))#,  Qt.DotLine))    
+            painter.drawLine(from_x, from_y, to_x, to_y)
+            painter.drawEllipse(QPoint(from_x, from_y), r, r)
+            #painter.setBrush(QBrush(color, Qt.CrossPattern))
+            painter.drawEllipse(QPoint(to_x, to_y), r//2, r//2)
+            
+            #arrow = self.arrowCalc(QPoint(from_x,from_y), QPoint(to_x,to_x))
+            #if arrow:
+            #    print(arrow)
+            #    painter.drawPolyline(arrow)
+            
+    def arrowCalc(self, startPoint, endPoint): 
 
+        dx, dy = startPoint.x() - endPoint.x(), startPoint.y() - endPoint.y()
+
+        leng = math.sqrt(dx ** 2 + dy ** 2)
+        normX, normY = dx / leng, dy / leng  # normalize
+
+        # perpendicular vector
+        perpX = -normY
+        perpY = normX
+        
+        _arrow_height = 10
+        _arrow_width = 10
+        
+        leftX = endPoint.x() + _arrow_height * normX + _arrow_width * perpX
+        leftY = endPoint.y() + _arrow_height * normY + _arrow_width * perpY
+
+        rightX = endPoint.x() +_arrow_height * normX - _arrow_width * perpX
+        rightY = endPoint.y() + _arrow_height * normY - _arrow_width * perpY
+
+        point2 = QPoint(leftX, leftY)
+        point3 = QPoint(rightX, rightY)
+
+        return QPolygon([point2, endPoint, point3])
+        
     def mousePressEvent(self, mouseEvent):
 
         if self.view_only:
@@ -416,7 +474,7 @@ class ChessBoardWidget(ChessBoardBase):
 
 
 #---------------------------------------------------------#
-class ChessBoardEditWidget(ChessBoardBase):
+class ChessBoardEditWidget(ChessBoardBaseWidget):
     fenChangedSignal = Signal(str)
 
     def __init__(self):
@@ -425,11 +483,8 @@ class ChessBoardEditWidget(ChessBoardBase):
 
         self.last_selected = None
         self._new_pos = None
-
-        self.createContextMenu()
-
-    def createContextMenu(self):
-
+        self.fenChangedSignal.connect(self.onFenChanged)
+        
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.showContextMenu)
 
@@ -447,7 +502,12 @@ class ChessBoardEditWidget(ChessBoardBase):
         fen_str = self._board.to_fen()
 
         self.contextMenu = QMenu(self)
-
+        
+        copyAction = self.contextMenu.addAction('复制(Fen)')
+        copyAction.triggered.connect(self.onCopy)
+        pasteAction = self.contextMenu.addAction('粘贴(Fen)')
+        pasteAction.triggered.connect(self.onPaste)
+        self.contextMenu.addSeparator()
         actionDel = self.contextMenu.addAction('删除')
         if not self.last_selected:
             actionDel.setEnabled(False)
@@ -532,7 +592,16 @@ class ChessBoardEditWidget(ChessBoardBase):
 
         self.contextMenu.move(QCursor.pos())
         self.contextMenu.show()
-
+    
+    def onCopy(self):
+         cb = QApplication.clipboard()
+         cb.clear()
+         cb.setText(self.to_fen())
+                
+    def onPaste(self):
+         fen = QApplication.clipboard().text()
+         self.from_fen(fen)
+         
     def onActionDel(self):
         if self.last_selected:
             self.removePiece(self.last_selected)
@@ -594,7 +663,7 @@ class ChessBoardEditWidget(ChessBoardBase):
     def from_fen(self, fen):
         super().from_fen(fen)
         self.fenChangedSignal.emit(self.to_fen())
-
+    
     def set_move_color(self, color):
         self._board.set_move_color(color)
         self.fenChangedSignal.emit(self.to_fen())
@@ -609,7 +678,10 @@ class ChessBoardEditWidget(ChessBoardBase):
     def removePiece(self, pos):
         self._board.remove_fench(pos)
         self.fenChangedSignal.emit(self.to_fen())
-
+    
+    def onFenChanged(self, fen):
+        self.update()
+        
     def paintEvent(self, ev):
         super().paintEvent(ev)
         #painter = QPainter(self)
@@ -681,12 +753,12 @@ class ScreenBoardView(QWidget):
     def to_fen(self):
         return self._board.to_fen()
 
-    def logic_to_board(self, x, y):
+    def logic_to_board(self, x, y,  bias = 0):
 
         board_x = self.boader + x * self.space + self.start_x
         board_y = self.boader + (9 - y) * self.space + self.start_y
 
-        return (board_x, board_y)
+        return (board_x + bias, board_y + bias)
 
     def board_to_logic(self, bx, by):
 
