@@ -251,11 +251,11 @@ class HistoryWidget(QWidget):
         if 'diff' in position:
             diff = position['diff']
             #print(diff)
-            if diff > -8:
+            if diff > -40:
                 item.setIcon(3, QIcon(":Images/star.png"))
-            elif diff > -55:
+            elif diff > -80:
                 item.setIcon(3, QIcon(":Images/good.png"))
-            elif diff > -90:
+            elif diff > -120:
                 item.setIcon(3, QIcon(":Images/sad.png"))
             else:
                 item.setIcon(3, QIcon(":Images/bad.png"))
@@ -323,7 +323,15 @@ class ChessEngineWidget(QDockWidget):
 
         self.engineLabel = QLabel()
         self.engineLabel.setAlignment(Qt.AlignCenter)
-
+        
+        self.stepDepthSpin = QSpinBox()
+        self.stepDepthSpin.setRange(1, 50)
+        self.stepDepthSpin.setValue(22)
+        
+        self.stepTimeSpin = QSpinBox()
+        self.stepDepthSpin.setRange(1, 3000)
+        self.stepDepthSpin.setValue(20)
+        
         self.threadsSpin = QSpinBox()
         max_threads =  os.cpu_count()
         self.threadsSpin.setSingleStep(1)
@@ -354,11 +362,16 @@ class ChessEngineWidget(QDockWidget):
         self.configBtn = QPushButton("参数")
         self.reviewBtn = QPushButton("复盘分析")
 
-        hbox.addWidget(self.configBtn, 0)
-        hbox.addWidget(QLabel('  '), 0)
+        #hbox.addWidget(self.configBtn, 0)
+        
+        hbox.addWidget(QLabel('深度:'), 0)
+        hbox.addWidget(self.stepDepthSpin, 0)
+        hbox.addWidget(QLabel(' 步时(秒):'), 0)
+        hbox.addWidget(self.stepTimeSpin, 0)
+        
+        hbox.addWidget(QLabel(' 线程:'), 0)
         hbox.addWidget(self.threadsSpin, 0)
-        #hbox.addWidget(QLabel(' 存储:'), 0)
-        hbox.addWidget(QLabel('线程  '), 0)
+        hbox.addWidget(QLabel(' 存储:'), 0)
         hbox.addWidget(self.memorySpin, 0)
         hbox.addWidget(QLabel('MB  分支:'), 0)
         hbox.addWidget(self.multiPVSpin, 0)

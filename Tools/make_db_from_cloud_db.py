@@ -79,16 +79,17 @@ def get_pos_moves(fen):
         
 #---------------------------------------------------------------------------
 def is_fen_exist(fen):
-    zhash = z_hash_fen(fen) 
+    board = ChessBoard(fen)
+    zhash = board.zhash() 
     query = list(PosMove.select().where(PosMove.vkey == zhash))
     if len(query) > 0:
         return True
     
-    board = ChessBoard(fen)
+    #board = ChessBoard(fen)
     
-    fen_mirror = board.mirror().to_fen()    
-    zhash = z_hash_fen(fen_mirror)
-    query = list(PosMove.select().where(PosMove.vkey == zhash))
+    #board_mirror = board.mirror() #.to_fen()    
+    zhash2 = board.mirror().zhash() #_hash_fen(fen_mirror)
+    query = list(PosMove.select().where(PosMove.vkey == zhash2))
     if len(query) > 0:
         print('mirror found.')
         return True
@@ -102,42 +103,24 @@ def clean_moves(fen, step, moves):
     save_moves = {}
     score_base = moves[0]['score']
     for i, m in enumerate(moves):
+        diff =  abs( m['score'] - score_base)
+            
         if step == 1:
             if  abs(m['score']) > 5:
                 continue
         else:
-            if i >= 10:
+            if i > 2 and (m['score'] < -88):
+                continue
+            elif i > 3 and diff > 40:
+                continue
+            elif i >= 10 and diff > 20:
+                continue
+            elif step > 6 and diff > 40:
+                continue
+            elif diff > 60:
                 continue
                 
-            if (score_base > 5) and (m['score'] < -score_base) and (i > 7):
-                continue
-                
-            diff =  abs( m['score'] - score_base)
-            if diff > 60:
-                continue
-            
-            if score_base > 70 and i > 5:
-                continue
-                
-            if score_base > 110 and i > 3:
-                continue
-            
-            if score_base > 150 and i > 1:
-                continue
-            
-            if score_base <  -100  and i > 2:
-                continue
-            
-            if score_base <  -120 and i > 1:
-                continue
-            
-            if score_base <  -130 :
-                continue
-                
-            if (step > 6) and (i > 6):
-                continue
-            
-        save_moves[ m['move']] = m['score']    
+        save_moves[m['move']] = m['score']    
         ret.append({'fen': fen, 'iccs': m['move'], 'score': m['score']})
     
     return (score_base, ret, save_moves)
@@ -166,7 +149,7 @@ if not Path(table_file).is_file():
     fen = FULL_INIT_FEN
     step = 1 
     
-    zhash = z_hash_fen(fen)
+    zhash = ChessBoard().zhash(fen)
     moves = QueryFromCloudDB(fen)
     if len(moves) == 0:
         print("None Moves Found in CloundDB.")
@@ -191,7 +174,7 @@ count = len(tables)
 for index, fen in enumerate(tables):
     #生产数据
     try_count = 0        
-    zhash = z_hash_fen(fen)    
+    zhash = ChessBoard().zhash(fen)   
     while try_count < 5:
         print(f"Step:{step} {index+1}/{count} Query:{fen} {zhash}")
         moves = QueryFromCloudDB(fen)

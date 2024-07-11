@@ -7,22 +7,25 @@ import logging
 from pathlib import Path
 
 from PySide6 import *
+from PySide6.QtCore import *
 from PySide6.QtWidgets import QApplication
 
 from .Main import *
 
 def my_message_handler(mode, context, message):
-    if mode == QtCore.QtInfoMsg:
+    print("%s: %s (%s:%d, %s)" % (mode, message, context.file, context.line, context.file))
+    
+    if mode == QtInfoMsg:
         mode = 'Info'
-    elif mode == QtCore.QtWarningMsg:
+    elif mode == QtWarningMsg:
         mode = 'Warning'
-    elif mode == QtCore.QtCriticalMsg:
+    elif mode == QtCriticalMsg:
         mode = 'critical'
-    elif mode == QtCore.QtFatalMsg:
+    elif mode == QtFatalMsg:
         mode = 'fatal'
     else:
         mode = 'Debug'
-    print("%s: %s (%s:%d, %s)" % (mode, message, context.file, context.line, context.file))
+    #print("%s: %s (%s:%d, %s)" % (mode, message, context.file, context.line, context.file))
 
 #-----------------------------------------------------#
 class ChessApp(QApplication):
