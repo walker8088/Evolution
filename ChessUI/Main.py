@@ -174,7 +174,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         
     def initGameDB(self):
         Globl.storage = DataStore()
-        Globl.storage.open(Path('Game', 'evolution.json'))
+        Globl.storage.open(Path('Game', 'Evolution.db'))
         self.openbook = OpenBook()
         self.openbook.loadBookFile(Path('Game', 'openbook.db'))
         
