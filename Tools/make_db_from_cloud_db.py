@@ -111,11 +111,11 @@ def clean_moves(fen, step, moves):
         else:
             if i > 2 and (m['score'] < -88):
                 continue
-            elif i > 3 and diff > 40:
+            elif i > 3 and diff > 50:
                 continue
-            elif i >= 10 and diff > 20:
+            elif i >= 7 and diff > 30:
                 continue
-            elif step > 6 and diff > 40:
+            elif step > 6 and diff > 50:
                 continue
             elif diff > 60:
                 continue

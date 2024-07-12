@@ -176,7 +176,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         Globl.storage = DataStore()
         Globl.storage.open(Path('Game', 'evolution.json'))
         self.openbook = OpenBook()
-        self.openbook.loadBookFile(Path('Game', 'openbook.db')
+        self.openbook.loadBookFile(Path('Game', 'openbook.db'))
         
     #-----------------------------------------------------------------------
     #声音播放
