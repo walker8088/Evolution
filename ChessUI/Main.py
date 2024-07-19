@@ -76,7 +76,9 @@ class MainWindow(QMainWindow):
             myappid = 'mycompany.myproduct.subproduct.version'
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
                 myappid)
-
+        
+        self.isSearchCloud = True
+        
         Globl.engineManager = EngineManager(self)
         self.initGameDB()
         self.board = ChessBoard()
@@ -88,7 +90,8 @@ class MainWindow(QMainWindow):
         self.historyView = DockHistoryWidget(self)
         self.historyView.inner.positionSelSignal.connect(
             self.onSelectHistoryPosition)
-
+        self.historyView.inner.reviewByEngineBtn.clicked.connect(self.onReviewGame)
+        
         self.endBookView = EndBookWidget(self)
         self.endBookView.setVisible(False)
         self.endBookView.end_game_select_signal.connect(
@@ -107,17 +110,17 @@ class MainWindow(QMainWindow):
 
         self.engineView = ChessEngineWidget(self)
         self.engineView.configBtn.clicked.connect(self.onConfigEngine)
-        self.engineView.reviewBtn.clicked.connect(self.onReviewGame)
+        #self.engineView.reviewBtn.clicked.connect(self.onReviewGame)
         self.engineView.eRedBox.stateChanged.connect(self.onRedBoxChanged)
         self.engineView.eBlackBox.stateChanged.connect(self.onBlackBoxChanged)
         self.engineView.analysisModeBox.stateChanged.connect(
             self.onAnalysisModeBoxChanged)
 
-        self.addDockWidget(Qt.RightDockWidgetArea, self.historyView)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.moveDbView)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.cloudDbView)
         #self.addDockWidget(Qt.RightDockWidgetArea, self.gameReviewView)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.endBookView)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.endBookView)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.historyView)
         self.addDockWidget(Qt.RightDockWidgetArea, self.bookmarkView)
         #self.addDockWidget(Qt.LeftDockWidgetArea, self.myGameView)
         self.addDockWidget(Qt.BottomDockWidgetArea, self.engineView)
@@ -185,10 +188,14 @@ class MainWindow(QMainWindow):
         return ok
         
     def initGameDB(self):
+
+        gamePath = Path('Game')
+        gamePath.mkdir(exist_ok=True)
+        
         Globl.storage = DataStore()
-        Globl.storage.open(Path('Game', 'Evolution.jdb'))
+        Globl.storage.open(Path(gamePath, 'Evolution.jdb'))
         self.openbook = OpenBook()
-        self.openbook.loadBookFile(Path('Game', 'openbook.db'))
+        self.openbook.loadBookFile(Path(gamePath, 'openbook.db'))
         
     #-----------------------------------------------------------------------
     #声音播放
@@ -229,7 +236,7 @@ class MainWindow(QMainWindow):
         #模式未变
         if self.gameMode == gameMode:
             return
-
+        self.lastGameMode = self.gameMode    
         self.gameMode = gameMode
 
         if self.gameMode == 'end_book':
@@ -241,15 +248,27 @@ class MainWindow(QMainWindow):
             self.moveDbView.clear()
             self.moveDbView.hide()
             self.cloudDbView.hide()
+            
+            self.engineView.eRedBox.setChecked(False)
+            self.engineView.eBlackBox.setChecked(True)
+            self.engineView.analysisModeBox.setChecked(False)
+            self.searchCloudBox.setChecked(False)
+            #self.initGame(EMPTY_FEN)
             self.endBookView.nextGame()
-
+            
         elif self.gameMode == 'open_book':
             self.setWindowTitle(f'{self.app.APP_NAME_TEXT} - 自由练习')
             self.myGamesAct.setEnabled(True)
             self.bookmarkAct.setEnabled(True)
             self.endBookView.hide()
             self.moveDbView.show()
-            #self.bookmarkView.show()
+            self.cloudDbView.show()
+            
+            self.engineView.eRedBox.setChecked(False)
+            self.engineView.eBlackBox.setChecked(False)
+            self.engineView.analysisModeBox.setChecked(False)
+            self.searchCloudBox.setChecked(True)
+            
             self.initGame(FULL_INIT_FEN)
         
         elif self.gameMode == 'fight_robot':
@@ -259,9 +278,16 @@ class MainWindow(QMainWindow):
             self.endBookView.hide()
             self.moveDbView.hide()
             self.cloudDbView.hide()
-            self.bookmarkView.show()
-            self.initGame(FULL_INIT_FEN)
-                
+            #self.bookmarkView.show()
+            
+            self.engineView.eRedBox.setChecked(False)
+            self.engineView.eBlackBox.setChecked(True)
+            self.engineView.analysisModeBox.setChecked(False)
+            self.searchCloudBox.setChecked(False)
+            
+            if self.lastGameMode == 'end_book':
+                self.initGame(FULL_INIT_FEN)
+            
     def initGame(self, fen=None, is_only_once=False):
 
         if (fen is not None) and (not is_only_once):
@@ -277,16 +303,6 @@ class MainWindow(QMainWindow):
 
         self.init_fen = init_fen
       
-        if self.gameMode == 'end_book':
-            self.engineView.eRedBox.setChecked(False)
-            self.engineView.eBlackBox.setChecked(True)
-            self.engineView.analysisModeBox.setChecked(False)
-            
-        else:
-            self.engineView.eRedBox.setChecked(False)
-            self.engineView.eBlackBox.setChecked(False)
-            self.engineView.analysisModeBox.setChecked(False)
-        
         self.boardView.from_fen(self.init_fen, clear = True)
         
         position = {
@@ -294,7 +310,7 @@ class MainWindow(QMainWindow):
             'index': 0,
             'move_side': self.boardView.get_move_color()
             }
-        
+        #print(position)        
         self.onPositionChanged(position, is_new = True)
  
     def onGameOver(self, win_side):
@@ -312,7 +328,7 @@ class MainWindow(QMainWindow):
                 self.endBookView.updateCurrent(self.currGame)
                 self.endBookView.nextGame()
             
-        elif self.gameMode == 'open_book':
+        else:
             win_msg = '红方被将死!' if win_side == BLACK else '黑方被将死!'
             msgbox = TimerMessageBox(win_msg)
             msgbox.exec()
@@ -343,18 +359,20 @@ class MainWindow(QMainWindow):
         self.engineView.eRedBox.setChecked(False)
         self.engineView.eBlackBox.setChecked(False)
         self.engineView.analysisModeBox.setChecked(True)
-        self.engineView.reviewBtn.setText('停止分析')
+        #self.engineView.reviewBtn.setText('停止分析')
         self.historyView.inner.selectIndex(0)
         self.onReviewGameStep()
         
     def onReviewGameStep(self):
         sel_index = self.historyView.inner.selectionIndex + 1
         while True:
+            print('onReviewGameStep', sel_index)
             if sel_index >= (len(self.positionList) - 1):  #已到最后一步
                 self.onReviewGameEnd()
                 return
             pos = self.positionList[sel_index]
-            if 'score' in pos and pos['score'] != '':
+            print(pos)
+            if 'score' in pos and pos['score']:
                 sel_index +=  1
                 continue
             else:            
@@ -362,7 +380,7 @@ class MainWindow(QMainWindow):
 
     def onReviewGameEnd(self, isCanceled=False):
         self.reviewMode = False
-        self.engineView.reviewBtn.setText('复盘分析')
+        #self.engineView.reviewBtn.setText('复盘分析')
         if not isCanceled:
             msgbox = TimerMessageBox("  复盘分析完成。  ", timeout=1)
             msgbox.exec()
@@ -372,7 +390,10 @@ class MainWindow(QMainWindow):
         Globl.storage.saveMovesToBook(self.positionList[1:])
 
     def loadBookGame(self, name, game):
-     
+        
+        save_search = self.isSearchCloud
+        self.searchCloudBox.setChecked(False)
+
         fen = game.init_board.to_fen()
         
         self.initGame(fen, is_only_once = True)
@@ -384,13 +405,17 @@ class MainWindow(QMainWindow):
             self.onMoveGo(iccs)
 
         self.setWindowTitle(f'{self.app.APP_NAME_TEXT} -- {name}')
+        
+        self.searchCloudBox.setChecked(save_search)
 
     def loadBookmark(self, name, position):
      
-        fen = position['fen']
-        
+        save_search = self.isSearchCloud
+        self.searchCloudBox.setChecked(False)
+
+        fen = position['fen']        
         self.initGame(fen, is_only_once = True)
-        print(position)
+        #print(position)
         if 'moves' in position:
             moves = position['moves']
             if moves is not None:
@@ -399,6 +424,8 @@ class MainWindow(QMainWindow):
                     self.onMoveGo(iccs)
             
         self.setWindowTitle(f'{self.app.APP_NAME_TEXT} -- {name}')
+
+        self.searchCloudBox.setChecked(save_search)
 
     #--------------------------------------------------------------------
     #引擎相关
@@ -442,6 +469,9 @@ class MainWindow(QMainWindow):
 
         fen_engine = fen = self.currPosition['fen']
         
+        if fen == EMPTY_FEN:
+            return 
+
         if 'move' in self.currPosition:
             fen_engine = self.currPosition['move'].to_engine_fen()
         
@@ -466,10 +496,22 @@ class MainWindow(QMainWindow):
 
     def onRedBoxChanged(self, state):
         self.engine_play(0, RED, Qt.CheckState(state) == Qt.Checked)
-
+        
+        if self.gameMode in ['end_book', 'fight_robot']:
+            red_checked = self.engineView.eRedBox.isChecked()
+            black_checked = self.engineView.eBlackBox.isChecked()
+            if red_checked == black_checked:
+                self.engineView.eBlackBox.setChecked(not red_checked)
+            
     def onBlackBoxChanged(self, state):
         self.engine_play(0, BLACK, Qt.CheckState(state) == Qt.Checked)
 
+        if self.gameMode in ['end_book', 'fight_robot']:
+            red_checked = self.engineView.eRedBox.isChecked()
+            black_checked = self.engineView.eBlackBox.isChecked()
+            if red_checked == black_checked:
+                self.engineView.eRedBox.setChecked(not black_checked)
+        
     def onAnalysisModeBoxChanged(self, state):
         self.engine_analyze(Qt.CheckState(state) == Qt.Checked)
 
@@ -574,10 +616,7 @@ class MainWindow(QMainWindow):
 
         self.onMoveGo( move_info['move'], move_info['score'])
     
-    def searchMoves(self, fen):
-        self.cloudDbView.clear()
-        self.cloud.startQuery(fen)
-        
+       
     def onCloudQueryResult(self, qResult):
         
         if (not qResult) or len(qResult['actions']) == 0:
@@ -665,13 +704,15 @@ class MainWindow(QMainWindow):
 
         self.engineView.clear()       
         self.boardView.from_fen(fen)    
+        self.cloudDbView.clear()
         
         if self.gameMode == 'end_book':        
             pass
         else:
             self.moveDbView.onPositionChanged(position, is_new)
-            self.searchMoves(fen)
-        
+            if self.isSearchCloud:
+                self.cloud.startQuery(fen)
+            
         self.detectRunEngine()
         
     def onBoardMove(self,  move_from,  move_to):
@@ -752,6 +793,9 @@ class MainWindow(QMainWindow):
 
     def onMirrorBoardChanged(self, state):
         self.boardView.setMirrorBoard(state)
+    
+    def onSearchCloudChanged(self, state):
+        self.isSearchCloud = (Qt.CheckState(state) == Qt.Checked)
 
     def onEditBoard(self):
         dlg = PositionEditDialog(self)
@@ -964,17 +1008,26 @@ class MainWindow(QMainWindow):
 
         self.flipBoardBox = QCheckBox()  #"翻转")
         self.flipBoardBox.setIcon(QIcon(':Images/up_down.png'))
+        self.flipBoardBox.setToolTip('上下翻转')
         self.flipBoardBox.stateChanged.connect(self.onFlipBoardChanged)
 
         self.mirrorBoardBox = QCheckBox()  #"镜像")
         self.mirrorBoardBox.setIcon(QIcon(':Images/left_right.png'))
+        self.mirrorBoardBox.setToolTip('左右镜像')
         self.mirrorBoardBox.stateChanged.connect(self.onMirrorBoardChanged)
 
+        self.searchCloudBox = QCheckBox()  #"云库")
+        self.searchCloudBox.setIcon(QIcon(':Images/cloud_search.png'))
+        self.searchCloudBox.setChecked(self.isSearchCloud)
+        self.searchCloudBox.setToolTip('实时搜索云库')
+        self.searchCloudBox.stateChanged.connect(self.onSearchCloudChanged)
+    
         self.showBar = self.addToolBar("Show")
         self.showBar.addWidget(self.flipBoardBox)
         self.showBar.addWidget(self.mirrorBoardBox)
-        #self.showBar.addSeparator()
-
+        self.showBar.addSeparator()
+        self.showBar.addWidget(self.searchCloudBox)
+        
         self.sysBar = self.addToolBar("System")
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)

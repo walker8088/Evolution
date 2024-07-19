@@ -81,13 +81,21 @@ class HistoryWidget(QWidget):
         self.privBtn = QPushButton(
             self.style().standardIcon(QStyle.SP_ArrowBack), '')
         self.privBtn.clicked.connect(self.onPrivBtnClick)
+        
 
+        #self.cloudRealtimeBtn = QRadioButton("实时云库检索", self)
+        
+        self.reviewByCloudBtn = QPushButton("云库复盘")
+        self.reviewByEngineBtn = QPushButton("引擎复盘")
+        
+        '''
         self.addBookmarkBtn = QPushButton("收藏局面")
         self.addBookmarkBtn.clicked.connect(self.onAddBookmarkBtnClick)
         self.addBookmarkBookBtn = QPushButton("收藏棋谱")
         self.addBookmarkBookBtn.clicked.connect(self.onAddBookmarkBookBtnClick)
         self.saveDbBtnBtn = QPushButton("保存到棋谱库")
         self.saveDbBtnBtn.clicked.connect(self.onSaveDbBtnClick)
+        '''
 
         hbox1 = QHBoxLayout()
         hbox1.addWidget(self.firstBtn, 0)
@@ -96,14 +104,20 @@ class HistoryWidget(QWidget):
         hbox1.addWidget(self.lastBtn, 0)
 
         hbox2 = QHBoxLayout()
-        hbox2.addWidget(self.addBookmarkBtn, 0)
-        hbox2.addWidget(self.addBookmarkBookBtn, 0)
-        hbox2.addWidget(self.saveDbBtnBtn, 0)
-
+        #hbox2.addWidget(self.cloudRealtimeBtn, 0)
+        hbox2.addWidget(self.reviewByCloudBtn, 0)
+        hbox2.addWidget(self.reviewByEngineBtn, 0)
+        '''
+        hbox3 = QHBoxLayout()
+        hbox3.addWidget(self.addBookmarkBtn, 0)
+        hbox3.addWidget(self.addBookmarkBookBtn, 0)
+        hbox3.addWidget(self.saveDbBtnBtn, 0)
+        '''
         vbox = QVBoxLayout()
         vbox.addWidget(splitter, 2)
         vbox.addLayout(hbox1)
         vbox.addLayout(hbox2)
+        #vbox.addLayout(hbox3)
 
         self.setLayout(vbox)
 
@@ -116,6 +130,11 @@ class HistoryWidget(QWidget):
         clearFollowAction = menu.addAction("删除后续着法")
         menu.addSeparator()
         copyFenAction =  menu.addAction("复制(Fen)")
+        menu.addSeparator()
+        bookmarkPositionAction =  menu.addAction("收藏局面")
+        bookmarkBookAction =  menu.addAction("收藏棋谱")
+        addToMyLibAction =  menu.addAction("保存到棋谱库")
+
         action = menu.exec_(self.mapToGlobal(event.pos()))
 
         if action == clearFollowAction:
@@ -250,12 +269,12 @@ class HistoryWidget(QWidget):
 
         if 'diff' in position:
             diff = position['diff']
-            #print(diff)
+            
             if diff > -30:
                 item.setIcon(3, QIcon(":Images/star.png"))
-            elif diff > -60:
+            elif diff > -70:
                 item.setIcon(3, QIcon(":Images/good.png"))
-            elif diff > -90:
+            elif diff > -100:
                 item.setIcon(3, QIcon(":Images/sad.png"))
             else:
                 item.setIcon(3, QIcon(":Images/bad.png"))
@@ -357,6 +376,12 @@ class ChessEngineWidget(QDockWidget):
         self.multiPVSpin.setValue(1)
         self.multiPVSpin.setRange(1, 10)
         self.multiPVSpin.valueChanged.connect(self.onMultiPVChanged)
+        
+        self.skillLevelSpin = QSpinBox()
+        self.skillLevelSpin.setSingleStep(1)
+        self.skillLevelSpin.setValue(20)
+        self.skillLevelSpin.setRange(0, 20)
+        self.skillLevelSpin.valueChanged.connect(self.onSkillLevelChanged)
 
         self.eRedBox = QCheckBox("执红")
         self.eBlackBox = QCheckBox("执黑")
@@ -364,25 +389,29 @@ class ChessEngineWidget(QDockWidget):
         self.configBtn = QPushButton("参数")
         self.reviewBtn = QPushButton("复盘分析")
 
-        #hbox.addWidget(self.configBtn, 0)
+        hbox.addWidget(self.configBtn, 0)
         
         hbox.addWidget(QLabel('深度:'), 0)
         hbox.addWidget(self.DepthSpin, 0)
         hbox.addWidget(QLabel(' 步时(秒):'), 0)
         hbox.addWidget(self.moveTimeSpin, 0)
-        
+        hbox.addWidget(QLabel(' 级别:'), 0)
+        hbox.addWidget(self.skillLevelSpin, 0)
+        '''
         hbox.addWidget(QLabel(' 线程:'), 0)
         hbox.addWidget(self.threadsSpin, 0)
         hbox.addWidget(QLabel(' 存储:'), 0)
         hbox.addWidget(self.memorySpin, 0)
         hbox.addWidget(QLabel('MB  分支:'), 0)
         hbox.addWidget(self.multiPVSpin, 0)
-        
+        '''
+
+        hbox.addWidget(QLabel('    '), 0)
         hbox.addWidget(self.eRedBox, 0)
         hbox.addWidget(self.eBlackBox, 0)
         hbox.addWidget(self.analysisModeBox, 0)
         hbox.addWidget(self.engineLabel, 2)
-        hbox.addWidget(self.reviewBtn, 0)
+        #hbox.addWidget(self.reviewBtn, 0)
 
         vbox = QVBoxLayout()
         vbox.addLayout(hbox)
@@ -447,7 +476,11 @@ class ChessEngineWidget(QDockWidget):
     def onMultiPVChanged(self, num):
         Globl.engineManager.set_engine_option(self.engine_id, 'MultiPV', num)
         self.saveEngineOptions()
-        
+    
+    def onSkillLevelChanged(self, num):
+        Globl.engineManager.set_engine_option(self.engine_id, 'Skill Level', num)
+        self.saveEngineOptions()
+    
     def saveEngineOptions(self): 
         options = {}
         Globl.storage.saveEngineOptions(self.engine_id, options)
@@ -512,7 +545,7 @@ class ChessEngineWidget(QDockWidget):
         self.positionView.addItem(info)
 
     def onEngineReady(self, engine_id, name, engine_options):
-        
+        #print(engine_options)
         self.engineLabel.setText(name)
         self.setGoParams()
         self.onThreadsChanged(self.threadsSpin.value())
@@ -811,7 +844,10 @@ class EndBookWidget(QDockWidget):
             
         if self.curr_game is None :
            self.curr_game = self.curr_book[0]
-            
+           
+        if self.curr_game['ok'] is False:
+            self.end_game_select_signal.emit(self.curr_game)
+
         index = self.curr_game['index']
         while self.curr_game['ok'] is True:
             if index < len(self.curr_book):
@@ -819,7 +855,7 @@ class EndBookWidget(QDockWidget):
             else:
                 break
             self.curr_game = self.curr_book[index]
-            
+        
         if self.curr_game['ok'] is False:
             self.bookView.setCurrentItem(self.curr_game['widget'])
             

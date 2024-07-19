@@ -13,12 +13,12 @@ if ret != 0:
 folders = ['Game', 'Engine', 'Sound']
 for folder in folders:
     src_folder = f".\\{folder}"
-    dest_folder = f".\\dist\\{folder}"
+    dest_folder = f".\\dist\\Evolution\\{folder}"
     #os.mkdir(dest_folder) 
     print("*** Copying Folder:", src_folder,"-->", dest_folder)
     shutil.copytree(src_folder, dest_folder)
 
 shutil.rmtree('build')
-os.rename('.\\dist', '.\\Evolution')
-print('请到.\\Evolution目录下查看exe文件。')
+#os.rename('.\\dist', '.\\Evolution')
+print('请到.\\dist\\Evolution目录下查看exe文件。')
 print("Done.")      

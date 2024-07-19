@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
+import os
 import hashlib
 import sqlite3
 import json
 import logging
 import time
 from collections import OrderedDict
+from pathlib import Path
 
 import cchess
 
@@ -53,7 +55,10 @@ class OpenBook():
 
     def loadBookFile(self, file_name):
         global book_db
+        create = not Path(file_name).is_file()
         book_db.init(file_name, pragmas={'journal_mode': 'wal'})
+        if create:
+            book_db.create_tables([PosMove])
 
     def getMoves(self, fen):
         
