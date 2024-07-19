@@ -21,8 +21,9 @@ class PosMove(Model):
     vkey = BigIntegerField(unique=True)
     step  = IntegerField()
     score = IntegerField()
+    mark  = CharField(null=True)
     vmoves = JSONField()
-   
+    
     class Meta:
         database = book_db
 
@@ -85,10 +86,7 @@ def is_fen_exist(fen):
     if len(query) > 0:
         return True
     
-    #board = ChessBoard(fen)
-    
-    #board_mirror = board.mirror() #.to_fen()    
-    zhash2 = board.mirror().zhash() #_hash_fen(fen_mirror)
+    zhash2 = board.mirror().zhash()
     query = list(PosMove.select().where(PosMove.vkey == zhash2))
     if len(query) > 0:
         print('mirror found.')
@@ -101,29 +99,38 @@ def clean_moves(fen, step, moves):
     step_limits = [13, ]
     ret = []
     save_moves = {}
-    score_base = moves[0]['score']
+    score_best = moves[0]['score']
     for i, m in enumerate(moves):
-        diff =  abs( m['score'] - score_base)
+        diff =  abs( m['score'] - score_best)
             
-        if step == 1:
-            if  abs(m['score']) > 5:
-                continue
+        if step == 1 and m['score'] < 0:
+            continue
         else:
-            if i > 2 and (m['score'] < -88):
+            if step >= 2 and (m['score'] < -65):
                 continue
+            
+            elif i > 3 and score_best < 0:
+                continue  
             elif i > 3 and diff > 50:
                 continue
             elif i >= 7 and diff > 30:
                 continue
             elif step > 6 and diff > 50:
                 continue
+            
+            elif score_best < 0 and diff > 30:
+                continue  
+    
+            elif score_best > 10 and m['score'] < -score_best:
+                continue  
+            
             elif diff > 60:
                 continue
                 
         save_moves[m['move']] = m['score']    
         ret.append({'fen': fen, 'iccs': m['move'], 'score': m['score']})
     
-    return (score_base, ret, save_moves)
+    return (score_best, ret, save_moves)
     
 def save_pos_move(fen, zhash, score, step, records): 
     
@@ -148,20 +155,23 @@ if not Path(table_file).is_file():
     tables = []
     fen = FULL_INIT_FEN
     step = 1 
+    board = ChessBoard(fen)        
+    zhash = board.zhash()
     
-    zhash = ChessBoard().zhash(fen)
+    print(f"Step:{step} Query:{fen}")
     moves = QueryFromCloudDB(fen)
     if len(moves) == 0:
         print("None Moves Found in CloundDB.")
         sys.exit(-1)
 
     score, records, save_moves = clean_moves(fen, step, moves)
+    print(len(save_moves))
     if save_pos_move(fen, zhash, score, step, save_moves): 
         for it in records:
-            board = ChessBoard(it['fen'])
-            move = board.move_iccs(it['iccs'])
-            board.next_turn()
-            tables.append(board.to_fen())
+            b = board.copy()
+            move = b.move_iccs(it['iccs'])
+            b.next_turn()
+            tables.append(b.to_fen())
 else:
     with open(table_file, 'rb') as f:
         step, tables = pickle.load(f)
@@ -176,7 +186,7 @@ for index, fen in enumerate(tables):
     try_count = 0        
     zhash = ChessBoard().zhash(fen)   
     while try_count < 5:
-        print(f"Step:{step} {index+1}/{count} Query:{fen} {zhash}")
+        print(f"Step:{step} {index+1}/{count} Query:{fen}")
         moves = QueryFromCloudDB(fen)
         if len(moves) == 0:
             time.sleep(3)

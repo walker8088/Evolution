@@ -2,7 +2,8 @@ import os
 import sys
 import shutil
 
-cmd = "pyinstaller.exe -F .\\Evolution.py -i images\\app.ico --noconsole --exclude-module PyQt5"
+#cmd = "pyinstaller.exe -F .\\Evolution.py -i images\\app.ico --noconsole --exclude-module PyQt5"
+cmd = "pyinstaller.exe .\\Evolution.py -i images\\app.ico --noconsole --exclude-module PyQt5"
 
 ret = os.system(cmd)
 

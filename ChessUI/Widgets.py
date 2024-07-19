@@ -52,7 +52,7 @@ class HistoryWidget(QWidget):
         self.positionView.setColumnWidth(1, 80)
         self.positionView.setColumnWidth(2, 50)
         self.positionView.setColumnWidth(3, 10)
-        self.positionView.setColumnWidth(4, 80)
+        self.positionView.setColumnWidth(4, 20)
 
         #self.positionView.itemSelectionChanged.connect(self.onSelectStep)
         self.positionView.itemClicked.connect(self.onItemClicked)
@@ -86,7 +86,7 @@ class HistoryWidget(QWidget):
         self.addBookmarkBtn.clicked.connect(self.onAddBookmarkBtnClick)
         self.addBookmarkBookBtn = QPushButton("收藏棋谱")
         self.addBookmarkBookBtn.clicked.connect(self.onAddBookmarkBookBtnClick)
-        self.saveDbBtnBtn = QPushButton("保存到对局库")
+        self.saveDbBtnBtn = QPushButton("保存到棋谱库")
         self.saveDbBtnBtn.clicked.connect(self.onSaveDbBtnClick)
 
         hbox1 = QHBoxLayout()
@@ -175,7 +175,7 @@ class HistoryWidget(QWidget):
         
     def onSaveDbBtnClick(self):
         self.parent.saveGameToDB()
-        msgbox = TimerMessageBox("当前棋谱已成功保存到对局库.", timeout = 0.5)
+        msgbox = TimerMessageBox("当前棋谱已成功保存到棋谱库.", timeout = 0.5)
         msgbox.exec()
         
     def onAddBookmarkBtnClick(self):
@@ -251,11 +251,11 @@ class HistoryWidget(QWidget):
         if 'diff' in position:
             diff = position['diff']
             #print(diff)
-            if diff > -40:
+            if diff > -30:
                 item.setIcon(3, QIcon(":Images/star.png"))
-            elif diff > -80:
+            elif diff > -60:
                 item.setIcon(3, QIcon(":Images/good.png"))
-            elif diff > -120:
+            elif diff > -90:
                 item.setIcon(3, QIcon(":Images/sad.png"))
             else:
                 item.setIcon(3, QIcon(":Images/bad.png"))
@@ -314,8 +314,8 @@ class ChessEngineWidget(QDockWidget):
         super().__init__("引擎", parent)
 
         self.parent = parent
-        #Globl.engine_manager = engine_mgr
-        
+        self.engine_id = 0
+
         self.dockedWidget = QWidget(self)
         self.setWidget(self.dockedWidget)
 
@@ -324,13 +324,15 @@ class ChessEngineWidget(QDockWidget):
         self.engineLabel = QLabel()
         self.engineLabel.setAlignment(Qt.AlignCenter)
         
-        self.stepDepthSpin = QSpinBox()
-        self.stepDepthSpin.setRange(1, 50)
-        self.stepDepthSpin.setValue(22)
+        self.DepthSpin = QSpinBox()
+        self.DepthSpin.setRange(0, 100)
+        self.DepthSpin.setValue(22)
+        self.DepthSpin.valueChanged.connect(self.onDepthChanged)
         
-        self.stepTimeSpin = QSpinBox()
-        self.stepDepthSpin.setRange(1, 3000)
-        self.stepDepthSpin.setValue(20)
+        self.moveTimeSpin = QSpinBox()
+        self.moveTimeSpin.setRange(0, 3000)
+        self.moveTimeSpin.setValue(20)
+        self.moveTimeSpin.valueChanged.connect(self.onMoveTimeChanged)
         
         self.threadsSpin = QSpinBox()
         max_threads =  os.cpu_count()
@@ -365,9 +367,9 @@ class ChessEngineWidget(QDockWidget):
         #hbox.addWidget(self.configBtn, 0)
         
         hbox.addWidget(QLabel('深度:'), 0)
-        hbox.addWidget(self.stepDepthSpin, 0)
+        hbox.addWidget(self.DepthSpin, 0)
         hbox.addWidget(QLabel(' 步时(秒):'), 0)
-        hbox.addWidget(self.stepTimeSpin, 0)
+        hbox.addWidget(self.moveTimeSpin, 0)
         
         hbox.addWidget(QLabel(' 线程:'), 0)
         hbox.addWidget(self.threadsSpin, 0)
@@ -395,9 +397,31 @@ class ChessEngineWidget(QDockWidget):
 
         vbox.addWidget(self.positionView)
 
-        Globl.engine_manager.engine_ready_signal.connect(self.onEngineReady)
+        Globl.engineManager.engine_ready_signal.connect(self.onEngineReady)
         self.branchs = []
-                
+    
+    def setGoParams(self):
+        
+        moveTime = self.moveTimeSpin.value()
+        depth = self.DepthSpin.value()
+        
+        if depth == 0 and moveTime == 0:
+            msgbox = TimerMessageBox("***ERROR*** 分析深度与分析时间不能同时为0。", timeout=1)
+            msgbox.exec()
+            return
+        
+        config = {}    
+        if moveTime == 0:
+            config = {'depth': depth }
+        elif depth == 0:
+            config = {'movetime': moveTime * 1000 }
+        else:
+            config =  {'depth': depth, 'movetime': moveTime * 1000 }
+
+        Globl.engineManager.set_config( self.engine_id, config) 
+            
+        self.saveEngineOptions()
+                        
     def contextMenuEvent(self, event):
 
         menu = QMenu(self)
@@ -405,33 +429,39 @@ class ChessEngineWidget(QDockWidget):
         action = menu.exec_(self.mapToGlobal(event.pos()))
         if action == viewBranchAction:
             self.onViewBranch()
-
+    
+    def onDepthChanged(self, num):
+        self.setGoParams()
+        
+    def onMoveTimeChanged(self, num):
+        self.setGoParams()
+        
     def onThreadsChanged(self, num):
-        Globl.engine_manager.set_engine_option(0, 'Threads', num)
+        Globl.engineManager.set_engine_option(self.engine_id, 'Threads', num)
         self.saveEngineOptions()
         
     def onMemoryChanged(self, num):
-        Globl.engine_manager.set_engine_option(0, 'Hash', num)
+        Globl.engineManager.set_engine_option(self.engine_id, 'Hash', num)
         self.saveEngineOptions()
         
     def onMultiPVChanged(self, num):
-        Globl.engine_manager.set_engine_option(0, 'MultiPV', num)
+        Globl.engineManager.set_engine_option(self.engine_id, 'MultiPV', num)
         self.saveEngineOptions()
         
     def saveEngineOptions(self): 
         options = {}
-        Globl.storage.saveEngineOptions(0, options)
+        Globl.storage.saveEngineOptions(self.engine_id, options)
      
     def onViewBranch(self):
         self.parent.onViewBranch()
 
-    def onEngineMoveInfo(self, fen, move_info):
+    def onEngineMoveInfo(self, move_info):
 
         if not self.analysisModeBox.isChecked():
             return
 
-        board = ChessBoard()
-        board.from_fen(fen)
+        board = ChessBoard(move_info['fen'])
+        #board.from_fen(fen)
 
         iccs_str = ','.join(move_info["move"])
         move_info['iccs_str'] = iccs_str
@@ -483,13 +513,8 @@ class ChessEngineWidget(QDockWidget):
 
     def onEngineReady(self, engine_id, name, engine_options):
         
-        #for it in engine_options:
-        #    print(it)
-
         self.engineLabel.setText(name)
-        
-        Globl.engine_manager.set_config(engine_id, {'depth': 24})
-        
+        self.setGoParams()
         self.onThreadsChanged(self.threadsSpin.value())
         self.onMemoryChanged(self.memorySpin.value())
         self.onMultiPVChanged(self.multiPVSpin.value())
@@ -516,7 +541,7 @@ class MoveDbWidget(QDockWidget):
         self.moveListView.setColumnWidth(0, 80)
         self.moveListView.setColumnWidth(1, 60)
         self.moveListView.setColumnWidth(2, 1)
-        self.moveListView.setColumnWidth(3, 100)
+        self.moveListView.setColumnWidth(3, 20)
 
         self.moveListView.clicked.connect(self.onSelectIndex)
         
@@ -608,7 +633,9 @@ class MoveDbWidget(QDockWidget):
                 return 0
             except KeyError:
                 return 0
-        
+            except  TypeError:
+                return 0
+
         self.curr_pos = position
         fen = position['fen']
         
@@ -683,7 +710,7 @@ class CloudDbWidget(QDockWidget):
         self.cloudMovesView.setColumnWidth(0, 80)
         self.cloudMovesView.setColumnWidth(1, 60)
         self.cloudMovesView.setColumnWidth(2, 1)
-        self.cloudMovesView.setColumnWidth(3, 100)
+        self.cloudMovesView.setColumnWidth(3, 20)
         self.cloudMovesView.clicked.connect(self.onSelectIndex)
 
         self.importFollowMode = False
@@ -729,7 +756,7 @@ class CloudDbWidget(QDockWidget):
 
 #------------------------------------------------------------------#
 class EndBookWidget(QDockWidget):
-    end_game_select_signal = Signal(int)
+    end_game_select_signal = Signal(dict)
 
     def __init__(self, parent):
         super().__init__("残局库", parent)
@@ -760,8 +787,9 @@ class EndBookWidget(QDockWidget):
 
         self.bookView.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.bookView.setAlternatingRowColors(True)
-        self.bookView.doubleClicked.connect(self.onItemDoubleClicked)
+        #self.bookView.doubleClicked.connect(self.onItemDoubleClicked)
         #self.bookView.clicked.connect(self.onItemClicked)
+        self.bookView.currentItemChanged.connect(self.onCurrentItemChanged)
 
         self.update()
 
@@ -775,6 +803,31 @@ class EndBookWidget(QDockWidget):
         self.libCombo.addItems(self.books.keys())
 
         self.libCombo.setCurrentIndex(0)
+    
+    def nextGame(self):
+
+        if len(self.curr_book) == 0:
+            return
+            
+        if self.curr_game is None :
+           self.curr_game = self.curr_book[0]
+            
+        index = self.curr_game['index']
+        while self.curr_game['ok'] is True:
+            if index < len(self.curr_book):
+                index += 1
+            else:
+                break
+            self.curr_game = self.curr_book[index]
+            
+        if self.curr_game['ok'] is False:
+            self.bookView.setCurrentItem(self.curr_game['widget'])
+            
+    def updateCurrent(self, game):
+        item = game['widget']
+        if game['ok'] is True:
+            item.setForeground(QColor(Qt.gray))
+            self.curr_game['ok'] = True
 
     def onImportBtnClick(self):
         self.parent.onImportEndBook()
@@ -788,19 +841,25 @@ class EndBookWidget(QDockWidget):
             return
 
         self.curr_book_name = book_name
-        self.curr_books = self.books[self.curr_book_name]
+        self.curr_book = self.books[self.curr_book_name]
         self.curr_game = None
 
         for i, game in enumerate(self.books[self.curr_book_name]):
             item = QListWidgetItem()
             item.setText(game['name'])
+            #print(game)
+            if game['ok'] is True:
+                item.setForeground(Qt.gray)
             item.setData(Qt.UserRole, game)
+            game['index'] = i
+            game['widget'] = item
             self.bookView.addItem(item)
 
-    def onItemDoubleClicked(self, index):
-        index_row = index.row()
-        self.curr_game = self.books[self.curr_book_name][index_row]
-        self.end_game_select_signal.emit(index_row)
+    def onCurrentItemChanged(self, current, previous):
+        if current is None:
+            return
+        self.curr_game = current.data(Qt.UserRole)
+        self.end_game_select_signal.emit(self.curr_game)
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)
@@ -812,7 +871,7 @@ class EndBookWidget(QDockWidget):
     def sizeHint(self):
         return QSize(150, 500)
 
-
+'''
 #------------------------------------------------------------------#
 class GameReviewWidget(QDockWidget):
     #move_select_signal = Signal(int)
@@ -828,7 +887,7 @@ class GameReviewWidget(QDockWidget):
         self.moveListView.setHeaderLabels(["着法", "得分", '备注'])
         self.moveListView.setColumnWidth(0, 80)
         self.moveListView.setColumnWidth(1, 80)
-        self.moveListView.setColumnWidth(3, 100)
+        self.moveListView.setColumnWidth(3, 20)
 
         self.moveListView.clicked.connect(self.onSelectIndex)
 
@@ -862,7 +921,7 @@ class GameReviewWidget(QDockWidget):
     def sizeHint(self):
         return QSize(150, 500)
 
-
+'''
 #------------------------------------------------------------------#
 class BookmarkWidget(QDockWidget):
     #end_game_select_signal = Signal(int)
@@ -875,7 +934,7 @@ class BookmarkWidget(QDockWidget):
         self.parent = parent
         
         self.bookmarks = []
-        self.curr_bookmark_type = self.bookmark_type[0]
+        #self.curr_bookmark_type = self.bookmark_type[0]
 
         self.dockedWidget = QWidget(self)
         self.setWidget(self.dockedWidget)
@@ -883,16 +942,16 @@ class BookmarkWidget(QDockWidget):
         self.bookmarkView = QListWidget()
         self.bookmarkView.doubleClicked.connect(self.onDoubleClicked)
 
-        self.bookmarkTypeCombo = QComboBox(self)
-        self.bookmarkTypeCombo.currentTextChanged.connect(
-            self.onBookTypeChanged)
-        self.bookmarkTypeCombo.addItems(self.bookmark_type)
+        #self.bookmarkTypeCombo = QComboBox(self)
+        #self.bookmarkTypeCombo.currentTextChanged.connect(
+        #    self.onBookTypeChanged)
+        #self.bookmarkTypeCombo.addItems(self.bookmark_type)
 
-        hbox = QHBoxLayout()
-        hbox.addWidget(self.bookmarkTypeCombo)
+        #hbox = QHBoxLayout()
+        #hbox.addWidget(self.bookmarkTypeCombo)
 
         vbox = QVBoxLayout()
-        vbox.addLayout(hbox)
+        #vbox.addLayout(hbox)
         vbox.addWidget(self.bookmarkView)
         self.dockedWidget.setLayout(vbox)
 
@@ -906,21 +965,21 @@ class BookmarkWidget(QDockWidget):
 
         self.updateBookmarks()
 
-    def onBookTypeChanged(self, bookmark_tpye):
-        self.curr_bookmark_type = bookmark_tpye
-        self.updateBookmarks()
+    #def onBookTypeChanged(self, bookmark_tpye):
+    #    self.curr_bookmark_type = bookmark_tpye
+    #    self.updateBookmarks()
 
     def updateBookmarks(self):
 
         self.bookmarkView.clear()
         self.bookmarks = Globl.storage.getAllBookmarks()
 
-        if self.curr_bookmark_type == self.bookmark_type[0]:
-            filtered = filter(lambda x: 'moves' not in x, self.bookmarks)
-        else:
-            filtered = filter(lambda x: 'moves' in x, self.bookmarks)
+        #if self.curr_bookmark_type == self.bookmark_type[0]:
+        #    filtered = filter(lambda x: 'moves' not in x, self.bookmarks)
+        #else:
+        #    filtered = filter(lambda x: 'moves' in x, self.bookmarks)
 
-        for i, it in enumerate(filtered):
+        for i, it in enumerate(self.bookmarks):
             item = QListWidgetItem()
             item.setText(it['name'])
             item.setData(Qt.UserRole, it)
@@ -956,9 +1015,9 @@ class BookmarkWidget(QDockWidget):
     def onDoubleClicked(self):
         item = self.bookmarkView.currentItem()
         position = item.data(Qt.UserRole)
-        position['fen'] = position['fen']
+        #position['fen'] = position['fen']
         name = item.text()
-        self.parent.loadBookGame(name, position)
+        self.parent.loadBookmark(name, position)
 
     def onSelectIndex(self, index):
         self.curr_item = self.bookmarkView.itemFromIndex(index)
@@ -1188,6 +1247,7 @@ class EngineConfigDialog(QDialog):
 
         return False
 
+'''
 #-----------------------------------------------------#
 import pygetwindow as gw
 #import pyscreenshot as ImageGrab
@@ -1290,3 +1350,4 @@ class OnlineDialog(QDialog):
             
     def get_image(self):
         pass
+'''

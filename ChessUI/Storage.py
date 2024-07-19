@@ -21,6 +21,11 @@ from PySide6.QtNetwork import *
 from . import Globl
 
 #------------------------------------------------------------------------------
+def trim_fen(fen):
+    return ' '.join(fen.split(' ')[:2])
+
+
+#------------------------------------------------------------------------------
 book_db = SqliteExtDatabase(None)
 #'game/openbook.db', pragmas=(
 #    ('cache_size', -1024 * 64),  # 64MB page-cache.
@@ -28,16 +33,19 @@ book_db = SqliteExtDatabase(None)
 #   #('foreign_keys', 1),
 #    ))  # Enforce foreign-key constraints.
 
+     
 #------------------------------------------------------------------------------
 class PosMove(Model):
     fen = CharField(unique=True, index=True)
     vkey = BigIntegerField(unique=True)
     step  = IntegerField()
     score = IntegerField()
+    mark  = CharField(null=True)
     vmoves = JSONField()
    
     class Meta:
-        database = book_db     
+        database = book_db
+
 #------------------------------------------------------------------------------
 #OpenBook
 
@@ -49,9 +57,8 @@ class OpenBook():
 
     def getMoves(self, fen):
         
-        ret = {}
-        
         board = cchess.ChessBoard(fen)
+        
         for b, b_state in [(board, ''), (board.mirror(), 'mirror')]:
             try:
                 query = PosMove.get(PosMove.vkey == str(board.zhash()))
@@ -63,12 +70,11 @@ class OpenBook():
                 
         if (query is None )or len(query.vmoves) == 0:
             #print("GET:", b_state, query)
-            return ret
-         
+            return None
+        
+        actions = OrderedDict()    
         move_color = board.get_move_color()        
-        #print("GET:", b_state, query.moves)
-
-        score_base = None
+        score_best = None
         for ics, score in query.vmoves.items():
             if b_state == 'mirror':
                 iccs = cchess.iccs_mirror(ics)
@@ -76,19 +82,152 @@ class OpenBook():
                 iccs = ics
             m = {}  
             m['move'] = iccs
-            if score_base is  None:
-                score_base = score
+            if score_best is  None:
+                score_best = score
             move_it = board.copy().move_iccs(iccs)
             m['text'] = move_it.to_text()
             m['score'] = score
-            m['diff'] =  score - score_base
+            m['diff'] =  score - score_best
             if move_color == cchess.BLACK:
                 m['score'] = -m['score']
                 #m['diff'] =   -m['diff']
             #print(m)
-            ret[iccs] = m
-
+            actions[iccs] = m
+        
+        ret = {}
+        ret['fen'] = fen
+        ret['score'] = score_best 
+        ret['actions'] = actions
+        
         return ret
+        
+#-----------------------------------------------------#
+class CloudDB(QObject):
+    query_result_signal = Signal(dict)
+    
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.url = 'http://www.chessdb.cn/chessdb.php'
+        self.net_mgr = QNetworkAccessManager()
+        
+        self.reply = None
+        self.fen = None
+        self.board = cchess.ChessBoard()
+        self.tryCount = 0
+        
+        self.move_cache = {}
+        
+    def startQuery(self, fen, score_limit = 70):
+        
+        if fen in self.move_cache:
+            ret = self.move_cache[fen]
+            self.query_result_signal.emit(ret)
+            return 
+             
+        if (self.reply is not None) and (not self.reply.isFinished()):
+            self.reply.abort()
+        
+        self.fen = fen
+        self.board.from_fen(fen)
+        self.score_limit = score_limit    
+        
+        url = QUrl(self.url)
+        query = QUrlQuery()
+        query.addQueryItem('board', fen)
+        query.addQueryItem("action", 'queryall')
+        url.setQuery(query)
+        
+        self.req = QNetworkRequest(url)
+        self.reply = self.net_mgr.get(self.req)
+        self.reply.finished.connect(self.onQueryFinished)
+        self.reply.errorOccurred.connect(self.onQueryError)
+        
+    def onQueryFinished(self):
+        
+        if not self.reply:
+            return
+            
+        resp = self.reply.readAll().data().decode().rstrip('\0')
+        if resp.lower() in ['', 'unknown']:
+            return {}
+
+        move_color = self.board.get_move_color()    
+        moves = []
+    
+        #数据分割
+        try:
+            steps = resp.split('|')
+            for it in steps:
+                segs = it.strip().split(',')
+                items =[x.split(':') for x in segs]
+                it_dict = {}
+               
+                for key, value in items:
+                    if key not in ['score', 'move', 'winrate']:
+                        continue
+                    it_dict[key] = value
+                moves.append(it_dict)
+        except Exception as e:
+            print('cloud query result:', resp, "len:", len(resp))
+            
+        score_best = int(moves[0]['score'])
+        for move in moves:
+            move_it = self.board.copy().move_iccs(move['move'])
+            if move_it:
+                move['text'] = move_it.to_text()
+            move['score'] = int(move['score']) 
+            move['diff'] =  move['score'] - score_best
+            if move_color == cchess.BLACK:
+                move['score'] = -move['score']
+                
+        if not moves:
+            print("No Moves in quesy result:", resp)
+            return
+            
+        #moves = filter(lambda x : is_odd, moves)        
+
+        #for it in moves:
+        #   if self. score_limit > 0 and abs(it['diff']) >  self.score_limit:
+        #           continue
+        
+        moves =  sorted(moves, key = lambda x:x['diff'], reverse = True) 
+        
+        moves_clean = []
+        score_best = moves[0]['score']
+        for it in moves:
+            it['diff'] =  it['score'] - score_best
+            if move_color == cchess.BLACK :
+                it['diff'] = -it['diff']
+            if self.score_limit > 0 and abs(it['diff']) >  self.score_limit:
+                    continue
+            moves_clean.append(it)
+            
+        ret = {}
+        ret['fen'] = self.fen
+        ret['score'] = score_best
+        
+        actions = OrderedDict()
+        for it in moves_clean:
+            actions[it['move']] = it
+        ret['actions'] = actions
+            
+        self.move_cache[self.fen]  = ret
+        
+        self.reply = None
+        self.query_result_signal.emit(ret)
+        
+    def onQueryError(self, error):
+        self.reply = None
+        
+        self.tryCount += 1
+        if self.tryCount < 5:
+            logging.warning(f'Query From CloudDB Error, retry { self.tryCount}')
+            time.sleep(2)
+            self.reply = self.net_mgr.get(self.req)
+            self.reply.finished.connect(self.onQueryFinished)
+            self.reply.errorOccurred.connect(self.onQueryError)
+        else:
+            self.query_result_signal.emit({})
         
 #------------------------------------------------------------------------------
 class DataStore():
@@ -127,6 +266,8 @@ class DataStore():
         books = {}
         ret = self.endbook_table.search(q.book_name.exists())
         for it in ret:
+            if 'ok' not in it:
+                it['ok'] = False
             book_name = it['book_name']
             if book_name not in books:
                 books[book_name] = []
@@ -143,7 +284,18 @@ class DataStore():
             if len(ret) == 0:
                 self.endbook_table.insert(game)
                 #yield game['name']
-
+    
+    def updateEndBook(self, game):
+        q = Query()
+        
+        ret = self.endbook_table.search((q.book_name ==  game['book_name'] )
+                                            & (q.name == game['name']))
+        if len(ret) != 1:
+            raise Exception(f"Game Not Exist：{game}")
+        else:    
+            self.endbook_table.update({'ok':game['ok']}, ((q.book_name ==  game['book_name'])
+                                            & (q.name == game['name'])))
+            
     def isEndBookExist(self, book_name):
         q = Query()
         ret = self.endbook_table.search((q.book_name == book_name))
@@ -291,133 +443,7 @@ class DataStore():
                                                q.fen == fen)
             else:
                 print('database eeeor', ret)
-
-#-----------------------------------------------------#
-class CloudDB(QObject):
-    query_result_signal = Signal(str, OrderedDict)
     
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.url = 'http://www.chessdb.cn/chessdb.php'
-        self.net_mgr = QNetworkAccessManager()
-        
-        self.reply = None
-        self.fen = None
-        self.board = cchess.ChessBoard()
-        self.tryCount = 0
-        
-        self.move_cache = {}
-        
-    def startQuery(self, fen, score_limit = 70):
-        
-        if fen in self.move_cache:
-            ret = self.move_cache[fen]
-            self.query_result_signal.emit(fen,  ret)
-            return 
-             
-        if (self.reply is not None) and (not self.reply.isFinished()):
-            self.reply.abort()
-        
-        self.fen = fen
-        self.board.from_fen(fen)
-        self.score_limit = score_limit    
-        
-        url = QUrl(self.url)
-        query = QUrlQuery()
-        query.addQueryItem('board', fen)
-        query.addQueryItem("action", 'queryall')
-        url.setQuery(query)
-        
-        self.req = QNetworkRequest(url)
-        self.reply = self.net_mgr.get(self.req)
-        self.reply.finished.connect(self.onQueryFinished)
-        self.reply.errorOccurred.connect(self.onQueryError)
-        
-    def onQueryFinished(self):
-        
-        if not self.reply:
-            return
-            
-        resp = self.reply.readAll().data().decode().rstrip('\0')
-        if resp.lower() in ['', 'unknown']:
-            return {}
-
-        move_color = self.board.get_move_color()    
-        moves = []
-    
-        #数据分割
-        try:
-            steps = resp.split('|')
-            for it in steps:
-                segs = it.strip().split(',')
-                items =[x.split(':') for x in segs]
-                it_dict = {}
-               
-                for key, value in items:
-                    if key not in ['score', 'move', 'winrate']:
-                        continue
-                    it_dict[key] = value
-                moves.append(it_dict)
-        except Exception as e:
-            print('cloud query result:', resp, "len:", len(resp))
-            
-        score_base = int(moves[0]['score'])
-        for move in moves:
-            move_it = self.board.copy().move_iccs(move['move'])
-            if move_it:
-                move['text'] = move_it.to_text()
-            move['score'] = int(move['score']) 
-            move['diff'] =  move['score'] - score_base
-            if move_color == cchess.BLACK:
-                move['score'] = -move['score']
-                
-        #moves = filter(lambda x : is_odd, moves)        
-        
-        #for it in moves:
-        #   if self. score_limit > 0 and abs(it['diff']) >  self.score_limit:
-        #           continue
-        
-        moves =  sorted(moves, key = lambda x:x['diff'], reverse = True) 
-        
-        moves_clean = []
-        score_base = moves[0]['score']
-        for it in moves:
-            it['diff'] =  it['score'] - score_base
-            if move_color == cchess.BLACK :
-                it['diff'] = -it['diff']
-            if self.score_limit > 0 and abs(it['diff']) >  self.score_limit:
-                    continue
-            moves_clean.append(it)
-            
-        
-        ret = OrderedDict()
-        for it in moves_clean:
-            ret[it['move']] = it
-            
-        self.move_cache[self.fen]  = ret
-        
-        self.reply = None
-        self.query_result_signal.emit(self.fen,  ret)
-        
-    def onQueryError(self, error):
-        print("CLOUD DBQUERY ERROR")
-        self.reply = None
-        
-        self.tryCount += 1
-        if self.tryCount < 3:
-            logging.warning(f'Query From CloudDB Error, retry { self.tryCount}')
-            time.sleep(2)
-            self.reply = self.net_mgr.get(self.req)
-            self.reply.finished.connect(self.onQueryFinished)
-            self.reply.errorOccurred.connect(self.onQueryError)
-        else:
-            self.query_result_signal.emit(self.fen,  {})
-        
-    
-#------------------------------------------------------------------------------
-def trim_fen(fen):
-    return ' '.join(fen.split(' ')[:2])
-
 #------------------------------------------------------------------------------
 '''
 ds = DataStore()

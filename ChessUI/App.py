@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-
 import os
 import sys
 import yaml
 import logging
+#import traceback
 from pathlib import Path
 
 from PySide6 import *
@@ -11,21 +11,6 @@ from PySide6.QtCore import *
 from PySide6.QtWidgets import QApplication
 
 from .Main import *
-
-def my_message_handler(mode, context, message):
-    print("%s: %s (%s:%d, %s)" % (mode, message, context.file, context.line, context.file))
-    
-    if mode == QtInfoMsg:
-        mode = 'Info'
-    elif mode == QtWarningMsg:
-        mode = 'Warning'
-    elif mode == QtCriticalMsg:
-        mode = 'critical'
-    elif mode == QtFatalMsg:
-        mode = 'fatal'
-    else:
-        mode = 'Debug'
-    #print("%s: %s (%s:%d, %s)" % (mode, message, context.file, context.line, context.file))
 
 #-----------------------------------------------------#
 class ChessApp(QApplication):
@@ -46,13 +31,11 @@ class ChessApp(QApplication):
         QCoreApplication.processEvents()
     '''
     
- 
         self.mainWin = MainWindow(self)
         self.mainWin.show()
 
-
+        
 #-----------------------------------------------------#
 def run():
-    QtCore.qInstallMessageHandler(my_message_handler)
     app = ChessApp()
     sys.exit(app.exec_())

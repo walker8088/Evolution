@@ -67,11 +67,13 @@ class ChessBoardBaseWidget(QWidget):
         self.base_board_height = 586
 
         self.scale_board(1.0)
-
+        
+        #self.setMinimumSize(self.base_board_width + 20, self.base_board_height + 10) 
+ 
     def scale_board(self, scale):
 
-        if scale < 0.7:
-            scale = 0.7
+        if scale < 0.5:
+            scale = 0.5
 
         self.paint_scale = int(scale * 7) / 7.0
 
@@ -186,12 +188,12 @@ class ChessBoardBaseWidget(QWidget):
                 painter.drawPixmap(
                     QPoint(board_x, board_y), self.select_img,
                     QRect(0, 0, self.piece_size - 1, self.piece_size - 1))
-
+    '''            
     def mousePressEvent(self, mouseEvent):
 
         if self.view_only:
             return
-
+        
         if (mouseEvent.button() != Qt.LeftButton):
             return
 
@@ -228,6 +230,7 @@ class ChessBoardBaseWidget(QWidget):
 
     def mouseReleaseEvent(self, mouseEvent):
         pass
+    '''
 
     def sizeHint(self):
         return QSize(self.base_board_width + 20, self.base_board_height + 10)
@@ -387,7 +390,7 @@ class ChessBoardWidget(ChessBoardBaseWidget):
         return QPolygon([point2, endPoint, point3])
         
     def mousePressEvent(self, mouseEvent):
-
+        
         if self.view_only:
             return
 

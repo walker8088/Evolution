@@ -5,6 +5,7 @@ import time
 import logging
 from pathlib import Path
 import ctypes
+import traceback
 import platform
 import yaml
 from dataclasses import dataclass
@@ -14,7 +15,6 @@ from PySide6 import *
 from PySide6.QtCore import *
 from PySide6.QtGui import *
 from PySide6.QtMultimedia import *
-from qt_material import apply_stylesheet, QtStyleTools
 
 from cchess import *
 
@@ -39,7 +39,20 @@ class Position:
     move: Move
    
 #-----------------------------------------------------#
-class MainWindow(QMainWindow, QtStyleTools):
+# Back up the reference to the exceptionhook
+sys._excepthook = sys.excepthook
+
+def my_exception_hook(exctype, value, tb):
+    # Print the error and traceback
+    msg = ''.join(traceback.format_exception(exctype, value, tb))
+    QMessageBox.critical(None, getTitle(), msg)
+    logging.error(f'Critical Error: {msg}')
+
+# Set the exception hook to our wrapping function
+sys.excepthook = my_exception_hook
+
+#-----------------------------------------------------#
+class MainWindow(QMainWindow):
     initGameSignal = Signal(str)
     newBoardSignal = Signal()
     moveBeginSignal = Signal()
@@ -64,9 +77,7 @@ class MainWindow(QMainWindow, QtStyleTools):
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
                 myappid)
 
-        #self.apply_stylesheet(self, 'dark_teal.xml')
-
-        Globl.engine_manager = EngineManager(self)
+        Globl.engineManager = EngineManager(self)
         self.initGameDB()
         self.board = ChessBoard()
         
@@ -81,15 +92,15 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.endBookView = EndBookWidget(self)
         self.endBookView.setVisible(False)
         self.endBookView.end_game_select_signal.connect(
-            self.onSelectEndGameIndex)
+            self.onSelectEndGame)
 
         self.moveDbView = MoveDbWidget(self)
         self.cloudDbView = CloudDbWidget(self)
 
         self.bookmarkView = BookmarkWidget(self)
         self.bookmarkView.setVisible(False)
-        self.myGameView = MyGameWidget(self)
-        self.myGameView.setVisible(False)
+        #self.myGameView = MyGameWidget(self)
+        #self.myGameView.setVisible(False)
 
         #self.gameReviewView  = GameReviewWidget(self)
         #self.gameReviewView.setVisible(False)
@@ -102,20 +113,20 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.engineView.analysisModeBox.stateChanged.connect(
             self.onAnalysisModeBoxChanged)
 
-        self.addDockWidget(Qt.LeftDockWidgetArea, self.historyView)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.moveDbView)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.cloudDbView)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.historyView)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.moveDbView)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.cloudDbView)
         #self.addDockWidget(Qt.RightDockWidgetArea, self.gameReviewView)
-        self.addDockWidget(Qt.LeftDockWidgetArea, self.endBookView)
-        self.addDockWidget(Qt.LeftDockWidgetArea, self.bookmarkView)
-        self.addDockWidget(Qt.LeftDockWidgetArea, self.myGameView)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.endBookView)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.bookmarkView)
+        #self.addDockWidget(Qt.LeftDockWidgetArea, self.myGameView)
         self.addDockWidget(Qt.BottomDockWidgetArea, self.engineView)
         
         self.initEngine()
         
-        Globl.engine_manager.best_move_signal.connect(self.onEngineBestMove)
-        Globl.engine_manager.move_probe_signal.connect(self.onEngineMoveProbe)
-        Globl.engine_manager.checkmate_signal.connect(self.onEngineCheckmate)
+        Globl.engineManager.best_move_signal.connect(self.onEngineBestMove)
+        Globl.engineManager.move_probe_signal.connect(self.onEngineMoveProbe)
+        #Globl.engineManager.checkmate_signal.connect(self.onEngineCheckmate)
 
         self.initSound()
         self.engine_working = False
@@ -127,19 +138,20 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.createMenus()
         self.createToolBars()
 
-        self.game_mode = None
+        self.gameMode = None
         self.clearAll()
         
         self.cloud = CloudDB(self)
         self.cloud.query_result_signal.connect(self.onCloudQueryResult)
         
-        Globl.engine_manager.start()
-        self.switchGameMode("open_book")
+        Globl.engineManager.start()
+        
+        self.switchGameMode(self.game_mode_saved)
 
         #splash.finish()
 
     #-----------------------------------------------------------------------
-    #
+    #初始化
     def clearAll(self):
         self.base_fen = None
         self.positionList = []
@@ -151,7 +163,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.moveDbView.clear()
         self.engineView.clear()
         self.boardView.set_view_only(False)
-    
+
     def initEngine(self):
         engine_conf_file = Path('Engine', 'engine.conf')
         if not engine_conf_file.is_file():
@@ -167,14 +179,14 @@ class MainWindow(QMainWindow, QtStyleTools):
             QMessageBox.critical(self, f'{getTitle()}', f'象棋引擎配置文件格式不正确.')
             return False     
         engine_path = Path('Engine', engine_conf['engine']['run'])
-        ok = Globl.engine_manager.load_engine(engine_path)
+        ok = Globl.engineManager.load_engine(engine_path)
         if not ok:
             QMessageBox.critical(self, f'{getTitle()}', f'加载象棋引擎[{engine_path.absolute()}]出错，请确认该程序能在您的电脑上正确运行。')
         return ok
         
     def initGameDB(self):
         Globl.storage = DataStore()
-        Globl.storage.open(Path('Game', 'Evolution.db'))
+        Globl.storage.open(Path('Game', 'Evolution.jdb'))
         self.openbook = OpenBook()
         self.openbook.loadBookFile(Path('Game', 'openbook.db'))
         
@@ -212,37 +224,50 @@ class MainWindow(QMainWindow, QtStyleTools):
 
     #-----------------------------------------------------------------------
     #Game 相关
-    def switchGameMode(self, game_mode):
+    def switchGameMode(self, gameMode):
 
         #模式未变
-        if self.game_mode == game_mode:
+        if self.gameMode == gameMode:
             return
 
-        self.game_mode = game_mode
+        self.gameMode = gameMode
 
-        if self.game_mode == 'end_book':
+        if self.gameMode == 'end_book':
             self.myGamesAct.setEnabled(False)
             self.bookmarkAct.setEnabled(False)
             self.endBookView.show()
             self.bookmarkView.hide()
-            self.myGameView.hide()
+            #self.myGameView.hide()
+            self.moveDbView.clear()
             self.moveDbView.hide()
-            self.initGame(EMPTY_FEN)
+            self.cloudDbView.hide()
+            self.endBookView.nextGame()
 
-        elif self.game_mode == 'open_book':
+        elif self.gameMode == 'open_book':
+            self.setWindowTitle(f'{self.app.APP_NAME_TEXT} - 自由练习')
             self.myGamesAct.setEnabled(True)
             self.bookmarkAct.setEnabled(True)
             self.endBookView.hide()
             self.moveDbView.show()
             #self.bookmarkView.show()
             self.initGame(FULL_INIT_FEN)
-
+        
+        elif self.gameMode == 'fight_robot':
+            self.setWindowTitle(f'{self.app.APP_NAME_TEXT} - 人机练习')
+            self.myGamesAct.setEnabled(True)
+            self.bookmarkAct.setEnabled(True)
+            self.endBookView.hide()
+            self.moveDbView.hide()
+            self.cloudDbView.hide()
+            self.bookmarkView.show()
+            self.initGame(FULL_INIT_FEN)
+                
     def initGame(self, fen=None, is_only_once=False):
 
         if (fen is not None) and (not is_only_once):
             self.init_fen = fen
 
-        Globl.engine_manager.stop_thinking()
+        Globl.engineManager.stop_thinking()
         self.clearAll()
 
         if is_only_once:
@@ -252,16 +277,17 @@ class MainWindow(QMainWindow, QtStyleTools):
 
         self.init_fen = init_fen
       
-        if self.game_mode == 'end_book':
+        if self.gameMode == 'end_book':
             self.engineView.eRedBox.setChecked(False)
             self.engineView.eBlackBox.setChecked(True)
             self.engineView.analysisModeBox.setChecked(False)
+            
         else:
             self.engineView.eRedBox.setChecked(False)
             self.engineView.eBlackBox.setChecked(False)
             self.engineView.analysisModeBox.setChecked(False)
         
-        self.boardView.from_fen(self.init_fen)
+        self.boardView.from_fen(self.init_fen, clear = True)
         
         position = {
             'fen': self.init_fen,
@@ -272,29 +298,34 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.onPositionChanged(position, is_new = True)
  
     def onGameOver(self, win_side):
-
-        if self.game_mode == 'end_book':
+        
+        if self.gameMode == 'end_book':
             if win_side == BLACK:
                 msgbox = TimerMessageBox("挑战失败, 重新再来!")
             else:
-                msgbox = TimerMessageBox("恭喜！ 挑战成功！！！")
+                msgbox = TimerMessageBox("太棒了！ 挑战成功！！！")
             msgbox.exec()
-            #self.onRestartGame()
 
-        elif self.game_mode == 'open_book':
+            if win_side == RED:
+                self.currGame['ok'] = True
+                Globl.storage.updateEndBook(self.currGame)
+                self.endBookView.updateCurrent(self.currGame)
+                self.endBookView.nextGame()
+            
+        elif self.gameMode == 'open_book':
             win_msg = '红方被将死!' if win_side == BLACK else '黑方被将死!'
             msgbox = TimerMessageBox(win_msg)
             msgbox.exec()
 
         #self.engine_working = False
-        self.boardView.set_view_only(True)
+        #self.boardView.set_view_only(True)
 
-    def onSelectEndGameIndex(self, index):
-        curr_game = self.endBookView.curr_game
-        #self.init_fen =  curr_game['fen']
-        self.book_moves = curr_game['moves'] if 'moves' in curr_game else None
-        self.initGame(curr_game['fen'])
-
+    def onSelectEndGame(self, game):
+        self.currGame = game
+        self.book_moves = game['moves'] if 'moves' in game else None
+        self.initGame(game['fen'])
+        self.setWindowTitle(f'{self.app.APP_NAME_TEXT} - 残局挑战 - {game["book_name"]} - {game["name"]}')
+        
     def onReviewGame(self):
 
         if len(self.positionList) <= 1:
@@ -340,18 +371,33 @@ class MainWindow(QMainWindow, QtStyleTools):
     def saveGameToDB(self):
         Globl.storage.saveMovesToBook(self.positionList[1:])
 
-    def loadBookGame(self, name, game_info):
-    
-        fen = game_info['fen']
+    def loadBookGame(self, name, game):
+     
+        fen = game.init_board.to_fen()
+        
         self.initGame(fen, is_only_once = True)
-        if 'moves' in game_info:
-            moves = game_info['moves']
-            if not moves:
-                return
-            for move in moves:
-                iccs = move['move']
-                self.onMoveGo(iccs)
+        
+        moves = game.dump_iccs_moves()
+        if not moves:
+            return
+        for iccs in moves[0]:
+            self.onMoveGo(iccs)
 
+        self.setWindowTitle(f'{self.app.APP_NAME_TEXT} -- {name}')
+
+    def loadBookmark(self, name, position):
+     
+        fen = position['fen']
+        
+        self.initGame(fen, is_only_once = True)
+        print(position)
+        if 'moves' in position:
+            moves = position['moves']
+            if moves is not None:
+                for it in moves:
+                    iccs = it['move']    
+                    self.onMoveGo(iccs)
+            
         self.setWindowTitle(f'{self.app.APP_NAME_TEXT} -- {name}')
 
     #--------------------------------------------------------------------
@@ -363,24 +409,43 @@ class MainWindow(QMainWindow, QtStyleTools):
             if it is not None:
                 new_working = True
                 break
-
         if new_working: # and (new_working != self.engine_working):
             self.engine_working = True
             self.runEngine()
 
         self.engine_working = new_working
-
+        
     def runEngine(self):
+        
         self.engineView.clear()
         
         if not self.engine_working:
             return
         
+        if self.currPosition is None:
+            return
+        
+        move_color = self.board.get_move_color()
+        
+        need_go = True if self.bind_engines[3] else False
+        if not need_go:
+            if move_color == RED and (self.bind_engines[RED] is not None):
+                need_go = True
+        if not need_go:     
+            if move_color == BLACK and (self.bind_engines[BLACK] is not None):
+                need_go = True
+        
+        #print('need_go', need_go)
+        
+        if not need_go:
+            return
+
         fen_engine = fen = self.currPosition['fen']
+        
         if 'move' in self.currPosition:
             fen_engine = self.currPosition['move'].to_engine_fen()
         
-        ok = Globl.engine_manager.go_from(0, fen_engine, fen)
+        ok = Globl.engineManager.go_from(0, fen_engine, fen)
         if not ok:
             QMessageBox.critical(self, f'{getTitle()}', f'象棋引擎命令出错，请确认该程序能正常运行。')
         
@@ -393,11 +458,11 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.detectRunEngine()
 
     def onConfigEngine(self):
-        params = Globl.engine_manager.get_config(0)
+        params = Globl.engineManager.get_config(0)
 
         dlg = EngineConfigDialog()
         if dlg.config(params):
-            Globl.engine_manager.update_config(0, params)
+            Globl.engineManager.update_config(0, params)
 
     def onRedBoxChanged(self, state):
         self.engine_play(0, RED, Qt.CheckState(state) == Qt.Checked)
@@ -455,34 +520,29 @@ class MainWindow(QMainWindow, QtStyleTools):
 
     #------------------------------------------------------------------------------
     #None UI Events
-    def onEngineMoveProbe(self, engine_id, info):
-        fen = self.board.to_fen()
-        self.engineView.onEngineMoveInfo(fen, info)
+    def updateScore(self, score):
+        pass
 
-    def onEngineCheckmate(self, engine_id, info):
-        print('onEngineCheckmate')
 
-        if self.historyMode:
-            return
+    def onEngineMoveProbe(self, engine_id, move_info):
+        self.engineView.onEngineMoveInfo(move_info)
 
-        print(self.board.move_player)
-        win_side = self.board.move_player.next()
-        print("WIN:", win_side)
-        self.onGameOver(win_side)
 
     def onEngineBestMove(self, engine_id, move_info):
         
         #Globl.fenMoves[fen] = {'score': score_best, 'actions': cloud_moves}
-        print(move_info)
+        #print(move_info)
         
         if not self.board.is_valid_iccs_move(move_info['move']):
             return
             
         move_color = self.board.get_move_color()
         
+        '''
         if self.currPosition['index'] > 0:
             if 'score' not in move_info:
-                print("score not found:", move_info)
+                #print("score not found:", move_info)
+                pass
             else:
                 score = move_info['score']
                 self.currPosition[
@@ -490,6 +550,7 @@ class MainWindow(QMainWindow, QtStyleTools):
                 self.currPosition['move_scores'] = move_info['move_scores']
 
         self.historyView.inner.onUpdatePosition(self.currPosition)
+        '''
 
         if self.reviewMode:
             self.onReviewGameStep()
@@ -517,17 +578,21 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.cloudDbView.clear()
         self.cloud.startQuery(fen)
         
-    def onCloudQueryResult(self, fen, cloud_moves):
+    def onCloudQueryResult(self, qResult):
         
-        if len(cloud_moves) == 0:
+        if (not qResult) or len(qResult['actions']) == 0:
             return
+            
+        fen = qResult['fen'] 
+        Globl.fenMoves[fen] = qResult
+        
+        l_moves = self.openbook.getMoves(fen)
          
-        score_best =list(cloud_moves.values())[0]['score']
-        move_color = get_move_color(fen)
-        Globl.fenMoves[fen] = {'score': score_best, 'actions': cloud_moves}
-       
         if self.currPosition['fen'] != fen:
             return
+        
+        score_best = qResult['score']
+        move_color = get_move_color(fen)
         
         self.currPosition['score'] = score_best
            
@@ -555,7 +620,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         
         self.historyView.inner.onUpdatePosition(self.currPosition)
         #print(list(cloud_moves.values())[:5])    
-        self.cloudDbView.updateCloudMoves(cloud_moves.values())
+        self.cloudDbView.updateCloudMoves(qResult['actions'].values())
 
     #-----------------------------------------------------------
     #走子核心逻辑
@@ -598,11 +663,16 @@ class MainWindow(QMainWindow, QtStyleTools):
                     msg = ""
                 self.statusBar().showMessage(msg)
 
-        self.engineView.clear()        
-        self.moveDbView.onPositionChanged(position, is_new)
+        self.engineView.clear()       
         self.boardView.from_fen(fen)    
+        
+        if self.gameMode == 'end_book':        
+            pass
+        else:
+            self.moveDbView.onPositionChanged(position, is_new)
+            self.searchMoves(fen)
+        
         self.detectRunEngine()
-        self.searchMoves(fen)
         
     def onBoardMove(self,  move_from,  move_to):
         move_iccs = pos2iccs(move_from, move_to)
@@ -615,8 +685,12 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.boardView.show_move_iccs(move_iccs)
         
         #--------------------------------
-        #self.board在做了这个move动作后，棋子已经更新到新位置了
         move = self.board.move_iccs(move_iccs)
+        if move is None:
+            #不能走就算了
+            self.historyMode = False  #结束保护
+            return
+        #self.board在做了这个move动作后，棋子已经更新到新位置了
         #board是下个走子的position了
         self.board.next_turn()
         #--------------------------------
@@ -638,7 +712,7 @@ class MainWindow(QMainWindow, QtStyleTools):
         }
         
         self.onPositionChanged(position)
-      
+        #print(move.is_checking, move.is_checkmate)
         if move.is_checkmate:
             self.onGameOver(move.board.move_player)
       
@@ -650,6 +724,9 @@ class MainWindow(QMainWindow, QtStyleTools):
     def onDoEndBook(self):
         self.switchGameMode("end_book")
 
+    def onDoRobot(self):
+        self.switchGameMode("fight_robot")
+        
     def onDoOnline(self):
         self.switchGameMode("online_game")
         dlg = OnlineDialog(self)
@@ -706,13 +783,10 @@ class MainWindow(QMainWindow, QtStyleTools):
             game = read_from_xqf(fileName)
         elif ext == '.pgn':
             pass
+        if not game:
+            return
 
-        if game:
-            game_info = {
-                'fen': game.init_board.to_fen(),
-                'moves': game.dump_iccs_moves()[0]
-            }
-            self.loadBookGame(fileName.name, game_info)
+        self.loadBookGame(fileName.name, game)
 
     def onSaveFile(self):
         options = QFileDialog.Options()
@@ -752,12 +826,8 @@ class MainWindow(QMainWindow, QtStyleTools):
 
         games = load_eglib(fileName)
 
-        #for it in games:
-        #    print(it['name'])
-
         Globl.storage.saveEndBook(lib_name, games)
-        #self.endBookView.update_fen()
-
+        
     #------------------------------------------------------------------------------
     #UI Base
     def createActions(self):
@@ -788,6 +858,11 @@ class MainWindow(QMainWindow, QtStyleTools):
                                     statusTip="残局挑战",
                                     triggered=self.onDoEndBook)
 
+        self.doRobotAct = QAction(QIcon(':Images/robot.png'),
+                                   "人机练习",
+                                   self,
+                                   statusTip="人机练习",
+                                   triggered=self.onDoRobot)
         self.doOnlineAct = QAction(QIcon(':Images/online.png'),
                                    "连线分析",
                                    self,
@@ -812,12 +887,13 @@ class MainWindow(QMainWindow, QtStyleTools):
                                       statusTip="从对局库中搜索局面",
                                       triggered=self.onSearchBoard)
 
+        
         self.myGamesAct = QAction(QIcon(':Images/mybook.png'),
                                   "我的对局库",
                                   self,
                                   statusTip="我的对局库",
                                   triggered=self.onShowMyGames)
-
+        
         self.bookmarkAct = QAction(QIcon(':Images/bookmark.png'),
                                    "我的收藏",
                                    self,
@@ -867,20 +943,21 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.fileBar = self.addToolBar("File")
         self.fileBar.addAction(self.openFileAct)
         self.fileBar.addAction(self.saveFileAct)
-        self.fileBar.addAction(self.myGamesAct)
+        #self.fileBar.addAction(self.myGamesAct)
         self.fileBar.addAction(self.bookmarkAct)
 
         ag = QActionGroup(self)
         ag.setExclusive(True)
         ag.addAction(self.doOpenBookAct)
         ag.addAction(self.doEndBookAct)
-        ag.addAction(self.doOnlineAct)
+        ag.addAction(self.doRobotAct)
 
         self.gameBar = self.addToolBar("Game")
 
         self.gameBar.addAction(self.doEndBookAct)
         self.gameBar.addAction(self.doOpenBookAct)
-        #self.gameBar.addAction(self.doOnlineAct)
+        self.gameBar.addAction(self.doRobotAct)
+
         self.gameBar.addAction(self.restartAct)
         self.gameBar.addAction(self.editBoardAct)
         #self.gameBar.addAction(self.searchBoardAct)
@@ -918,7 +995,7 @@ class MainWindow(QMainWindow, QtStyleTools):
 
     def closeEvent(self, event):
         self.writeSettings()
-        Globl.engine_manager.stop()
+        Globl.engineManager.stop()
         Globl.storage.close()
 
     def readSettings(self):
@@ -939,7 +1016,9 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.cloudDbView.setVisible(yes)
 
         self.soundVolume = self.settings.value("soundVolume", 30)
-
+        
+        self.game_mode_saved = self.settings.value("gameMode", 'open_book')
+        
     def writeSettings(self):
         self.settings.setValue("geometry", self.saveGeometry())
         self.settings.setValue("historyView", self.historyView.isVisible())
@@ -947,7 +1026,8 @@ class MainWindow(QMainWindow, QtStyleTools):
         self.settings.setValue("moveDBView", self.moveDbView.isVisible())
         self.settings.setValue("cloudDBView", self.moveDbView.isVisible())
         self.settings.setValue("soundVolume", self.soundVolume)
-
+        self.settings.setValue("gameMode", self.gameMode)
+        
     def about(self):
         from .Version import release_version
         

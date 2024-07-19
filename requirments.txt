@@ -1,4 +1,8 @@
+
+numpy
 pyyaml
-cchess>=0.9
+cchess>=1.0
 psutil
 pyside6
+opencv-python
+pillow
