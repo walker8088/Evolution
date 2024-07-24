@@ -84,7 +84,8 @@ class MainWindow(QMainWindow):
                 myappid)
         
         self.isSearchCloud = True
-        
+        self.isShowBestMove = True
+
         Globl.engineManager = EngineManager(self)
         self.initGameDB()
         self.board = ChessBoard()
@@ -839,6 +840,10 @@ class MainWindow(QMainWindow):
     def onSearchCloudChanged(self, state):
         self.isSearchCloud = (Qt.CheckState(state) == Qt.Checked)
 
+    def onShowBestMoveChanged(self, state):
+        self.isShowBestMove = (Qt.CheckState(state) == Qt.Checked)
+        self.boardView.is_show_best_move = self.isShowBestMove
+
     def onEditBoard(self):
         dlg = PositionEditDialog(self)
         new_fen = dlg.edit(self.board.to_fen())
@@ -1063,6 +1068,12 @@ class MainWindow(QMainWindow):
         self.searchCloudBox.setChecked(self.isSearchCloud)
         self.searchCloudBox.setToolTip('实时搜索云库')
         self.searchCloudBox.stateChanged.connect(self.onSearchCloudChanged)
+        
+        self.infoBox = QCheckBox()  #"最佳提示")
+        self.infoBox.setIcon(QIcon(':Images/info.png'))
+        self.infoBox.setChecked(self.isShowBestMove)
+        self.infoBox.setToolTip('提示最佳走法')
+        self.infoBox.stateChanged.connect(self.onShowBestMoveChanged)
     
         self.showBar = self.addToolBar("Show")
         self.showBar.addWidget(self.flipBoardBox)

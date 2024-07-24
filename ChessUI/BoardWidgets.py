@@ -253,7 +253,8 @@ class ChessBoardWidget(ChessBoardBaseWidget):
         self.last_pickup_moves = []
         self.move_steps_show = []
         self.best_moves = []
-        
+        self.is_show_best_move = True
+
         self.done = []
 
         self.move_steps_show = []
@@ -340,30 +341,31 @@ class ChessBoardWidget(ChessBoardBaseWidget):
                 self.pieces_img[piece.fench.lower()],
                 QRect(offset, 0, self.piece_size - 1, self.piece_size - 1))
         
-        for p_from, p_to, p_color, iccs in self.best_moves: 
-            #print(iccs)
-            r = self.piece_size//2
-            from_x, from_y = self.logic_to_board(*p_from,r)   
-            to_x, to_y = self.logic_to_board(*p_to, r)   
-            
-            if p_color == RED:
+        if self.is_show_best_move:
+            for p_from, p_to, p_color, iccs in self.best_moves: 
+                #print(iccs)
+                r = self.piece_size//2
+                from_x, from_y = self.logic_to_board(*p_from,r)   
+                to_x, to_y = self.logic_to_board(*p_to, r)   
+                
+                if p_color == RED:
+                    color = Qt.darkGreen
+                else:
+                    color = Qt.darkRed
+                
                 color = Qt.darkGreen
-            else:
-                color = Qt.darkRed
-            
-            color = Qt.darkGreen
-            
-            painter.setPen(QPen(color,5))#,  Qt.DotLine))    
-            painter.drawLine(from_x, from_y, to_x, to_y)
-            painter.drawEllipse(QPoint(from_x, from_y), r, r)
-            #painter.setBrush(QBrush(color, Qt.CrossPattern))
-            painter.drawEllipse(QPoint(to_x, to_y), r//2, r//2)
-            
-            #arrow = self.arrowCalc(QPoint(from_x,from_y), QPoint(to_x,to_x))
-            #if arrow:
-            #    print(arrow)
-            #    painter.drawPolyline(arrow)
-            
+                
+                painter.setPen(QPen(color,5))#,  Qt.DotLine))    
+                painter.drawLine(from_x, from_y, to_x, to_y)
+                painter.drawEllipse(QPoint(from_x, from_y), r, r)
+                #painter.setBrush(QBrush(color, Qt.CrossPattern))
+                painter.drawEllipse(QPoint(to_x, to_y), r//4, r//4)
+                
+                #arrow = self.arrowCalc(QPoint(from_x,from_y), QPoint(to_x,to_x))
+                #if arrow:
+                #    print(arrow)
+                #    painter.drawPolyline(arrow)
+                
     def arrowCalc(self, startPoint, endPoint): 
 
         dx, dy = startPoint.x() - endPoint.x(), startPoint.y() - endPoint.y()

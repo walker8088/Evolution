@@ -30,6 +30,8 @@
     <file>../Images/star.png</file>
     <file>../Images/good.png</file>
     <file>../Images/sad.png</file>
-    <file>../Images/bad.png</file>   
+    <file>../Images/bad.png</file> 
+    <file>../Images/info.png</file> 
+    
 </qresource>
 </RCC>
