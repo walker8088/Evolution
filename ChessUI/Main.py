@@ -174,7 +174,7 @@ class MainWindow(QMainWindow):
         self.historyView.inner.clear()
         self.moveDbView.clear()
         self.engineView.clear()
-        self.boardView.set_view_only(False)
+        self.boardView.setViewOnly(False)
 
     def initEngine(self):
         engine_conf_file = Path('Engine', 'engine.conf')
@@ -344,7 +344,7 @@ class MainWindow(QMainWindow):
             msgbox.exec()
 
         #self.engine_working = False
-        #self.boardView.set_view_only(True)
+        #self.boardView.setViewOnly(True)
 
     def onSelectEndGame(self, game):
         self.currGame = game
@@ -562,10 +562,10 @@ class MainWindow(QMainWindow):
 
         if is_last:
             self.historyMode = False
-            self.boardView.set_view_only(False)
+            self.boardView.setViewOnly(False)
         else:
             self.historyMode = True
-            self.boardView.set_view_only(True)
+            self.boardView.setViewOnly(True)
 
         if 'move' in self.currPosition:
             move = self.currPosition['move']
@@ -573,9 +573,9 @@ class MainWindow(QMainWindow):
             if 'best_show' in  self.currPosition:
                 best_show = self.currPosition['best_show']
             self.boardView.from_fen(move.board.to_fen())
-            self.boardView.show_move(move.p_from, move.p_to, best_show)
+            self.boardView.showMove(move.p_from, move.p_to, best_show)
         else:
-             self.boardView.clear_pickup()    
+             self.boardView.clearPickup()    
              
         self.onPositionChanged(self.currPosition, is_new = False)
         
@@ -588,7 +588,7 @@ class MainWindow(QMainWindow):
             self.currPosition = None
 
         self.historyMode = False
-        self.boardView.set_view_only(False)
+        self.boardView.setViewOnly(False)
 
     #------------------------------------------------------------------------------
     #None UI Events
@@ -766,7 +766,7 @@ class MainWindow(QMainWindow):
 
         self.historyMode = True  #用historyMode保护在此期间引擎输出的move信息被忽略
         
-        self.boardView.show_move_iccs(move_iccs)
+        self.boardView.showIccsMove(move_iccs)
         
         #--------------------------------
         move = self.board.move_iccs(move_iccs)
@@ -842,7 +842,7 @@ class MainWindow(QMainWindow):
 
     def onShowBestMoveChanged(self, state):
         self.isShowBestMove = (Qt.CheckState(state) == Qt.Checked)
-        self.boardView.is_show_best_move = self.isShowBestMove
+        self.boardView.setShowBestMove(self.isShowBestMove)
 
     def onEditBoard(self):
         dlg = PositionEditDialog(self)
@@ -1080,6 +1080,8 @@ class MainWindow(QMainWindow):
         self.showBar.addWidget(self.mirrorBoardBox)
         self.showBar.addSeparator()
         self.showBar.addWidget(self.searchCloudBox)
+        self.showBar.addSeparator()
+        self.showBar.addWidget(self.infoBox)
         
         self.sysBar = self.addToolBar("System")
         spacer = QWidget()

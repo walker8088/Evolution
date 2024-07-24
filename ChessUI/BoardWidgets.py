@@ -16,7 +16,7 @@ from .Resource import *
 import numpy as np
 
 #-----------------------------------------------------#
-def scaled_image(img, scale):
+def scaleImage(img, scale):
 
     if scale == 1.0:
         return img
@@ -66,11 +66,11 @@ class ChessBoardBaseWidget(QWidget):
         self.base_board_width = 530
         self.base_board_height = 586
 
-        self.scale_board(1.0)
+        self.scaleBoard(1.0)
         
         #self.setMinimumSize(self.base_board_width + 20, self.base_board_height + 10) 
  
-    def scale_board(self, scale):
+    def scaleBoard(self, scale):
 
         if scale < 0.5:
             scale = 0.5
@@ -83,22 +83,22 @@ class ChessBoardBaseWidget(QWidget):
         self.board_width = int(self.base_board_width * self.paint_scale)
         self.board_height = int(self.base_board_height * self.paint_scale)
 
-        self._board_img = scaled_image(self.base_board_img, self.paint_scale)
-        self.select_img = scaled_image(self.base_select_img, self.paint_scale)
-        self.step_img = scaled_image(self.base_step_img, self.paint_scale)
-        self.point_img = scaled_image(self.base_point_img, self.paint_scale)
-        self.done_img = scaled_image(self.base_done_img, self.paint_scale)
-        self.over_img = scaled_image(self.base_over_img, self.paint_scale)
+        self._board_img = scaleImage(self.base_board_img, self.paint_scale)
+        self.select_img = scaleImage(self.base_select_img, self.paint_scale)
+        self.step_img = scaleImage(self.base_step_img, self.paint_scale)
+        self.point_img = scaleImage(self.base_point_img, self.paint_scale)
+        self.done_img = scaleImage(self.base_done_img, self.paint_scale)
+        self.over_img = scaleImage(self.base_over_img, self.paint_scale)
 
         self.pieces_img = {}
         for name in ['k', 'a', 'b', 'r', 'n', 'c', 'p']:
-            self.pieces_img[name] = scaled_image(self.base_pieces_img[name],
+            self.pieces_img[name] = scaleImage(self.base_pieces_img[name],
                                                  self.paint_scale)
 
     def from_fen(self, fen_str, clear = False):
         self._board.from_fen(fen_str)
         if clear:
-            self.clear_pickup()
+            self.clearPickup()
 
     def to_fen(self):
         return self._board.to_fen()
@@ -106,7 +106,7 @@ class ChessBoardBaseWidget(QWidget):
     def get_move_color(self):
         return self._board.get_move_color()
         
-    def clear_pickup(self):
+    def clearPickup(self):
         self.last_pickup = None
         self.update()
 
@@ -157,7 +157,7 @@ class ChessBoardBaseWidget(QWidget):
         new_scale = min(new_width / self.base_board_width,
                         new_height / self.base_board_height)
 
-        self.scale_board(new_scale)
+        self.scaleBoard(new_scale)
 
         self.start_x = (new_width - self.board_width) // 2
         if self.start_x < 0:
@@ -188,49 +188,6 @@ class ChessBoardBaseWidget(QWidget):
                 painter.drawPixmap(
                     QPoint(board_x, board_y), self.select_img,
                     QRect(0, 0, self.piece_size - 1, self.piece_size - 1))
-    '''            
-    def mousePressEvent(self, mouseEvent):
-
-        if self.view_only:
-            return
-        
-        if (mouseEvent.button() != Qt.LeftButton):
-            return
-
-        if len(self.move_steps_show) > 0:
-            return
-
-        pos = mouseEvent.pos()
-        key = x, y = self.board_to_logic(pos.x(), pos.y())
-
-        #数据合法校验
-        if key[0] < 0 or key[0] > 8:
-            return
-        if key[1] < 0 or key[1] > 9:
-            return
-
-        piece = self._board.get_piece(key)
-
-        if piece and piece.color == self._board.move_player.color:
-            #pickup and clear last move
-            self.last_pickup = key
-            self.last_pickup_moves = list(self._board.create_piece_moves(key))
-
-        else:
-            # move check
-            if self.last_pickup and key != self.last_pickup:
-                #app.try_move(self.last_pickup, key)
-                self.try_move(self.last_pickup, key)
-                #pass
-
-        self.update()
-
-    def mouseMoveEvent(self, mouseEvent):
-        pass
-
-    def mouseReleaseEvent(self, mouseEvent):
-        pass
-    '''
 
     def sizeHint(self):
         return QSize(self.base_board_width + 20, self.base_board_height + 10)
@@ -265,28 +222,32 @@ class ChessBoardWidget(ChessBoardBaseWidget):
         self.timer = QTimer()
         self.timer.timeout.connect(self.moveShowEvent)
 
-    def set_view_only(self, yes):
+    def setViewOnly(self, yes):
         self.view_only = yes
-
-    def show_move_iccs(self, iccs):
-        self.show_move(*iccs2pos(iccs))
+    
+    def setShowBestMove(self, yes):
+        self.is_show_best_move = yes
+        self.update()    
         
-    def show_move(self, p_from, p_to, best_moves = []):
+    def showIccsMove(self, iccs):
+        self.showMove(*iccs2pos(iccs))
+        
+    def showMove(self, p_from, p_to, best_moves = []):
     
         self.move_pieces = (p_from, p_to)
         self.last_pickup = None
         self.last_pickup_moves = []
         self.best_moves = best_moves
-        self.make_log_step_move(p_from, p_to)
+        self._make_move_steps(p_from, p_to)
         
-    def clear_pickup(self):
+    def clearPickup(self):
         self.move_pieces = []
         self.last_pickup = None
         self.last_pickup_moves = []
         self.best_moves = []
         self.update()
 
-    def make_log_step_move(self, p_from, p_to):
+    def _make_move_steps(self, p_from, p_to):
 
         self.last_pickup = p_from
 
@@ -459,7 +420,7 @@ class ChessBoardWidget(ChessBoardBaseWidget):
     def try_move(self, move_from, move_to):
 
         if not self._board.is_valid_move(move_from, move_to):
-            self.clear_pickup()
+            self.clearPickup()
             return False
 
         checked = self._board.is_checked_move(move_from, move_to)
@@ -707,6 +668,7 @@ class ChessBoardEditWidget(ChessBoardBaseWidget):
         pass
 
 #-----------------------------------------------------#
+"""
 from PIL.ImageQt import ImageQt
 
 class ScreenBoardView(QWidget):
@@ -744,14 +706,14 @@ class ScreenBoardView(QWidget):
         self.base_win_img = None
         self.win_img = None
 
-    def scale_board(self, scale):
+    def scaleBoard(self, scale):
 
         if scale < 0.5:
             scale = 0.5
 
         self.paint_scale = int(scale * 9) / 9.0
         if self.base_win_img:
-            self.win_img = scaled_image(self.base_win_img, self.paint_scale)
+            self.win_img = scaleImage(self.base_win_img, self.paint_scale)
             self.win_width = self.win_img.width()
             self.win_height = self.win_img.height()
             
@@ -799,7 +761,7 @@ class ScreenBoardView(QWidget):
         new_scale = min(new_width / self.base_win_width,
                         new_height / self.base_win_height)
 
-        self.scale_board(new_scale)
+        self.scaleBoard(new_scale)
 
         self.start_x = (new_width - self.win_width) // 2
         if self.start_x < 0:
@@ -809,7 +771,7 @@ class ScreenBoardView(QWidget):
         if self.start_y < 0:
             self.start_y = 0
 
-    def update_img(self, img):
+    def updateImage(self, img):
         
         self.cv_img = pil2cv_image(img)
         
@@ -818,7 +780,7 @@ class ScreenBoardView(QWidget):
         self.base_win_width =  self.base_win_img.width()
         self.base_win_height =  self.base_win_img.height()
         
-        self.scale_board( self.paint_scale)
+        self.scaleBoard( self.paint_scale)
 
         self.update()
         
@@ -901,8 +863,8 @@ class ScreenBoardView(QWidget):
                     if r_min < 0 or r < r_min:
                         r_min = r
     '''
-        #self.update_img(cv2pil_image(edges))
-        self.update_img(cv2pil_image(img_src))
+        #self.updateImage(cv2pil_image(edges))
+        self.updateImage(cv2pil_image(img_src))
         return
         
         board_rect = [min(x_points), min(y_points), max(x_points), max(y_points)]
@@ -963,4 +925,4 @@ class ScreenBoardView(QWidget):
     def mouseReleaseEvent(self, mouseEvent):
         pass
     
-     
+ """    

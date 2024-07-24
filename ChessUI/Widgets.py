@@ -281,7 +281,6 @@ class HistoryWidget(QWidget):
 
         if 'diff' in position:
             diff = position['diff']
-            print(diff)
             if diff > -30:
                 item.setIcon(3, QIcon(":Images/star.png"))
             elif diff > -70:
