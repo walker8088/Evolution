@@ -28,6 +28,29 @@ def trim_fen(fen):
 
 
 #------------------------------------------------------------------------------
+def updateFenCahce(qResult):
+    fen = qResult['fen']
+    if fen not in Globl.fenCache:
+        Globl.fenCache[fen] = {}
+    Globl.fenCache[fen].update({'score': qResult['score']}) 
+
+    best_moves = []
+    actions = qResult['actions']
+    for act in actions:
+        if act['diff'] == 0:
+            best_moves.append(act['move'])
+        m = {'score': act['score'], 'diff': act['diff']}
+        new_fen = act['new_fen']
+        if new_fen not in Globl.fenCache:
+            Globl.fenCache[new_fen] = m
+        else:
+            Globl.fenCache[new_fen].update(m)    
+    
+    if len(best_moves) > 0: 
+        Globl.fenCache[fen].update({ 'best_moves': best_moves })
+        #print(Globl.fenCache[fen])        
+        
+#------------------------------------------------------------------------------
 book_db = SqliteExtDatabase(None)
 #'game/openbook.db', pragmas=(
 #    ('cache_size', -1024 * 64),  # 64MB page-cache.
@@ -80,6 +103,7 @@ class OpenBook():
         actions = OrderedDict()    
         move_color = board.get_move_color()        
         score_best = None
+        
         for ics, score in query.vmoves.items():
             if b_state == 'mirror':
                 iccs = cchess.iccs_mirror(ics)
@@ -98,12 +122,13 @@ class OpenBook():
                 #m['diff'] =   -m['diff']
             #print(m)
             actions[iccs] = m
-        
+            m['new_fen'] = move_it.board_done.to_fen()
+            
         ret = {}
         ret['fen'] = fen
         ret['score'] = score_best 
         ret['actions'] = actions
-        
+
         return ret
         
 #-----------------------------------------------------#
@@ -184,7 +209,8 @@ class CloudDB(QObject):
             move['diff'] =  move['score'] - score_best
             if move_color == cchess.BLACK:
                 move['score'] = -move['score']
-                
+            move['new_fen'] = move_it.board_done.to_fen()
+
         if not moves:
             print("No Moves in quesy result:", resp)
             return
@@ -210,14 +236,13 @@ class CloudDB(QObject):
         ret = {}
         ret['fen'] = self.fen
         ret['score'] = score_best
-        
-        actions = OrderedDict()
-        for it in moves_clean:
-            actions[it['move']] = it
-        ret['actions'] = actions
+        #ret['diff'] = 0
+        ret['actions'] = moves_clean
             
         self.move_cache[self.fen]  = ret
         
+        updateFenCahce(ret)
+
         self.reply = None
         self.query_result_signal.emit(ret)
         
@@ -447,9 +472,10 @@ class DataStore():
                     self.position_table.update({'actions': db_actions},
                                                q.fen == fen)
             else:
-                print('database eeeor', ret)
+                print('database error', ret)
     
 #------------------------------------------------------------------------------
+
 '''
 ds = DataStore()
 ds.open('../Game/localbook.db')

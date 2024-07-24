@@ -37,7 +37,13 @@ class Position:
     index: int
     move_color: int
     move: Move
-   
+
+@dataclass
+class Position:
+    fen: str
+    score: int
+    diff: int
+
 #-----------------------------------------------------#
 # Back up the reference to the exceptionhook
 sys._excepthook = sys.excepthook
@@ -90,8 +96,10 @@ class MainWindow(QMainWindow):
         self.historyView = DockHistoryWidget(self)
         self.historyView.inner.positionSelSignal.connect(
             self.onSelectHistoryPosition)
-        self.historyView.inner.reviewByEngineBtn.clicked.connect(self.onReviewGame)
-        
+        self.historyView.inner.reviewByCloudBtn.clicked.connect(self.onReviewByCloud)
+        self.historyView.inner.reviewByEngineBtn.clicked.connect(self.onReviewByEngine)
+        self.historyView.inner.reviewByEngineBtn.setEnabled(False)
+
         self.endBookView = EndBookWidget(self)
         self.endBookView.setVisible(False)
         self.endBookView.end_game_select_signal.connect(
@@ -141,7 +149,7 @@ class MainWindow(QMainWindow):
         self.createMenus()
         self.createToolBars()
 
-        self.gameMode = None
+        self.gameMode = ''
         self.clearAll()
         
         self.cloud = CloudDB(self)
@@ -160,7 +168,7 @@ class MainWindow(QMainWindow):
         self.positionList = []
         self.currPosition = None
         self.historyMode = False
-        self.reviewMode = False
+        self.reviewMode = None
 
         self.historyView.inner.clear()
         self.moveDbView.clear()
@@ -268,8 +276,9 @@ class MainWindow(QMainWindow):
             self.engineView.eBlackBox.setChecked(False)
             self.engineView.analysisModeBox.setChecked(False)
             self.searchCloudBox.setChecked(True)
-            
-            self.initGame(FULL_INIT_FEN)
+        
+            if self.lastGameMode not in ['fight_robot', ]:        
+                self.initGame(FULL_INIT_FEN)
         
         elif self.gameMode == 'fight_robot':
             self.setWindowTitle(f'{self.app.APP_NAME_TEXT} - 人机练习')
@@ -285,7 +294,7 @@ class MainWindow(QMainWindow):
             self.engineView.analysisModeBox.setChecked(False)
             self.searchCloudBox.setChecked(False)
             
-            if self.lastGameMode == 'end_book':
+            if self.lastGameMode in ['', 'end_book']:
                 self.initGame(FULL_INIT_FEN)
             
     def initGame(self, fen=None, is_only_once=False):
@@ -341,50 +350,71 @@ class MainWindow(QMainWindow):
         self.book_moves = game['moves'] if 'moves' in game else None
         self.initGame(game['fen'])
         self.setWindowTitle(f'{self.app.APP_NAME_TEXT} - 残局挑战 - {game["book_name"]} - {game["name"]}')
-        
-    def onReviewGame(self):
+    
+    def clearAllScore(self):
 
+        for posi in self.positionList:
+            posi['score'] = ''
+            if 'diff' in posi:
+                del posi['diff']
+                
+            self.historyView.inner.onUpdatePosition(posi)
+                
+    def onReviewByCloud(self):    
+        
         if len(self.positionList) <= 1:
             return
 
         if not self.reviewMode:
-            self.onReviewGameBegin()
+            self.reviewMode = 'Cloud'
+            self.clearAllScore()
+            self.engineView.eRedBox.setChecked(False)
+            self.engineView.eBlackBox.setChecked(False)
+            self.engineView.analysisModeBox.setChecked(False)            
+            self.historyView.inner.reviewByCloudBtn.setText('停止复盘')
+            self.historyView.inner.reviewByEngineBtn.setEnabled(False)
+            self.historyView.inner.selectIndex(0)
         else:
             self.onReviewGameEnd(isCanceled=True)
-
-    def onReviewGameBegin(self):
-
-        self.reviewMode = True
-
-        self.engineView.eRedBox.setChecked(False)
-        self.engineView.eBlackBox.setChecked(False)
-        self.engineView.analysisModeBox.setChecked(True)
-        #self.engineView.reviewBtn.setText('停止分析')
-        self.historyView.inner.selectIndex(0)
-        self.onReviewGameStep()
+         
+    def onReviewByEngine(self):    
         
+        if len(self.positionList) <= 1:
+            return
+
+        if not self.reviewMode:
+            self.reviewMode = 'Engine'
+            self.clearAllScore()
+            self.engineView.eRedBox.setChecked(False)
+            self.engineView.eBlackBox.setChecked(False)
+            self.engineView.analysisModeBox.setChecked(True)
+            #self.historyView.inner.reviewByEngineBtn.setText('停止复盘')
+            #self.historyView.inner.reviewByCloudBtn.setEnabled(False)
+            self.historyView.inner.selectIndex(0)
+        else:
+            self.onReviewGameEnd(isCanceled=True)
+            
     def onReviewGameStep(self):
         sel_index = self.historyView.inner.selectionIndex + 1
-        while True:
-            print('onReviewGameStep', sel_index)
-            if sel_index >= (len(self.positionList) - 1):  #已到最后一步
-                self.onReviewGameEnd()
-                return
-            pos = self.positionList[sel_index]
-            print(pos)
-            if 'score' in pos and pos['score']:
-                sel_index +=  1
-                continue
-            else:            
-                self.historyView.inner.selectIndex(sel_index)
+        print('onReviewGameStep', sel_index)
+        if sel_index >= len(self.positionList):  #已到最后一步
+            self.onReviewGameEnd()
+            return
+        self.historyView.inner.selectIndex(sel_index)
 
     def onReviewGameEnd(self, isCanceled=False):
-        self.reviewMode = False
-        #self.engineView.reviewBtn.setText('复盘分析')
+        self.reviewMode = None
+        
+        self.historyView.inner.reviewByCloudBtn.setText('云库复盘')
+        self.historyView.inner.reviewByCloudBtn.setEnabled(True)
+        #self.historyView.inner.reviewByEngineBtn.setText('引擎复盘')
+        #self.historyView.inner.reviewByEngineBtn.setEnabled(True)
+        
         if not isCanceled:
             msgbox = TimerMessageBox("  复盘分析完成。  ", timeout=1)
             msgbox.exec()
-            self.engineView.analysisModeBox.setChecked(False)
+        
+        self.engineView.analysisModeBox.setChecked(False)
 
     def saveGameToDB(self):
         Globl.storage.saveMovesToBook(self.positionList[1:])
@@ -545,7 +575,6 @@ class MainWindow(QMainWindow):
             self.boardView.show_move(move.p_from, move.p_to, best_show)
         else:
              self.boardView.clear_pickup()    
-             pass
              
         self.onPositionChanged(self.currPosition, is_new = False)
         
@@ -572,7 +601,7 @@ class MainWindow(QMainWindow):
 
     def onEngineBestMove(self, engine_id, move_info):
         
-        #Globl.fenMoves[fen] = {'score': score_best, 'actions': cloud_moves}
+        #Globl.fenCache[fen] = {'score': score_best, 'actions': cloud_moves}
         #print(move_info)
         
         if not self.board.is_valid_iccs_move(move_info['move']):
@@ -580,8 +609,7 @@ class MainWindow(QMainWindow):
             
         move_color = self.board.get_move_color()
         
-        '''
-        if self.currPosition['index'] > 0:
+        if (self.reviewMode == 'Engine') and self.currPosition['index'] > 0:
             if 'score' not in move_info:
                 #print("score not found:", move_info)
                 pass
@@ -591,9 +619,8 @@ class MainWindow(QMainWindow):
                     'score'] = score if move_color == RED else -score
                 self.currPosition['move_scores'] = move_info['move_scores']
 
-        self.historyView.inner.onUpdatePosition(self.currPosition)
-        '''
-
+            self.historyView.inner.onUpdatePosition(self.currPosition)
+        
         if self.reviewMode:
             self.onReviewGameStep()
             return
@@ -623,43 +650,48 @@ class MainWindow(QMainWindow):
             return
             
         fen = qResult['fen'] 
-        Globl.fenMoves[fen] = qResult
         
-        l_moves = self.openbook.getMoves(fen)
-         
-        if self.currPosition['fen'] != fen:
+        if len(self.positionList) == 0:
             return
         
-        score_best = qResult['score']
-        move_color = get_move_color(fen)
-        
-        self.currPosition['score'] = score_best
-           
-        if self.currPosition['index'] >  0:
+        for posi in reversed(self.positionList):
+            if posi['fen'] == fen:
+                break
+
+        if posi['fen'] == fen:
+            #融合本地跟云库结果    
+            #l_moves = self.openbook.getMoves(fen)
             
-            prevPosition = self.positionList[ self.currPosition['index'] - 1]
-            fen_prev = self.currPosition['fen_prev']
-            if fen_prev in Globl.fenMoves:
-                best_moves = Globl.fenMoves[fen_prev]['actions']
-                curr_iccs = self.currPosition['move_iccs']
-                
-                if curr_iccs in best_moves:
-                    self.currPosition['score'] = best_moves[curr_iccs]['score']
-                    self.currPosition['diff'] = best_moves[curr_iccs]['diff']
-                    
-                elif 'score' in prevPosition :
-                     if move_color == BLACK:
-                        self.currPosition['diff'] = score_best - prevPosition['score']
-                     else:
-                        self.currPosition['diff'] = prevPosition['score'] - score_best
-                      
-                if self.currPosition['diff'] < -20:
-                    iccs = list(best_moves.keys())[0]
-                    self.currPosition['best_show'] = [(*iccs2pos(iccs), move_color, iccs)]
+            score_best = qResult['score']
+            move_color = get_move_color(fen)
+            actions = qResult['actions']
+            self.cloudDbView.updateCloudMoves(actions)
+            
+            posi['score'] = qResult['score']      
+            
+            if fen in Globl.fenCache:
+                fenMemo = Globl.fenCache[fen] 
+                if 'diff' in fenMemo:
+                    #print(fenMemo['diff'])
+                    posi['diff'] = fenMemo['diff']
+                elif 'score_base' in posi:
+                    posi['diff'] = posi['score'] - posi['score_base'] 
+                    if move_color == RED:
+                        posi['diff'] = -posi['diff']
+                    fenMemo.update({'diff': posi['diff']})
+                        
+            #TODO: 优化成多个候选步骤
+            if ('diff' in posi) and (posi['diff'] < -30) and (len(actions) > 0) and ('fen_prev' in posi):
+                prevMemo = Globl.fenCache[posi['fen_prev']]
+                if 'best_moves' in prevMemo:
+                    best_moves = prevMemo['best_moves']      
+                    iccs = best_moves[0]
+                    posi['best_show'] = [(*iccs2pos(iccs), move_color, iccs)]
         
-        self.historyView.inner.onUpdatePosition(self.currPosition)
-        #print(list(cloud_moves.values())[:5])    
-        self.cloudDbView.updateCloudMoves(qResult['actions'].values())
+            self.historyView.inner.onUpdatePosition(posi)
+
+        if self.reviewMode == 'Cloud':
+            self.onReviewGameStep()
 
     #-----------------------------------------------------------
     #走子核心逻辑
@@ -667,21 +699,31 @@ class MainWindow(QMainWindow):
         
         self.currPosition = position        
         fen = position['fen']
-         
+        
+        if fen in Globl.fenCache:
+            memo = Globl.fenCache[fen]
+            #print("memo", memo)
+            position['score'] = memo['score'] 
+            if 'diff' in memo:
+                position['diff'] = memo['diff']
+        else:
+            if 'fen_prev' in position and position['fen_prev'] in Globl.fenCache:
+                fenMemo = Globl.fenCache[position['fen_prev']] 
+                position['score_base'] = fenMemo['score']
+        
         if is_new:
-            if len(self.positionList) > 1:
-                fen_prev = position['fen_prev']
-                if fen_prev in Globl.fenMoves:
-                        best_score = Globl.fenMoves[fen_prev]['score']
-                        best_moves = Globl.fenMoves[fen_prev]['actions']
-                        curr_iccs = position['move_iccs']
-                        if curr_iccs in best_moves:
-                            position['diff'] = best_moves[curr_iccs]['diff']
-                        else:
-                            if position['score'] !=  None :
-                                position['diff'] = position['score'] - best_score
-                                #print(self.currPosition['diff'])
-                                
+            '''    
+            if fen in Globl.fenCache:
+                memo = Globl.fenCache[fen]
+                #print("memo", memo)
+                position['score'] = memo['score'] 
+                if 'diff' in memo:
+                    position['diff'] = memo['diff']
+            else:
+                if 'fen_prev' in position and position['fen_prev'] in Globl.fenCache:
+                    fenMemo = Globl.fenCache[position['fen_prev']] 
+                    position['score_base'] = fenMemo['score']
+            '''    
             self.positionList.append(position)                        
             self.historyView.inner.onNewPostion(self.currPosition)
             
@@ -710,7 +752,7 @@ class MainWindow(QMainWindow):
             pass
         else:
             self.moveDbView.onPositionChanged(position, is_new)
-            if self.isSearchCloud:
+            if self.isSearchCloud or (self.reviewMode == 'Cloud'):
                 self.cloud.startQuery(fen)
             
         self.detectRunEngine()
@@ -811,7 +853,7 @@ class MainWindow(QMainWindow):
 
     def onOpenFile(self):
         options = QFileDialog.Options()
-        options |= QFileDialog.DontUseNativeDialog
+        #options |= QFileDialog.DontUseNativeDialog
 
         fileName, _ = QFileDialog.getOpenFileName(
             self, "打开文件", "", "象棋演播室文件(*.xqf);;PGN文件(*.pgn)", options=options)
@@ -891,9 +933,9 @@ class MainWindow(QMainWindow):
                                    triggered=self.onSaveFile)
 
         self.doOpenBookAct = QAction(QIcon(':Images/openbook.png'),
-                                     "打谱练习",
+                                     "自由练习",
                                      self,
-                                     statusTip="打谱练习",
+                                     statusTip="自由练习",
                                      triggered=self.onDoOpenBook)
 
         self.doEndBookAct = QAction(QIcon(':Images/endbook.png'),
@@ -1001,7 +1043,7 @@ class MainWindow(QMainWindow):
         self.gameBar.addAction(self.doEndBookAct)
         self.gameBar.addAction(self.doOpenBookAct)
         self.gameBar.addAction(self.doRobotAct)
-
+        
         self.gameBar.addAction(self.restartAct)
         self.gameBar.addAction(self.editBoardAct)
         #self.gameBar.addAction(self.searchBoardAct)

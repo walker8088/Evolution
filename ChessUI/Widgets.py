@@ -86,7 +86,9 @@ class HistoryWidget(QWidget):
         #self.cloudRealtimeBtn = QRadioButton("实时云库检索", self)
         
         self.reviewByCloudBtn = QPushButton("云库复盘")
+        #self.reviewByCloudBtn.clicked.connect(self.onReviewByCloudBtnClick)
         self.reviewByEngineBtn = QPushButton("引擎复盘")
+        #self.reviewByEngineBtn.clicked.connect(self.onReviewByEngineBtnClick)
         
         '''
         self.addBookmarkBtn = QPushButton("收藏局面")
@@ -146,7 +148,14 @@ class HistoryWidget(QWidget):
                 cb = QApplication.clipboard()
                 cb.clear()
                 cb.setText(pos['fen'])
-                    
+        
+        elif action == bookmarkPositionAction:
+            self.onAddBookmarkBtnClick()
+        elif action == bookmarkBookAction:
+            self.onAddBookmarkBookBtnClick()
+        elif action == addToMyLibAction:
+            self.onSaveDbBtnClick()
+
     def onClearFollowBtnClick(self):
 
         if self.selectionIndex < 0:
@@ -264,12 +273,15 @@ class HistoryWidget(QWidget):
         else:
             item.setText(1, '=开始=')
 
-        if (index > 0) and ('score'in position) and  (position['score'] != None):
-            item.setText(2, str(position['score']))
+        if index > 0:
+            if ('score'in position) and  (position['score'] != None):
+                item.setText(2, str(position['score']))
+            else:
+                item.setText(2, '')
 
         if 'diff' in position:
             diff = position['diff']
-            
+            print(diff)
             if diff > -30:
                 item.setIcon(3, QIcon(":Images/star.png"))
             elif diff > -70:
@@ -278,7 +290,9 @@ class HistoryWidget(QWidget):
                 item.setIcon(3, QIcon(":Images/sad.png"))
             else:
                 item.setIcon(3, QIcon(":Images/bad.png"))
-            
+        else:
+            item.setIcon(3, QIcon())
+
         item.setData(0, Qt.UserRole, index)
         item.setData(1, Qt.UserRole, position)
         self.selectionIndex = index
@@ -389,7 +403,7 @@ class ChessEngineWidget(QDockWidget):
         self.configBtn = QPushButton("参数")
         self.reviewBtn = QPushButton("复盘分析")
 
-        hbox.addWidget(self.configBtn, 0)
+        #hbox.addWidget(self.configBtn, 0)
         
         hbox.addWidget(QLabel('深度:'), 0)
         hbox.addWidget(self.DepthSpin, 0)
