@@ -13,7 +13,7 @@ from cchess import *
 from .Utils import *
 from .Resource import *
 
-import numpy as np
+#import numpy as np
 
 #-----------------------------------------------------#
 def scaleImage(img, scale):
@@ -28,6 +28,7 @@ def scaleImage(img, scale):
 
 #-----------------------------------------------------#
 class ChessBoardBaseWidget(QWidget):
+    
     def __init__(self, board):
 
         super().__init__()
@@ -69,7 +70,10 @@ class ChessBoardBaseWidget(QWidget):
         self.scaleBoard(1.0)
         
         #self.setMinimumSize(self.base_board_width + 20, self.base_board_height + 10) 
- 
+        
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.showContextMenu)
+
     def scaleBoard(self, scale):
 
         if scale < 0.5:
@@ -189,13 +193,18 @@ class ChessBoardBaseWidget(QWidget):
                     QPoint(board_x, board_y), self.select_img,
                     QRect(0, 0, self.piece_size - 1, self.piece_size - 1))
 
+    def showContextMenu(self, pos):
+        #print('height')
+        pass
+
     def sizeHint(self):
         return QSize(self.base_board_width + 20, self.base_board_height + 10)
 
 
 #-----------------------------------------------------#
 class ChessBoardWidget(ChessBoardBaseWidget):
-    try_move_signal = Signal(tuple, tuple)
+    rightMouseSignal = Signal(bool)
+    tryMoveSignal = Signal(tuple, tuple)
 
     def __init__(self, board):
 
@@ -210,8 +219,9 @@ class ChessBoardWidget(ChessBoardBaseWidget):
         self.last_pickup_moves = []
         self.move_steps_show = []
         self.best_moves = []
+        self.best_next_moves = []
         self.is_show_best_move = True
-
+    
         self.done = []
 
         self.move_steps_show = []
@@ -238,13 +248,20 @@ class ChessBoardWidget(ChessBoardBaseWidget):
         self.last_pickup = None
         self.last_pickup_moves = []
         self.best_moves = best_moves
+        self.best_next_moves = []
         self._make_move_steps(p_from, p_to)
-        
+  
+    def showBestMoveNext(self, best_next_moves):
+        self.best_next_moves = best_next_moves
+        self.update()
+
     def clearPickup(self):
         self.move_pieces = []
         self.last_pickup = None
         self.last_pickup_moves = []
         self.best_moves = []
+        self.best_next_moves = []
+        
         self.update()
 
     def _make_move_steps(self, p_from, p_to):
@@ -303,20 +320,22 @@ class ChessBoardWidget(ChessBoardBaseWidget):
                 QRect(offset, 0, self.piece_size - 1, self.piece_size - 1))
         
         if self.is_show_best_move:
-            for p_from, p_to, p_color, iccs in self.best_moves: 
-                #print(iccs)
+            for p_from, p_to in self.best_moves: 
+                
                 r = self.piece_size//2
                 from_x, from_y = self.logic_to_board(*p_from,r)   
                 to_x, to_y = self.logic_to_board(*p_to, r)   
                 
+                '''
                 if p_color == RED:
                     color = Qt.darkGreen
                 else:
                     color = Qt.darkRed
+                '''
                 
                 color = Qt.darkGreen
                 
-                painter.setPen(QPen(color,5))#,  Qt.DotLine))    
+                painter.setPen(QPen(color,3))#,  Qt.DotLine))    
                 painter.drawLine(from_x, from_y, to_x, to_y)
                 painter.drawEllipse(QPoint(from_x, from_y), r, r)
                 #painter.setBrush(QBrush(color, Qt.CrossPattern))
@@ -326,6 +345,19 @@ class ChessBoardWidget(ChessBoardBaseWidget):
                 #if arrow:
                 #    print(arrow)
                 #    painter.drawPolyline(arrow)
+        
+        for p_from, p_to in self.best_next_moves: 
+                r = self.piece_size//2
+                from_x, from_y = self.logic_to_board(*p_from,r)   
+                to_x, to_y = self.logic_to_board(*p_to, r)   
+                
+                color = Qt.darkGreen
+                
+                painter.setPen(QPen(color,3))#,  Qt.DotLine))    
+                painter.drawLine(from_x, from_y, to_x, to_y)
+                painter.drawEllipse(QPoint(from_x, from_y), r, r)
+                #painter.setBrush(QBrush(color, Qt.CrossPattern))
+                painter.drawEllipse(QPoint(to_x, to_y), r//4, r//4)
                 
     def arrowCalc(self, startPoint, endPoint): 
 
@@ -354,6 +386,10 @@ class ChessBoardWidget(ChessBoardBaseWidget):
         
     def mousePressEvent(self, mouseEvent):
         
+
+        if (mouseEvent.button() == Qt.RightButton):
+            self.rightMouseSignal.emit(True)
+            
         if self.view_only:
             return
 
@@ -381,10 +417,12 @@ class ChessBoardWidget(ChessBoardBaseWidget):
 
         else:
             # move check
-            if self.last_pickup and key != self.last_pickup:
-                #app.try_move(self.last_pickup, key)
-                self.try_move(self.last_pickup, key)
-                #pass
+            if self.last_pickup:
+                if key != self.last_pickup:
+                    self.try_move(self.last_pickup, key)
+            else:
+                #此处会清空最优步骤提示
+                self.clearPickup()
 
         self.update()
 
@@ -392,8 +430,9 @@ class ChessBoardWidget(ChessBoardBaseWidget):
         pass
 
     def mouseReleaseEvent(self, mouseEvent):
-        pass
-
+        if (mouseEvent.button() == Qt.RightButton):
+            self.rightMouseSignal.emit(False)
+            
     def make_show_steps(self, p_from, p_to, step_diff):
 
         move_man = self._board.get_piece(p_from)
@@ -435,7 +474,7 @@ class ChessBoardWidget(ChessBoardBaseWidget):
 
             return False
 
-        self.try_move_signal.emit(move_from, move_to)
+        self.tryMoveSignal.emit(move_from, move_to)
         return True
 
 
@@ -451,9 +490,6 @@ class ChessBoardEditWidget(ChessBoardBaseWidget):
         self._new_pos = None
         self.fenChangedSignal.connect(self.onFenChanged)
         
-        self.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.customContextMenuRequested.connect(self.showContextMenu)
-
     def showContextMenu(self, pos):
 
         x, y = self.board_to_logic(pos.x(), pos.y())

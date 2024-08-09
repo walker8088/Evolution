@@ -28,7 +28,7 @@ def trim_fen(fen):
 
 
 #------------------------------------------------------------------------------
-def updateFenCahce(qResult):
+def updateFenCache(qResult):
     fen = qResult['fen']
     if fen not in Globl.fenCache:
         Globl.fenCache[fen] = {}
@@ -38,7 +38,7 @@ def updateFenCahce(qResult):
     actions = qResult['actions']
     for act in actions:
         if act['diff'] == 0:
-            best_moves.append(act['move'])
+            best_moves.append(act['iccs'])
         m = {'score': act['score'], 'diff': act['diff']}
         new_fen = act['new_fen']
         if new_fen not in Globl.fenCache:
@@ -89,9 +89,11 @@ class OpenBook():
         
         for b, b_state in [(board, ''), (board.mirror(), 'mirror')]:
             try:
-                query = PosMove.get(PosMove.vkey == str(board.zhash()))
+                #query = PosMove.get(PosMove.vkey == str(b.zhash()))
+                query = PosMove.get(PosMove.fen == b.to_fen())
             except PosMove.DoesNotExist:
                 query = None
+                print(b.to_fen(), b_state)
                 continue
             if query is not None:
                 break
@@ -100,29 +102,28 @@ class OpenBook():
             #print("GET:", b_state, query)
             return None
         
-        actions = OrderedDict()    
+        actions = [] #OrderedDict()    
         move_color = board.get_move_color()        
-        score_best = None
-        
-        for ics, score in query.vmoves.items():
+        score_best = query.score
+
+        for ics, move_dict in query.vmoves.items():
+            
             if b_state == 'mirror':
                 iccs = cchess.iccs_mirror(ics)
             else:
                 iccs = ics
             m = {}  
-            m['move'] = iccs
-            if score_best is  None:
-                score_best = score
+            m['iccs'] = iccs
+            
+            score = move_dict['score']
             move_it = board.copy().move_iccs(iccs)
             m['text'] = move_it.to_text()
             m['score'] = score
             m['diff'] =  score - score_best
             if move_color == cchess.BLACK:
                 m['score'] = -m['score']
-                #m['diff'] =   -m['diff']
-            #print(m)
-            actions[iccs] = m
             m['new_fen'] = move_it.board_done.to_fen()
+            actions.append(m)
             
         ret = {}
         ret['fen'] = fen
@@ -130,7 +131,67 @@ class OpenBook():
         ret['actions'] = actions
 
         return ret
+
+"""        
+#------------------------------------------------------------------------------
+#OpenBookJson
+class OpenBookJson():
+    def __init__(self):
+        pass
+
+    def loadBookFile(self, file_name):
+        self.db = TinyDB(file_name)
+
+    def getMoves(self, fen):
         
+        board = cchess.ChessBoard(fen)
+        
+        for b, b_state in [(board, ''), (board.mirror(), 'mirror')]:
+            fen = b.to_fen()
+            result = self.db.search(Query().fen == fen)
+            if len(result) > 0:
+                break
+        
+        #print("GET:", b_state, query)
+        if len(result) == 0:
+            return {}
+        
+        
+        actions = [] #OrderedDict()    
+        move_color = board.get_move_color()        
+        score_best = None
+        
+        moves = result[0]
+        #print(moves)
+
+        for ics, info in moves['action'].items():
+            score = info['score']
+            if b_state == 'mirror':
+                iccs = cchess.iccs_mirror(ics)
+            else:
+                iccs = ics
+            m = {}  
+            m['iccs'] = iccs
+            
+            if score_best is  None:
+                score_best = score
+
+            move_it = board.copy().move_iccs(iccs)
+            m['text'] = move_it.to_text()
+            m['score'] = score
+            m['diff'] =  score - score_best
+            if move_color == cchess.BLACK:
+                m['score'] = -m['score']
+            m['new_fen'] = move_it.board_done.to_fen()
+            actions.append(m)
+            
+        ret = {}
+        ret['fen'] = fen
+        ret['score'] = score_best 
+        ret['actions'] = actions
+
+        return ret
+"""
 #-----------------------------------------------------#
 class CloudDB(QObject):
     query_result_signal = Signal(dict)
@@ -191,18 +252,23 @@ class CloudDB(QObject):
                 segs = it.strip().split(',')
                 items =[x.split(':') for x in segs]
                 it_dict = {}
-               
-                for key, value in items:
-                    if key not in ['score', 'move', 'winrate']:
-                        continue
-                    it_dict[key] = value
+                for name, value in items:
+                    if name == 'score':
+                        it_dict['score'] = value
+                    elif name == 'move':
+                        it_dict['iccs'] = value
+
                 moves.append(it_dict)
         except Exception as e:
-            print('cloud query result:', resp, "len:", len(resp))
-            
+            print(e)
+            #print('cloud query result:', resp, "len:", len(resp))
+        
+        if not moves: 
+            return
+
         score_best = int(moves[0]['score'])
         for move in moves:
-            move_it = self.board.copy().move_iccs(move['move'])
+            move_it = self.board.copy().move_iccs(move['iccs'])
             if move_it:
                 move['text'] = move_it.to_text()
             move['score'] = int(move['score']) 
@@ -211,9 +277,6 @@ class CloudDB(QObject):
                 move['score'] = -move['score']
             move['new_fen'] = move_it.board_done.to_fen()
 
-        if not moves:
-            print("No Moves in quesy result:", resp)
-            return
             
         #moves = filter(lambda x : is_odd, moves)        
 
@@ -236,12 +299,11 @@ class CloudDB(QObject):
         ret = {}
         ret['fen'] = self.fen
         ret['score'] = score_best
-        #ret['diff'] = 0
         ret['actions'] = moves_clean
             
         self.move_cache[self.fen]  = ret
         
-        updateFenCahce(ret)
+        updateFenCache(ret)
 
         self.reply = None
         self.query_result_signal.emit(ret)
@@ -265,6 +327,7 @@ class DataStore():
         self.db = None
 
     def open(self, file):
+
         self.db = TinyDB(file)
 
         self.mygame_table = self.db.table('mygame')
@@ -420,7 +483,7 @@ class DataStore():
             found = False
             new_record = []    
             for act in record['actions']:
-                if iccs == act['move']:
+                if iccs == act['iccs']:
                     found = True
                 else:
                     new_record.append(act)
@@ -436,13 +499,13 @@ class DataStore():
         q = Query()
         for position in positions:
             #print(position)
-            move = position['move']
+            move = position['iccs']
             fen = move.board.to_fen()
             move_iccs = move.to_iccs()
             ret = self.position_table.search(q.fen == fen)
             move_score = position['score'] if 'score' in position else ''
 
-            action_to_save = {'move': move_iccs}
+            action_to_save = {'iccs': move_iccs}
             action_to_save['score'] = move_score
 
             if len(ret) == 0:
@@ -456,7 +519,7 @@ class DataStore():
                 db_actions = ret[0]['actions']
                 act_found = False
                 for act in db_actions:
-                    if act['move'] == move_iccs:
+                    if act['iccs'] == move_iccs:
                         act_found = True
                         #对更新内容中score为空的数据，不会更新原来的score
                         if (action_to_save['score'] == '') and ('score'
@@ -511,7 +574,7 @@ for it in ret:
     if 'moves' in it:
         new['moves'] = []
         for iccs in it['moves']:
-            new['moves'] .append({'move': iccs})
+            new['moves'] .append({'iccs': iccs})
     bookmark_table.insert(new)
     print(it)
     print(new)

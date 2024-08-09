@@ -16,6 +16,7 @@ from .Utils import *
 from .Storage import *
 from .Resource import *
 from .BoardWidgets import *
+
 from . import Globl
  
 #-----------------------------------------------------#
@@ -272,28 +273,31 @@ class HistoryWidget(QWidget):
             item.setText(1, move.to_text())
         else:
             item.setText(1, '=开始=')
+        
+        fen = position['fen']
+        if fen in Globl.fenCache:
 
-        if index > 0:
-            if ('score'in position) and  (position['score'] != None):
-                item.setText(2, str(position['score']))
+            fenInfo = Globl.fenCache[fen] 
+            
+            if index > 0:
+                item.setText(2, str(fenInfo['score']))
+            
+            if 'diff' in fenInfo:    
+                diff = fenInfo['diff']
+                if diff > -30:
+                    item.setIcon(3, QIcon(":Images/star.png"))
+                elif diff > -70:
+                    item.setIcon(3, QIcon(":Images/good.png"))
+                elif diff > -100:
+                    item.setIcon(3, QIcon(":Images/sad.png"))
+                else:
+                    item.setIcon(3, QIcon(":Images/bad.png"))    
             else:
-                item.setText(2, '')
-
-        if 'diff' in position:
-            diff = position['diff']
-            if diff > -30:
-                item.setIcon(3, QIcon(":Images/star.png"))
-            elif diff > -70:
-                item.setIcon(3, QIcon(":Images/good.png"))
-            elif diff > -100:
-                item.setIcon(3, QIcon(":Images/sad.png"))
-            else:
-                item.setIcon(3, QIcon(":Images/bad.png"))
-        else:
-            item.setIcon(3, QIcon())
+                item.setIcon(3, QIcon())
 
         item.setData(0, Qt.UserRole, index)
         item.setData(1, Qt.UserRole, position)
+
         self.selectionIndex = index
         self.positionView.setCurrentItem(item)
 
@@ -465,7 +469,7 @@ class ChessEngineWidget(QDockWidget):
         self.saveEngineOptions()
                         
     def contextMenuEvent(self, event):
-
+        return
         menu = QMenu(self)
         viewBranchAction = menu.addAction("分支推演")
         action = menu.exec_(self.mapToGlobal(event.pos()))
@@ -619,7 +623,7 @@ class MoveDbWidget(QDockWidget):
         item = self.moveListView.currentItem()
         move_info = item.data(0, Qt.UserRole)
         fen = move_info['fen']
-        iccs = move_info['move']
+        iccs = move_info['iccs']
         board = ChessBoard()
         todoList = [(fen, iccs)]
         todoListNew = []
@@ -648,7 +652,7 @@ class MoveDbWidget(QDockWidget):
                         branchs = branchs + len(actions) - 1
                     for act in actions:
                         #print(act)
-                        todoListNew.append((new_fen, act['move']))
+                        todoListNew.append((new_fen, act['iccs']))
                         
             if (len(todoListNew) == 0):
                 break

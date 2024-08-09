@@ -12,7 +12,7 @@ from .Utils import *
 class EngineConfig():
     def __init__(self, engine):
         self.engine = engine
-        self.fen_last = None
+        self.fen = None
         self.fen_engine = None
         self.go_param = {}
         self.score_move = {}
@@ -42,14 +42,13 @@ class EngineManager(QObject):
     def update_config(self, engine_id, params):
         self.econf[engine_id].go_param.update(params)
 
-    def load_engine(self, engine_path, engine_type = 'UCI'):
-        
-        if engine_type == 'UCI':
+    def load_engine(self, engine_path, engine_type):
+        if engine_type == 'uci':
             engine = UciEngine('')
-        elif engine_type == 'UCCI':
+        elif engine_type == 'ucci':
             engine = UcciEngine('')
         else:
-            raise Exception('Engine Type Must be in [UCI, UCCI]') 
+            raise Exception('目前只支持[uci, ucci]类型的引擎。') 
 
         if engine.load(engine_path):
             self.econf.append(EngineConfig(engine))
@@ -80,15 +79,14 @@ class EngineManager(QObject):
         conf.fen = fen
 
         return self.econf[engine_id].engine.go_from(fen_engine, conf.go_param)
-            
+    
+
     def stop_thinking(self):
         for engine_id, conf in enumerate(self.econf):
             conf.engine.stop_thinking()
-        time.sleep(0.1)
-        conf.engine.handle_msg_once()
-        time.sleep(0.1)
-        conf.engine.handle_msg_once()
-
+            time.sleep(0.2)
+            conf.engine.handle_msg_once()
+    
     def start(self):
         self.thread = ThreadRunner(self)
         self.thread.start()

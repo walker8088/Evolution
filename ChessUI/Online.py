@@ -4,8 +4,8 @@ import json
 import datetime as dt
 from json import JSONEncoder
 
-import cv2 as cv
-import numpy as np
+#import cv2 as cv
+#import numpy as np
 from PIL import Image, ImageDraw, ImageOps
 
 from PySide6 import *
@@ -37,6 +37,7 @@ FEN_EMPTY = '9/9/9/9/9/9/9/9/9/9'
 FEN_FULL = 'rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR'
 FEN_FULL_LOWER = FEN_FULL.lower()
 
+"""
 #-----------------------------------------------------------------------------------------#      
 def cv_to_image(img: np.ndarray) -> Image:
     return Image.fromarray(cv.cvtColor(img, cv.COLOR_BGR2RGB))
@@ -742,3 +743,4 @@ class GameMaster():
                                 dead = True
                                 break    
                 
+"""

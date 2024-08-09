@@ -3,11 +3,13 @@
 import os
 import time
 import logging
-from pathlib import Path
 import ctypes
 import traceback
 import platform
 import yaml
+import configparser
+
+from pathlib import Path
 from dataclasses import dataclass
 from collections import OrderedDict
 
@@ -24,6 +26,7 @@ from .Widgets import *
 from .Manager import *
 from .Storage import *
 from .Online import *
+
 from . import Globl
 
 #-----------------------------------------------------#
@@ -44,6 +47,7 @@ class Position:
     score: int
     diff: int
 
+'''
 #-----------------------------------------------------#
 # Back up the reference to the exceptionhook
 sys._excepthook = sys.excepthook
@@ -56,6 +60,7 @@ def my_exception_hook(exctype, value, tb):
 
 # Set the exception hook to our wrapping function
 sys.excepthook = my_exception_hook
+'''
 
 #-----------------------------------------------------#
 class MainWindow(QMainWindow):
@@ -92,7 +97,8 @@ class MainWindow(QMainWindow):
         
         self.boardView = ChessBoardWidget(self.board)
         self.setCentralWidget(self.boardView)
-        self.boardView.try_move_signal.connect(self.onBoardMove)
+        self.boardView.tryMoveSignal.connect(self.onBoardMove)
+        self.boardView.rightMouseSignal.connect(self.onBoardRightMouse)
 
         self.historyView = DockHistoryWidget(self)
         self.historyView.inner.positionSelSignal.connect(
@@ -103,8 +109,7 @@ class MainWindow(QMainWindow):
 
         self.endBookView = EndBookWidget(self)
         self.endBookView.setVisible(False)
-        self.endBookView.end_game_select_signal.connect(
-            self.onSelectEndGame)
+        self.endBookView.end_game_select_signal.connect(self.onSelectEndGame)
 
         self.moveDbView = MoveDbWidget(self)
         self.cloudDbView = CloudDbWidget(self)
@@ -159,6 +164,8 @@ class MainWindow(QMainWindow):
         Globl.engineManager.start()
         
         self.switchGameMode(self.game_mode_saved)
+        
+        self.loadMemoState()
 
         #splash.finish()
 
@@ -170,6 +177,7 @@ class MainWindow(QMainWindow):
         self.currPosition = None
         self.historyMode = False
         self.reviewMode = None
+        #self.isShowNextBest = False
 
         self.historyView.inner.clear()
         self.moveDbView.clear()
@@ -177,24 +185,47 @@ class MainWindow(QMainWindow):
         self.boardView.setViewOnly(False)
 
     def initEngine(self):
-        engine_conf_file = Path('Engine', 'engine.conf')
-        if not engine_conf_file.is_file():
-            QMessageBox.critical(self, f'{getTitle()}', f'象棋引擎配置文件[{engine_conf_file}]不存在，请确保该文件存在并配置正确.')
+        self.config_file = Path('Evolution.ini')
+        
+        if not self.config_file.is_file():
+            QMessageBox.critical(self, f'{getTitle()}', f'配置文件[{self.config_file}]不存在，请确保该文件存在并配置正确.')
             return False    
-        with open(engine_conf_file) as f:
-            try:
-                engine_conf = yaml.safe_load(f)
-            except Exception as e:
-                QMessageBox.critical(self, f'{getTitle()}', f'打开象棋引擎配置文件[{engine_conf_file}]出错：{e}')
-                return False
-        if ('engine' not in engine_conf) or  ('run' not in engine_conf['engine']):
-            QMessageBox.critical(self, f'{getTitle()}', f'象棋引擎配置文件格式不正确.')
-            return False     
-        engine_path = Path('Engine', engine_conf['engine']['run'])
-        ok = Globl.engineManager.load_engine(engine_path)
+       
+        self.config = configparser.ConfigParser()
+        try:
+            ok = self.config.read(self.config_file)
+        except Exception as e:
+            QMessageBox.critical(self, f'{getTitle()}', f'打开配置文件[{self.config_file}]出错：{e}')
+            return False
+        
+        try:
+            engine_type = self.config['MainEngine']['engine_type'].lower()
+            engine_exec = Path(self.config['MainEngine']['engine_exec'])
+        except Exception as e:
+            QMessageBox.critical(self, f'{getTitle()}', f'配置文件[{self.config_file}]格式错误：{e}')
+            return False
+        
+        ok = Globl.engineManager.load_engine(engine_exec, engine_type)
         if not ok:
-            QMessageBox.critical(self, f'{getTitle()}', f'加载象棋引擎[{engine_path.absolute()}]出错，请确认该程序能在您的电脑上正确运行。')
+            QMessageBox.critical(self, f'{getTitle()}', f'加载象棋引擎[{engine_exec.absolute()}]出错，请确认该程序能在您的电脑上正确运行。')
+        
         return ok
+
+        '''
+        try:
+            engine_type = self.config['AssitEngine']['engine_type'].lower()
+            engine_exec = Path(self.config['AssitEngine']['engine_exec'])
+        except Exception as e:
+            QMessageBox.critical(self, f'{getTitle()}', f'配置文件[{self.config_file}]格式错误：{e}')
+            return False
+        
+        ok = Globl.engineManager.load_engine(engine_exec, engine_type)
+        if not ok:
+            QMessageBox.critical(self, f'{getTitle()}', f'加载象棋引擎[{engine_exec.absolute()}]出错，请确认该程序能在您的电脑上正确运行。')
+        
+        return ok
+ 
+        '''
         
     def initGameDB(self):
 
@@ -203,9 +234,13 @@ class MainWindow(QMainWindow):
         
         Globl.storage = DataStore()
         Globl.storage.open(Path(gamePath, 'Evolution.jdb'))
+
         self.openbook = OpenBook()
         self.openbook.loadBookFile(Path(gamePath, 'openbook.db'))
         
+        #self.openbook_json = OpenBookJson()
+        #self.openbook_json.loadBookFile(Path(gamePath, 'openbook.jdb'))
+
     #-----------------------------------------------------------------------
     #声音播放
     def initSound(self):
@@ -232,7 +267,7 @@ class MainWindow(QMainWindow):
         moves = []
 
         for it in self.positionList[1:]:
-            m = it['move']
+            m = it['iccs']
             #print(m.to_iccs(), m.to_text())
             moves.append(m.to_iccs())
 
@@ -348,10 +383,36 @@ class MainWindow(QMainWindow):
 
     def onSelectEndGame(self, game):
         self.currGame = game
-        self.book_moves = game['moves'] if 'moves' in game else None
-        self.initGame(game['fen'])
-        self.setWindowTitle(f'{self.app.APP_NAME_TEXT} - 残局挑战 - {game["book_name"]} - {game["name"]}')
+        self.book_moves = game['moves'].split(' ') if 'moves' in game else []
+        
+        #print(game)
+        fen = game['fen']
+        steps = fen_moves_to_step(fen, self.book_moves)
+        #print(game["book_name"])
+        
+        self.initGame(fen)
+
+        for fen_t, iccs in steps:
+            Globl.fenCache[fen_t] = {'score': '99999', 'best_next': [iccs, ]}
+            
+        self.setWindowTitle(f'{self.app.APP_NAME_TEXT} - 杀法挑战 - {game["book_name"]} - {game["name"]}')
     
+    
+    def onBoardRightMouse(self, is_mouse_pressed):
+        
+        best_next = []    
+
+        if is_mouse_pressed:
+
+            fen = self.currPosition['fen']
+            if (fen not in Globl.fenCache) or ('best_next' not in Globl.fenCache[fen]):
+                return
+
+            iccs_list = Globl.fenCache[fen]['best_next']
+            best_next = [ iccs2pos(x)  for x in iccs_list]
+
+        self.boardView.showBestMoveNext(best_next)    
+        
     def clearAllScore(self):
 
         for posi in self.positionList:
@@ -397,7 +458,7 @@ class MainWindow(QMainWindow):
             
     def onReviewGameStep(self):
         sel_index = self.historyView.inner.selectionIndex + 1
-        print('onReviewGameStep', sel_index)
+        #print('onReviewGameStep', sel_index)
         if sel_index >= len(self.positionList):  #已到最后一步
             self.onReviewGameEnd()
             return
@@ -451,7 +512,7 @@ class MainWindow(QMainWindow):
             moves = position['moves']
             if moves is not None:
                 for it in moves:
-                    iccs = it['move']    
+                    iccs = it['iccs']    
                     self.onMoveGo(iccs)
             
         self.setWindowTitle(f'{self.app.APP_NAME_TEXT} -- {name}')
@@ -503,8 +564,8 @@ class MainWindow(QMainWindow):
         if fen == EMPTY_FEN:
             return 
 
-        if 'move' in self.currPosition:
-            fen_engine = self.currPosition['move'].to_engine_fen()
+        if 'iccs' in self.currPosition:
+            fen_engine = self.currPosition['iccs'].to_engine_fen()
         
         ok = Globl.engineManager.go_from(0, fen_engine, fen)
         if not ok:
@@ -566,12 +627,16 @@ class MainWindow(QMainWindow):
         else:
             self.historyMode = True
             self.boardView.setViewOnly(True)
-
+        
+        best_show = []     
+        fen = self.currPosition['fen']
+        if fen in Globl.fenCache:
+            fenInfo = Globl.fenCache[fen]
+            if 'alter_best' in fenInfo:
+                best_show = [iccs2pos(x) for x in fenInfo['alter_best']]     
+       
         if 'move' in self.currPosition:
             move = self.currPosition['move']
-            best_show = []
-            if 'best_show' in  self.currPosition:
-                best_show = self.currPosition['best_show']
             self.boardView.from_fen(move.board.to_fen())
             self.boardView.showMove(move.p_from, move.p_to, best_show)
         else:
@@ -605,7 +670,7 @@ class MainWindow(QMainWindow):
         #Globl.fenCache[fen] = {'score': score_best, 'actions': cloud_moves}
         #print(move_info)
         
-        if not self.board.is_valid_iccs_move(move_info['move']):
+        if not self.board.is_valid_iccs_move(move_info['iccs']):
             return
             
         move_color = self.board.get_move_color()
@@ -632,64 +697,79 @@ class MainWindow(QMainWindow):
         if self.bind_engines[move_color] != engine_id:
             return
 
-        self.onMoveGo(move_info['move'])
+        self.onMoveGo(move_info['iccs'])
 
     def onBookMove(self, move_info):
 
         if self.historyMode:
             return
        
-        if not self.board.is_valid_iccs_move( move_info['move']):
+        if not self.board.is_valid_iccs_move( move_info['iccs']):
             return
 
-        self.onMoveGo( move_info['move'], move_info['score'])
+        self.onMoveGo( move_info['iccs'], move_info['score'])
     
-       
+    def updateFenCache(self, fenInfo):
+
+        fen = fenInfo['fen']
+        
+        if fen not in Globl.fenCache:
+            Globl.fenCache[fen] = {}   
+        Globl.fenCache[fen].update(fenInfo)
+        
+        best_next = []
+
+        #此局面的最优招法
+        actions = fenInfo['actions']
+        for act in actions:
+            if act['diff'] > -3:
+                best_next.append(act['iccs'])
+        if best_next:
+            Globl.fenCache[fen]['best_next'] = best_next 
+
+        #本着法的其他更好的招法    
+        for act in actions:
+            new_fen = act['new_fen']
+
+            info = { 'score': act['score'], 'diff':act['diff'] }
+            if (act['diff'] < -50) and best_next:
+                info['alter_best'] = best_next
+
+            if new_fen not in Globl.fenCache:
+                Globl.fenCache[new_fen] = {}   
+
+            Globl.fenCache[new_fen].update(info)
+                    
+        if best_next:
+            Globl.fenCache[fen]['best_next'] = best_next 
+            
+    def localSearch(self, position):
+        #暂时不用本地库
+        return
+
+        fen = position['fen']
+        qResult = self.openbook.getMoves(fen)
+        if not qResult:
+            return
+        
+        self.updateFenCache(qResult)
+
+        self.cloudDbView.updateCloudMoves(qResult['actions'])
+
     def onCloudQueryResult(self, qResult):
         
-        if (not qResult) or len(qResult['actions']) == 0:
+        if not qResult:
             return
+
+        self.updateFenCache(qResult)
             
-        fen = qResult['fen'] 
-        
         if len(self.positionList) == 0:
             return
         
         for posi in reversed(self.positionList):
-            if posi['fen'] == fen:
-                break
-
-        if posi['fen'] == fen:
-            #融合本地跟云库结果    
-            #l_moves = self.openbook.getMoves(fen)
-            
-            score_best = qResult['score']
-            move_color = get_move_color(fen)
-            actions = qResult['actions']
-            self.cloudDbView.updateCloudMoves(actions)
-            
-            posi['score'] = qResult['score']      
-            
-            if fen in Globl.fenCache:
-                fenMemo = Globl.fenCache[fen] 
-                if 'diff' in fenMemo:
-                    #print(fenMemo['diff'])
-                    posi['diff'] = fenMemo['diff']
-                elif 'score_base' in posi:
-                    posi['diff'] = posi['score'] - posi['score_base'] 
-                    if move_color == RED:
-                        posi['diff'] = -posi['diff']
-                    fenMemo.update({'diff': posi['diff']})
-                        
-            #TODO: 优化成多个候选步骤
-            if ('diff' in posi) and (posi['diff'] < -30) and (len(actions) > 0) and ('fen_prev' in posi):
-                prevMemo = Globl.fenCache[posi['fen_prev']]
-                if 'best_moves' in prevMemo:
-                    best_moves = prevMemo['best_moves']      
-                    iccs = best_moves[0]
-                    posi['best_show'] = [(*iccs2pos(iccs), move_color, iccs)]
-        
-            self.historyView.inner.onUpdatePosition(posi)
+            if posi['fen'] == qResult['fen']:
+                self.cloudDbView.updateCloudMoves(qResult['actions'])
+                self.historyView.inner.onUpdatePosition(posi)
 
         if self.reviewMode == 'Cloud':
             self.onReviewGameStep()
@@ -698,33 +778,11 @@ class MainWindow(QMainWindow):
     #走子核心逻辑
     def onPositionChanged(self, position, is_new = True):   
         
-        self.currPosition = position        
         fen = position['fen']
-        
-        if fen in Globl.fenCache:
-            memo = Globl.fenCache[fen]
-            #print("memo", memo)
-            position['score'] = memo['score'] 
-            if 'diff' in memo:
-                position['diff'] = memo['diff']
-        else:
-            if 'fen_prev' in position and position['fen_prev'] in Globl.fenCache:
-                fenMemo = Globl.fenCache[position['fen_prev']] 
-                position['score_base'] = fenMemo['score']
-        
+        self.currPosition = position        
+     
         if is_new:
-            '''    
-            if fen in Globl.fenCache:
-                memo = Globl.fenCache[fen]
-                #print("memo", memo)
-                position['score'] = memo['score'] 
-                if 'diff' in memo:
-                    position['diff'] = memo['diff']
-            else:
-                if 'fen_prev' in position and position['fen_prev'] in Globl.fenCache:
-                    fenMemo = Globl.fenCache[position['fen_prev']] 
-                    position['score_base'] = fenMemo['score']
-            '''    
+           
             self.positionList.append(position)                        
             self.historyView.inner.onNewPostion(self.currPosition)
             
@@ -741,7 +799,7 @@ class MainWindow(QMainWindow):
                     self.playSound('capture')
                     msg = f"吃{fench_to_text(move.captured)}"
                 else:
-                    self.playSound('move')
+                    self.playSound('iccs')
                     msg = ""
                 self.statusBar().showMessage(msg)
 
@@ -753,9 +811,10 @@ class MainWindow(QMainWindow):
             pass
         else:
             self.moveDbView.onPositionChanged(position, is_new)
+            self.localSearch(position)
             if self.isSearchCloud or (self.reviewMode == 'Cloud'):
                 self.cloud.startQuery(fen)
-            
+
         self.detectRunEngine()
         
     def onBoardMove(self,  move_from,  move_to):
@@ -788,7 +847,7 @@ class MainWindow(QMainWindow):
         position = {
             'fen': self.board.to_fen(),
             'fen_prev': move.board.to_fen(),
-            'move_iccs':  move_iccs,
+            'iccs':  move_iccs,
             'move': move,
             'score': score,
             'index': len(self.positionList),
@@ -796,7 +855,7 @@ class MainWindow(QMainWindow):
         }
         
         self.onPositionChanged(position)
-        #print(move.is_checking, move.is_checkmate)
+        
         if move.is_checkmate:
             self.onGameOver(move.board.move_player)
       
@@ -861,7 +920,7 @@ class MainWindow(QMainWindow):
         #options |= QFileDialog.DontUseNativeDialog
 
         fileName, _ = QFileDialog.getOpenFileName(
-            self, "打开文件", "", "象棋演播室文件(*.xqf);;PGN文件(*.pgn)", options=options)
+            self, "打开文件", "", "象棋通用格式文件(*.pgn);;象棋演播室文件(*.xqf);;所有文件(*.*)", options=options)
 
         if not fileName:
             return
@@ -873,44 +932,58 @@ class MainWindow(QMainWindow):
         if ext == '.xqf':
             game = read_from_xqf(fileName)
         elif ext == '.pgn':
-            pass
+            game = read_from_pgn(fileName)
         if not game:
             return
 
         self.loadBookGame(fileName.name, game)
 
     def onSaveFile(self):
+        
+        if not self.positionList:
+            return
+
         options = QFileDialog.Options()
-        options |= QFileDialog.DontUseNativeDialog
+        #options |= QFileDialog.DontUseNativeDialog
 
         fileName, _ = QFileDialog.getSaveFileName(
             self,
             "保存对局文件",
             "",
-            "PGN文件(*.pgn)",
+            "象棋通用格式文件(*.pgn)",
             options=options)
 
         if not fileName:
             return
 
-        ext = Path(fileName).suffix.lower()
+        #ext = Path(fileName).suffix.lower()
         #print(ext)
+        self.saveToFile(fileName)
 
+    def saveToFile(self, file_name):
+
+        board = ChessBoard(self.positionList[0]['fen'])
+        game = Game(board)
+        for pos in self.positionList[1:]:
+            game.append_next_move(pos['iccs'])
+        
+        game.save_to(file_name)
+            
     def onImportEndBook(self):
         options = QFileDialog.Options()
-        options |= QFileDialog.DontUseNativeDialog
+        #options |= QFileDialog.DontUseNativeDialog
         fileName, _ = QFileDialog.getOpenFileName(
             self,
-            "打开残局文件",
+            "打开杀局谱文件",
             "",
-            "残局文件(*.eglib);;All Files (*)",
+            "杀局谱文件(*.eglib);;All Files (*)",
             options=options)
         if not fileName:
             return
 
         lib_name = Path(fileName).stem
         if Globl.storage.isEndBookExist(lib_name):
-            msgbox = TimerMessageBox(f"残局库[{lib_name}]系统中已经存在，不能重复导入。",
+            msgbox = TimerMessageBox(f"杀局谱[{lib_name}]系统中已经存在，不能重复导入。",
                                      timeout=2)
             msgbox.exec()
             return
@@ -944,9 +1017,9 @@ class MainWindow(QMainWindow):
                                      triggered=self.onDoOpenBook)
 
         self.doEndBookAct = QAction(QIcon(':Images/endbook.png'),
-                                    "残局挑战",
+                                    "杀法挑战",
                                     self,
-                                    statusTip="残局挑战",
+                                    statusTip="入局杀法挑战",
                                     triggered=self.onDoEndBook)
 
         self.doRobotAct = QAction(QIcon(':Images/robot.png'),
@@ -1105,6 +1178,13 @@ class MainWindow(QMainWindow):
         self.writeSettings()
         Globl.engineManager.stop()
         Globl.storage.close()
+        self.saveMemoState()
+
+    def loadMemoState(self):
+        pass
+
+    def saveMemoState(self):
+        pass
 
     def readSettings(self):
         self.settings = QSettings('Company', self.app.APP_NAME)

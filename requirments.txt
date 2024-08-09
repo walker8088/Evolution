@@ -1,8 +1,11 @@
 
-numpy
+#numpy
 pyyaml
 cchess>=1.0
 psutil
 pyside6
-opencv-python
+#opencv-python
 pillow
+requests
+peewee
+tinydb

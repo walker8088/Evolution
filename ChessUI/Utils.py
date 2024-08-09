@@ -11,9 +11,6 @@ import traceback
 
 import psutil
 import requests
-import numpy as np
-import cv2 as cv
-from PIL import Image
 
 from PySide6 import *
 from PySide6.QtCore import *
@@ -21,8 +18,13 @@ from PySide6.QtGui import *
 from PySide6.QtWidgets import *
 from PySide6.QtNetwork import *
 
+#import numpy as np
+#import cv2 as cv
+#from PIL import Image
+
 from cchess import *
 
+'''
 #-----------------------------------------------------#
 def cv2qt_image(image):
 
@@ -52,7 +54,19 @@ def cv_to_image(img: np.ndarray) -> Image:
     
 def image_to_cv(img: Image) -> np.ndarray:
     return cv.cvtColor(np.array(img), cv.COLOR_RGB2BGR)
-    
+
+'''    
+#-----------------------------------------------------#
+def fen_moves_to_step(fen, moves): 
+    fen_steps = []
+    board = ChessBoard(fen)
+    for iccs in moves:
+        fen_steps.append([fen, iccs])
+        move = board.move_iccs(iccs)
+        board.next_turn()
+        fen = board.to_fen()
+
+    return fen_steps    
 #-----------------------------------------------------#
 def get_mac_address():
     mac = uuid.UUID(int=uuid.getnode()).hex[-12:]
@@ -119,95 +133,7 @@ class TimerMessageBox(QMessageBox):
         self.timer.stop()
         event.accept()
 
-#-----------------------------------------------------#
-'''
-class CloudDB(QObject):
-    query_result_signal = Signal(str, dict)
-    
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.url = 'http://www.chessdb.cn/chessdb.php'
-        self.net_mgr = QNetworkAccessManager()
-        self.reply = None
-        self.fen = None
-        self.board = ChessBoard()
-        
-    def startQuery(self, fen, score_limit = 70):
-    
-        if (self.reply is not None) and (not self.reply.isFinished()):
-            self.reply.abort()
-        
-        self.fen = fen
-        self.board.from_fen(fen)
-        self.score_limit = score_limit    
-        
-        url = QUrl(self.url)
-        query = QUrlQuery()
-        query.addQueryItem('board', fen)
-        query.addQueryItem("action", 'queryall')
-        url.setQuery(query)
-        req = QNetworkRequest(url)
-        self.reply = self.net_mgr.get(req)
-        self.reply.finished.connect(self.onQueryFinished)
-        self.reply.errorOccurred.connect(self.onQueryError)
-        
-    def onQueryFinished(self):
-        
-        if not self.reply:
-            return
-            
-        resp = self.reply.readAll().data().decode()
-        #print(resp)
-        if resp.lower() in ['', 'unknown']:
-            return {}
-
-        move_color = self.board.get_move_color()    
-        moves = []
-    
-        #数据分割
-        try:
-            steps = resp.split('|')
-            for it in steps:
-                segs = it.strip().split(',')
-                items =[x.split(':') for x in segs]
-                it_dict = {key:value for key, value in items}
-                #print(it_dict)
-                moves.append(it_dict)
-        except Exception as e:
-            #traceback.print_exc()
-            traceback.print_exception(*sys.exc_info())
-            print('cloud query result:', text, "len:", len(text))
-            moves = []
-            
-        #添加中文走子标记       
-        for move in moves:
-            move_it = self.board.copy().move_iccs(move['move'])
-            if move_it:
-                move['text'] = move_it.to_text()
-            move['score'] = -int(move['score'])  if move_color == BLACK  else  int(move['score'])
-        
-        moves_clean = []
-        score_base = moves[0]['score']
-        for it in moves:
-            it['diff'] =  it['score'] - score_base
-            if move_color == BLACK :
-                it['diff'] = -it['diff']
-            if self.score_limit > 0 and abs(it['diff']) >  self.score_limit:
-                    continue
-            moves_clean.append(it)
-
-        ret = OrderedDict()
-        for it in moves_clean:
-            ret[it['move']] = it
-            
-        self.reply = None
-        self.query_result_signal.emit(self.fen,  ret)
-        
-    def onQueryError(self, error):
-        print("CLOUD DBQUERY ERROR")
-        self.reply = None
-        #self.query_result_signal.emit(self.fen,  {})
-'''        
+     
 #-----------------------------------------------------#
 def QueryFromCloudDB(fen, score_limit = 70):
     url = 'http://www.chessdb.cn/chessdb.php'
