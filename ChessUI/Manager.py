@@ -105,7 +105,10 @@ class EngineManager(QObject):
     def run_once(self):
         for engine_id, conf in enumerate(self.econf):
             engine = conf.engine
+            if conf.fen:
+                move_color = get_move_color(conf.fen) 
             engine.handle_msg_once()
+            
             while not engine.move_queue.empty():
                 eg_out = engine.move_queue.get()
                 #print(eg_out)
@@ -114,14 +117,29 @@ class EngineManager(QObject):
                     self.engine_ready_signal.emit(engine_id,
                                                   engine.ids['name'], engine.options)
                 elif action == 'bestmove':
+                    ret = {'fen': conf.fen, }
                     if 'move' in eg_out:
-                        move_iccs = eg_out['move']
-                        #print(move_iccs, score_move)
-                        if move_iccs in conf.score_move:
-                            eg_out['score'] = conf.score_move[move_iccs]
-                    eg_out['move_scores'] = conf.score_move
-                    eg_out['fen'] = conf.fen
-                    self.best_move_signal.emit(engine_id, eg_out)
+                        iccs = eg_out['move']
+                        
+                        if iccs in conf.score_move:
+                            score_best = conf.score_move[iccs] 
+                            if move_color == BLACK:
+                                score_best = -score_best
+                            ret['score'] = score_best
+                        
+                        m = ChessBoard(conf.fen).move_iccs(iccs)
+                        if not m:
+                            continue
+
+                        new_fen = m.board_done.to_fen()
+                        
+                        ret['iccs'] = iccs
+                        ret['best_move'] = [iccs, ]
+                        
+                        ret['actions'] = [{'iccs': iccs, 'score': score_best, 'diff': 0, 'new_fen': new_fen}]
+                        ret['raw_msg'] = eg_out['raw_msg']
+
+                    self.best_move_signal.emit(engine_id, ret)
                 elif action == 'dead':  #被将死
                     eg_out['fen'] = conf.fen
                     self.checkmate_signal.emit(engine_id, eg_out)
@@ -132,6 +150,11 @@ class EngineManager(QObject):
                     move_iccs = eg_out['move'][0]
                     if 'score' in eg_out:
                         conf.score_move[move_iccs] = eg_out['score']
+                    eg_out['actions'] = []
+                    
+                    if move_color == BLACK:
+                        eg_out['score'] = -eg_out['score']
+                                
                     self.move_probe_signal.emit(engine_id, eg_out)
                 elif action == 'info':
                     #print(eg_out)

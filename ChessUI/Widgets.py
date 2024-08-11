@@ -47,7 +47,7 @@ class HistoryWidget(QWidget):
         
         self.positionView = QTreeWidget()
         self.positionView.setColumnCount(1)
-        self.positionView.setHeaderLabels(["序号", "着法", "得分", '', "备注"])
+        self.positionView.setHeaderLabels(["序号", "着法", "红优分", '', "备注"])
         self.positionView.setColumnWidth(0, 50)
         #self.positionView.setTextAlignment(0, Qt.AlignLeft)
         self.positionView.setColumnWidth(1, 80)
@@ -84,8 +84,6 @@ class HistoryWidget(QWidget):
         self.privBtn.clicked.connect(self.onPrivBtnClick)
         
 
-        #self.cloudRealtimeBtn = QRadioButton("实时云库检索", self)
-        
         self.reviewByCloudBtn = QPushButton("云库复盘")
         #self.reviewByCloudBtn.clicked.connect(self.onReviewByCloudBtnClick)
         self.reviewByEngineBtn = QPushButton("引擎复盘")
@@ -107,7 +105,6 @@ class HistoryWidget(QWidget):
         hbox1.addWidget(self.lastBtn, 0)
 
         hbox2 = QHBoxLayout()
-        #hbox2.addWidget(self.cloudRealtimeBtn, 0)
         hbox2.addWidget(self.reviewByCloudBtn, 0)
         hbox2.addWidget(self.reviewByEngineBtn, 0)
         '''
@@ -275,11 +272,14 @@ class HistoryWidget(QWidget):
             item.setText(1, '=开始=')
         
         fen = position['fen']
-        if fen in Globl.fenCache:
 
+        if fen not in Globl.fenCache:
+            item.setText(2, '')
+            item.setIcon(3, QIcon())
+        else:    
             fenInfo = Globl.fenCache[fen] 
             
-            if index > 0:
+            if (index > 0) and ('score' in fenInfo) :
                 item.setText(2, str(fenInfo['score']))
             
             if 'diff' in fenInfo:    
@@ -436,7 +436,7 @@ class ChessEngineWidget(QDockWidget):
 
         self.positionView = QTreeWidget()
         self.positionView.setColumnCount(1)
-        self.positionView.setHeaderLabels(["深度", "得分", "着法"])
+        self.positionView.setHeaderLabels(["深度", "红优分", "着法"])
         self.positionView.setColumnWidth(0, 80)
         self.positionView.setColumnWidth(1, 100)
         self.positionView.setColumnWidth(2, 380)
@@ -587,7 +587,7 @@ class MoveDbWidget(QDockWidget):
         
         self.moveListView = QTreeWidget()
         self.moveListView.setColumnCount(1)
-        self.moveListView.setHeaderLabels(["备选着法", "得分", '', '备注'])
+        self.moveListView.setHeaderLabels(["备选着法", "红优分", '', '备注'])
         self.moveListView.setColumnWidth(0, 80)
         self.moveListView.setColumnWidth(1, 60)
         self.moveListView.setColumnWidth(2, 1)
@@ -756,7 +756,7 @@ class CloudDbWidget(QDockWidget):
          
         self.cloudMovesView = QTreeWidget()
         self.cloudMovesView.setColumnCount(1)
-        self.cloudMovesView.setHeaderLabels(["备选着法", "得分", '', '备注'])
+        self.cloudMovesView.setHeaderLabels(["备选着法", "红优分", '', '备注'])
         self.cloudMovesView.setColumnWidth(0, 80)
         self.cloudMovesView.setColumnWidth(1, 60)
         self.cloudMovesView.setColumnWidth(2, 1)
@@ -924,57 +924,6 @@ class EndBookWidget(QDockWidget):
     def sizeHint(self):
         return QSize(150, 500)
 
-'''
-#------------------------------------------------------------------#
-class GameReviewWidget(QDockWidget):
-    #move_select_signal = Signal(int)
-
-    def __init__(self, parent):
-        super().__init__("复盘分析", parent)
-        self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-
-        self.parent = parent
-
-        self.moveListView = QTreeWidget()
-        self.moveListView.setColumnCount(1)
-        self.moveListView.setHeaderLabels(["着法", "得分", '备注'])
-        self.moveListView.setColumnWidth(0, 80)
-        self.moveListView.setColumnWidth(1, 80)
-        self.moveListView.setColumnWidth(3, 20)
-
-        self.moveListView.clicked.connect(self.onSelectIndex)
-
-        self.setWidget(self.moveListView)
-
-    def clear(self):
-        self.moveListView.clear()
-
-    def setData(self, book_moves):
-
-        self.clear()
-        for move_info in book_moves:
-            item = QTreeWidgetItem(self.moveListView)
-
-            item.setText(0, move_info['text'])
-
-            if 'score' in move_info:
-                item.setText(1, str(move_info['score']))
-
-            #item.setText(2, str(move_info['count']))
-            if 'memo' in move_info:
-                item.setText(3, move_info['memo'])
-
-            item.setData(0, Qt.UserRole, move_info)
-
-    def onSelectIndex(self, index):
-        item = self.moveListView.currentItem()
-        move_info = item.data(0, Qt.UserRole)
-        self.parent.onBookMove(move_info)
-
-    def sizeHint(self):
-        return QSize(150, 500)
-
-'''
 #------------------------------------------------------------------#
 class BookmarkWidget(QDockWidget):
     #end_game_select_signal = Signal(int)

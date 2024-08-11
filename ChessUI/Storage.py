@@ -248,7 +248,7 @@ class CloudDB(QObject):
         #数据分割
         try:
             steps = resp.split('|')
-            for it in steps:
+            for index, it in enumerate(steps):
                 segs = it.strip().split(',')
                 items =[x.split(':') for x in segs]
                 it_dict = {}
@@ -257,7 +257,8 @@ class CloudDB(QObject):
                         it_dict['score'] = value
                     elif name == 'move':
                         it_dict['iccs'] = value
-
+                #if index > 3:
+                #    break        
                 moves.append(it_dict)
         except Exception as e:
             print(e)
