@@ -147,6 +147,7 @@ class EngineManager(QObject):
                     eg_out['fen'] = conf.fen
                     if len(eg_out['move']) == 0:
                         continue
+                    eg_out['moves'] = eg_out['move']    
                     move_iccs = eg_out['move'][0]
                     if 'score' in eg_out:
                         conf.score_move[move_iccs] = eg_out['score']

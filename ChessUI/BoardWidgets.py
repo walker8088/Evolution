@@ -103,7 +103,8 @@ class ChessBoardBaseWidget(QWidget):
         self._board.from_fen(fen_str)
         if clear:
             self.clearPickup()
-
+        self.update()
+            
     def to_fen(self):
         return self._board.to_fen()
     

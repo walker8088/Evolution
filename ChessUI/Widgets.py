@@ -301,6 +301,7 @@ class HistoryWidget(QWidget):
 
         self.selectionIndex = index
         self.positionView.setCurrentItem(item)
+        self.update()
 
     def clear(self):
         self.items = []
@@ -514,11 +515,11 @@ class ChessEngineWidget(QDockWidget):
         board = ChessBoard(move_info['fen'])
         #board.from_fen(fen)
 
-        iccs_str = ','.join(move_info["move"])
+        iccs_str = ','.join(move_info["moves"])
         move_info['iccs_str'] = iccs_str
 
         moves_text = []
-        for step_str in move_info["move"]:
+        for step_str in move_info["moves"]:
             move_from, move_to = iccs2pos(step_str)
             if board.is_valid_move(move_from, move_to):
                 move = board.move(move_from, move_to)
@@ -631,9 +632,9 @@ class MoveDbWidget(QDockWidget):
             fen = it['fen']
             board = ChessBoard(fen)
             for act in it['actions']:
-                m = board.is_valid_iccs_move(act['move'])
+                m = board.is_valid_iccs_move(act['iccs'])
                 if m is None:
-                    bad_moves.append((fen, act['move']))
+                    bad_moves.append((fen, act['iccs']))
         for fen, iccs in bad_moves:
             print(len(records), fen, iccs)
             Globl.storage.delBookMoves(fen, iccs)
@@ -642,7 +643,7 @@ class MoveDbWidget(QDockWidget):
         item = self.moveListView.currentItem()
         move_info = item.data(0, Qt.UserRole)
         fen = move_info['fen']
-        iccs = move_info['move']
+        iccs = move_info['iccs']
         board = ChessBoard()
         todoList = [(fen, iccs)]
         todoListNew = []
@@ -671,7 +672,7 @@ class MoveDbWidget(QDockWidget):
                         branchs = branchs + len(actions) - 1
                     for act in actions:
                         #print(act)
-                        todoListNew.append((new_fen, act['move']))
+                        todoListNew.append((new_fen, act['iccs']))
                         
             if (len(todoListNew) == 0):
                 break
@@ -721,7 +722,7 @@ class MoveDbWidget(QDockWidget):
         it = ret[0]
         for act in it['actions']:
             act['fen'] = fen
-            m = board.copy().move_iccs(act['move'])
+            m = board.copy().move_iccs(act['iccs'])
             if m is None:
                 continue
             act['text'] = m.to_text()   
@@ -874,7 +875,7 @@ class EndBookWidget(QDockWidget):
         self.update()
 
     def update(self):
-
+        #super.update()
         self.curr_book_name = ''
         self.curr_game = None
 
@@ -886,7 +887,6 @@ class EndBookWidget(QDockWidget):
     
     def updateBook(self):
         pass
-
 
     def nextGame(self):
 

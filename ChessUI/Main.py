@@ -69,6 +69,13 @@ class GameMode(Enum):
     Online = auto()
 
 #-----------------------------------------------------#
+class ActionType(Enum):
+    MOVE = auto()
+    CAPTRUE = auto()
+    CHECKING = auto()
+    MATE = auto()
+    
+#-----------------------------------------------------#
 class MainWindow(QMainWindow):
     initGameSignal = Signal(str)
     newBoardSignal = Signal()
@@ -102,7 +109,7 @@ class MainWindow(QMainWindow):
         
         self.boardView = ChessBoardWidget(self.board)
         self.setCentralWidget(self.boardView)
-        self.boardView.tryMoveSignal.connect(self.onBoardMove)
+        self.boardView.tryMoveSignal.connect(self.onBoardTryMove)
         self.boardView.rightMouseSignal.connect(self.onBoardRightMouse)
 
         self.historyView = DockHistoryWidget(self)
@@ -267,7 +274,11 @@ class MainWindow(QMainWindow):
         self.player.setAudioOutput(self.audioOutput)
         self.player.errorOccurred.connect(self.onPlayError)
 
-    def playSound(self, s_type):
+    def playSound(self, s_type, quickMode = False):
+        
+        if quickMode:
+            return
+
         #print('playSound', s_type, self.soundVolume) 
         if self.soundVolume > 0:
             self.player.setSource(QUrl.fromLocalFile(f'Sound/{s_type}.wav'))
@@ -301,34 +312,7 @@ class MainWindow(QMainWindow):
         self.lastGameMode = self.gameMode    
         self.gameMode = gameMode
 
-        if self.gameMode == GameMode.EndBook:
-            self.myGamesAct.setEnabled(False)
-            self.bookmarkAct.setEnabled(False)
-            self.endBookView.show()
-            self.bookmarkView.hide()
-            #self.myGameView.hide()
-            self.moveDbView.clear()
-            self.moveDbView.hide()
-            self.cloudDbView.hide()
-            
-            self.openFileAct.setEnabled(False)
-            self.editBoardAct.setEnabled(False)
-            
-            self.cloudModeBtn.setEnabled(False)
-            self.engineModeBtn.setEnabled(False)
-            self.engineModeBtn.setChecked(True)
-            
-            self.showBestBox.setEnabled(False)
-            self.showBestBox.setChecked(False)
-
-            self.engineView.eRedBox.setChecked(False)
-            self.engineView.eBlackBox.setChecked(True)
-            self.engineView.analysisModeBox.setChecked(False)
-            self.cloudModeBtn.setChecked(False)
-            #self.initGame(EMPTY_FEN)
-            self.endBookView.nextGame()
-            
-        elif self.gameMode == GameMode.Free:
+        if self.gameMode == GameMode.Free:
             self.setWindowTitle(f'{self.app.APP_NAME_TEXT} - 自由练习')
             self.myGamesAct.setEnabled(True)
             self.bookmarkAct.setEnabled(True)
@@ -342,8 +326,8 @@ class MainWindow(QMainWindow):
         
             self.cloudModeBtn.setEnabled(True)
             self.engineModeBtn.setEnabled(True)
-            #self.engineModeBtn.setChecked(True)
             self.cloudModeBtn.setChecked(True)
+            #self.engineModeBtn.setChecked(True)
             
             self.showBestBox.setEnabled(True)
             self.showBestBox.setChecked(True)
@@ -355,15 +339,16 @@ class MainWindow(QMainWindow):
                 self.initGame(FULL_INIT_FEN)
         
         elif self.gameMode == GameMode.Fight:
-            self.setWindowTitle(f'{self.app.APP_NAME_TEXT} - 人机练习')
+            self.setWindowTitle(f'{self.app.APP_NAME_TEXT} - 人机战斗')
             self.myGamesAct.setEnabled(True)
-            self.bookmarkAct.setEnabled(True)
+            self.bookmarkAct.setEnabled(False)
+            self.bookmarkView.hide()
             self.endBookView.hide()
             self.moveDbView.hide()
             self.cloudDbView.hide()
             
-            self.cloudModeBtn.setEnabled(True)
-            self.cloudModeBtn.setChecked(False)
+            self.cloudModeBtn.setEnabled(False)
+            #self.cloudModeBtn.setChecked(False)
             self.engineModeBtn.setEnabled(True)
             self.engineModeBtn.setChecked(True)
             
@@ -376,11 +361,37 @@ class MainWindow(QMainWindow):
             self.engineView.eRedBox.setChecked(False)
             self.engineView.eBlackBox.setChecked(True)
             self.engineView.analysisModeBox.setChecked(False)
-            self.cloudModeBtn.setChecked(True)
             
             if self.lastGameMode in [None, GameMode.EndBook]:
                 self.initGame(FULL_INIT_FEN)
+        
+        elif self.gameMode == GameMode.EndBook:
+            self.myGamesAct.setEnabled(False)
+            self.bookmarkAct.setEnabled(False)
+            self.endBookView.show()
+            self.bookmarkView.hide()
+            #self.myGameView.hide()
+            self.moveDbView.clear()
+            self.moveDbView.hide()
+            self.cloudDbView.hide()
             
+            self.openFileAct.setEnabled(False)
+            self.editBoardAct.setEnabled(False)
+            
+            self.cloudModeBtn.setEnabled(False)
+            #self.cloudModeBtn.setChecked(False)
+            self.engineModeBtn.setEnabled(False)
+            self.engineModeBtn.setChecked(True)
+            
+            self.showBestBox.setEnabled(False)
+            self.showBestBox.setChecked(False)
+
+            self.engineView.eRedBox.setChecked(False)
+            self.engineView.eBlackBox.setChecked(True)
+            self.engineView.analysisModeBox.setChecked(False)
+            #self.initGame(EMPTY_FEN)
+            self.endBookView.nextGame()
+                
     def initGame(self, fen=None, is_only_once=False):
 
         if (fen is not None) and (not is_only_once):
@@ -405,7 +416,7 @@ class MainWindow(QMainWindow):
             'move_side': self.boardView.get_move_color()
             }
         #print(position)        
-        self.onPositionChanged(position, is_new = True)
+        self.onPositionChanged(position, isNew = True)
  
     def onGameOver(self, win_side):
         
@@ -527,8 +538,6 @@ class MainWindow(QMainWindow):
 
     def loadBookGame(self, name, game):
         
-        #self.cloudModeBtn.setChecked(False)
-
         fen = game.init_board.to_fen()
         
         self.initGame(fen, is_only_once = True)
@@ -537,16 +546,13 @@ class MainWindow(QMainWindow):
         if not moves:
             return
         for iccs in moves[0]:
-            self.onMoveGo(iccs)
+            self.onMoveGo(iccs, quickMode = True)
+            qApp.processEvents()
 
         self.setWindowTitle(f'{self.app.APP_NAME_TEXT} -- {name}')
-        
-        #self.cloudModeBtn.setChecked(save_search)
-
+      
     def loadBookmark(self, name, position):
      
-        self.cloudModeBtn.setChecked(False)
-
         fen = position['fen']        
         self.initGame(fen, is_only_once = True)
         #print(position)
@@ -555,11 +561,10 @@ class MainWindow(QMainWindow):
             if moves is not None:
                 for it in moves:
                     iccs = it['iccs']    
-                    self.onMoveGo(iccs)
+                    self.onMoveGo(iccs, quickMode = True)
+                    qApp.processEvents()
             
         self.setWindowTitle(f'{self.app.APP_NAME_TEXT} -- {name}')
-
-        self.cloudModeBtn.setChecked(save_search)
 
     #--------------------------------------------------------------------
     #引擎相关
@@ -706,9 +711,9 @@ class MainWindow(QMainWindow):
             self.boardView.from_fen(move.board.to_fen())
             self.boardView.showMove(move.p_from, move.p_to, best_show)
         else:
-             self.boardView.clearPickup()    
+             self.boardView.clearPickup()
              
-        self.onPositionChanged(self.currPosition, is_new = False)
+        self.onPositionChanged(self.currPosition, isNew = False)
         
     def deleteHistoryFollow(self, move_step):
         self.positionList = self.positionList[:move_step + 1]
@@ -739,9 +744,7 @@ class MainWindow(QMainWindow):
             self.historyView.inner.onUpdatePosition(posi)
 
     def localSearch(self, position):
-        #暂时不用本地库
-        #return
-
+        
         fen = position['fen']
         qResult = self.openbook.getMoves(fen)
         if not qResult:
@@ -770,17 +773,15 @@ class MainWindow(QMainWindow):
     def onEngineBestMove(self, engine_id, fenInfo):
         
         fen = fenInfo['fen']
-        #print("engine_best_move", fenInfo)
-        if (self.analyzeMode == 'Engine') or (self.reviewMode == 'Engine'):
+        
+        if (self.analyzeMode == 'Engine') or (self.reviewMode == 'Engine') and (self.GameMode != GameMode.EndBook):
             self.updateFenCache(fenInfo)
 
         if self.reviewMode == 'Engine' :
-            #print("engine_review_end", fen) 
             self.onReviewGameStep()
             return
             
         if not self.historyMode:
-
             move_color = self.board.get_move_color()
             if self.bind_engines[move_color] == engine_id:
                 self.onMoveGo(fenInfo['iccs'])
@@ -792,6 +793,8 @@ class MainWindow(QMainWindow):
         
         self.engineView.onEngineMoveInfo(fenInfo)
 
+    #-----------------------------------------------------------
+    #fenCache 核心逻辑
     def updateFenCache(self, fenInfo):
 
         fen = fenInfo['fen']
@@ -849,21 +852,22 @@ class MainWindow(QMainWindow):
                     
     #-----------------------------------------------------------
     #走子核心逻辑
-    def onMoveGo(self, move_iccs, score = None):
+    def onMoveGo(self, move_iccs, quickMode = False): #, score = None):
 
         if not self.board.is_valid_iccs_move(move_iccs):
             return
        
-        #self.historyMode = True  #用historyMode保护在此期间引擎输出的move信息被忽略
+        self.historyMode = True  #用historyMode保护在此期间引擎输出的move信息被忽略
         
-        self.boardView.showIccsMove(move_iccs)
+        if not quickMode:
+            self.boardView.showIccsMove(move_iccs)
         
         #--------------------------------
         #尝试走棋
         move = self.board.move_iccs(move_iccs)
         if move is None:
             #不能走就返回
-            #self.historyMode = False  #结束保护
+            self.historyMode = False  #结束保护
             return
         #self.board在做了这个move动作后，棋子已经更新到新位置了
         #board是下个走子的position了
@@ -874,7 +878,7 @@ class MainWindow(QMainWindow):
         hist = [x['move'] for x in self.positionList[1:]]
         move.prepare_for_engine(move.board.move_player.opposite(), hist)
 
-        #self.historyMode = False  #结束保护
+        self.historyMode = False  #结束保护
         
         fen = self.board.to_fen()
 
@@ -887,17 +891,31 @@ class MainWindow(QMainWindow):
             'move_side': move.board.move_player.color
         }
 
-        self.onPositionChanged(position, is_new = True)
-        
-        if move.is_checkmate:
-            self.onGameOver(move.board.move_player)
-              
-    def onPositionChanged(self, position, is_new = True):   
+        self.onPositionChanged(position, isNew = True, quickMode = quickMode)
+
+        if move.is_checking:
+            if move.is_checkmate:
+                msg = "将死！"
+                self.playSound('mate', quickMode)
+                self.onGameOver(move.board.move_player)
+            else:
+                self.playSound('check', quickMode)
+                msg = "将军！"
+        elif move.captured:
+            self.playSound('capture', quickMode)
+            msg = f"吃{fench_to_text(move.captured)}"
+        else:
+            self.playSound('move', quickMode)
+            msg = ""
+
+        self.statusBar().showMessage(msg)
+            
+    def onPositionChanged(self, position, isNew = True, quickMode = False):   
         
         fen = position['fen']
         self.currPosition = position        
      
-        if is_new:
+        if isNew:
             self.fenPosDict[fen] = position
             self.positionList.append(position)      
             
@@ -913,42 +931,28 @@ class MainWindow(QMainWindow):
                 
             self.historyView.inner.onNewPostion(self.currPosition)
             
-            if 'move' in position:
-                move = position['move']            
-                if move.is_checking:
-                    if move.is_checkmate:
-                        msg = "将死！"
-                        self.playSound('mate')
-                    else:
-                        self.playSound('check')
-                        msg = "将军！"
-                elif move.captured:
-                    self.playSound('capture')
-                    msg = f"吃{fench_to_text(move.captured)}"
-                else:
-                    self.playSound('move')
-                    msg = ""
-                self.statusBar().showMessage(msg)
-
         self.engineView.clear()       
-        self.boardView.from_fen(fen)    
         self.cloudDbView.clear()
+        
+        self.boardView.from_fen(fen)
         
         if self.gameMode == GameMode.EndBook:        
             pass
         else:
-            self.moveDbView.onPositionChanged(position, is_new)
-            if (self.analyzeMode == 'Cloud') or (self.reviewMode == 'Cloud'):
+            self.moveDbView.onPositionChanged(position, isNew)
+
+            if (not quickMode) and (self.analyzeMode == 'Cloud') or (self.reviewMode == 'Cloud'):
                 self.cloud.startQuery(fen)
             else:
                 self.localSearch(position)
-                
-        self.detectRunEngine()
+        
+        if not quickMode:        
+            self.detectRunEngine()
         
     #------------------------------------------------------------------------------
     #UI Events
 
-    def onBoardMove(self,  move_from,  move_to):
+    def onBoardTryMove(self,  move_from,  move_to):
         move_iccs = pos2iccs(move_from, move_to)
         self.onMoveGo(move_iccs)
         
@@ -957,7 +961,7 @@ class MainWindow(QMainWindow):
         if self.historyMode:
             return
         
-        self.onMoveGo(move_info['move']) #, move_info['score'])
+        self.onMoveGo(move_info['iccs']) #, move_info['score'])
             
     def onDoOpenBook(self):
         self.switchGameMode(GameMode.Free)
@@ -1020,7 +1024,7 @@ class MainWindow(QMainWindow):
         #options |= QFileDialog.DontUseNativeDialog
 
         fileName, _ = QFileDialog.getOpenFileName(
-            self, "打开文件", "", "象棋通用格式文件(*.pgn);;象棋演播室文件(*.xqf);;所有文件(*.*)", options=options)
+            self, "打开文件", "", "象棋演播室文件(*.xqf);;象棋通用格式文件(*.pgn);;所有文件(*.*)", options=options)
 
         if not fileName:
             return
@@ -1119,9 +1123,9 @@ class MainWindow(QMainWindow):
                                    triggered=self.onOpenFile)
         self.useOpenBookAct = QAction(self.style().standardIcon(
                                     QStyle.SP_FileDialogStart),
-                                   "使用开局库",
+                                   "开局库选择",
                                    self,
-                                   statusTip="选择开局库文件",
+                                   statusTip="选择开局库文件（yfk格式）",
                                    triggered=self.onUseOpenBookFile)
 
         self.saveFileAct = QAction(self.style().standardIcon(
@@ -1144,9 +1148,9 @@ class MainWindow(QMainWindow):
                                     triggered=self.onDoEndBook)
 
         self.doRobotAct = QAction(QIcon(':Images/robot.png'),
-                                   "人机练习",
+                                   "人机战斗",
                                    self,
-                                   statusTip="人机练习",
+                                   statusTip="人机战斗",
                                    triggered=self.onDoRobot)
         self.doOnlineAct = QAction(QIcon(':Images/online.png'),
                                    "连线分析",
@@ -1259,25 +1263,20 @@ class MainWindow(QMainWindow):
         self.mirrorBoardBox.setToolTip('左右镜像')
         self.mirrorBoardBox.stateChanged.connect(self.onMirrorBoardChanged)
 
-        self.cloudModeBtn = QRadioButton()  #"云库")
-        self.cloudModeBtn.setIcon(QIcon(':Images/cloud.png'))
+        self.cloudModeBtn = QRadioButton("云库优先")
+        #self.cloudModeBtn.setIcon(QIcon(':Images/cloud.png'))
         self.cloudModeBtn.setToolTip('云库优先模式')
         self.cloudModeBtn.toggled.connect(lambda: self.setAnalyzeMode("Cloud"))
 
-        self.engineModeBtn = QRadioButton()  #"引擎")
-        self.engineModeBtn.setIcon(QIcon(':Images/engine.png'))
+        self.engineModeBtn = QRadioButton("引擎优先") 
+        #self.engineModeBtn.setIcon(QIcon(':Images/engine.png'))
         self.engineModeBtn.setToolTip('引擎优先模式')
         self.engineModeBtn.toggled.connect(lambda: self.setAnalyzeMode("Engine"))
-
-        #self.cloudModeBtn.setChecked(self.isSearchCloud)
         
         self.modeBtnGroup = QButtonGroup(self)
         self.modeBtnGroup.addButton(self.cloudModeBtn, 1)      # ID 1
         self.modeBtnGroup.addButton(self.engineModeBtn, 2)      # ID 2
-        #self.modeBtnGroup.buttonClicked.connect(self.onAnalysisModeChanged)
-        #self.cloudModeBtn.setToolTip('实时搜索云库')
-        #self.cloudModeBtn.stateChanged.connect(self.onSearchCloudChanged)
-        
+
         self.showBestBox = QCheckBox()  #"最佳提示")
         self.showBestBox.setIcon(QIcon(':Images/info.png'))
         self.showBestBox.setChecked(True)

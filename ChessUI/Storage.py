@@ -399,15 +399,15 @@ class CloudDB(QObject):
             return
 
         score_best = int(moves[0]['score'])
-        for move in moves:
-            move_it = self.board.copy().move_iccs(move['iccs'])
+        for act in moves:
+            move_it = self.board.copy().move_iccs(act['iccs'])
             if move_it:
-                move['text'] = move_it.to_text()
-            move['score'] = int(move['score']) 
-            move['diff'] =  move['score'] - score_best
+                act['text'] = move_it.to_text()
+            act['score'] = int(act['score']) 
+            act['diff'] =  act['score'] - score_best
             if move_color == cchess.BLACK:
-                move['score'] = -move['score']
-            move['new_fen'] = move_it.board_done.to_fen()
+                act['score'] = -act['score']
+            act['new_fen'] = move_it.board_done.to_fen()
 
             
         #moves = filter(lambda x : is_odd, moves)        
@@ -618,7 +618,7 @@ class DataStore():
             found = False
             new_record = []    
             for act in record['actions']:
-                if iccs == act['move']:
+                if iccs == act['iccs']:
                     found = True
                 else:
                     new_record.append(act)
@@ -643,7 +643,7 @@ class DataStore():
                 raise Exception(f'**ERROR** {fen} move {move_iccs}')
             ret = self.position_table.search(q.fen == fen)
             
-            action_to_save = {'move': move_iccs}
+            action_to_save = {'iccs': move_iccs}
             
             if len(ret) == 0:
                 self.position_table.insert({
@@ -657,7 +657,7 @@ class DataStore():
                 act_found = False
                 for act in db_actions:
 
-                    if act['move'] == move_iccs:
+                    if act['iccs'] == move_iccs:
                         act_found = True
                         act.update(action_to_save)
                         self.position_table.update({'actions': db_actions},
