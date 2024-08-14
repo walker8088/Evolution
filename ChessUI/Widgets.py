@@ -278,9 +278,10 @@ class HistoryWidget(QWidget):
             item.setIcon(3, QIcon())
         else:    
             fenInfo = Globl.fenCache[fen] 
-            
             if (index > 0) and ('score' in fenInfo) :
                 item.setText(2, str(fenInfo['score']))
+            else:
+                item.setText(2, '')
             
             if 'diff' in fenInfo:    
                 diff = fenInfo['diff']
@@ -609,21 +610,39 @@ class MoveDbWidget(QDockWidget):
         #importAllFollowAction = menu.addAction("导入分支(全部)")
         menu.addSeparator()
         delBranchAction = menu.addAction("!删除该分支!")
+        #cleanAction = menu.addAction("***清理非法招数***")
+
         action = menu.exec_(self.mapToGlobal(event.pos()))
         if action == importFollowAction:
             self.onImportFollow()
         elif action == delBranchAction:
             self.onDeleteBranch()
+        #elif action == cleanAction:
+        #    self.onCleanMoves()
 
     def onImportFollow(self):
         self.importFollowMode = True
         self.onSelectIndex(0)
     
+    def onCleanMoves(self):
+        bad_moves = []
+        records = Globl.storage.getAllBookMoves()
+        for it in records:
+            fen = it['fen']
+            board = ChessBoard(fen)
+            for act in it['actions']:
+                m = board.is_valid_iccs_move(act['move'])
+                if m is None:
+                    bad_moves.append((fen, act['move']))
+        for fen, iccs in bad_moves:
+            print(len(records), fen, iccs)
+            Globl.storage.delBookMoves(fen, iccs)
+
     def onDeleteBranch(self):
         item = self.moveListView.currentItem()
         move_info = item.data(0, Qt.UserRole)
         fen = move_info['fen']
-        iccs = move_info['iccs']
+        iccs = move_info['move']
         board = ChessBoard()
         todoList = [(fen, iccs)]
         todoListNew = []
@@ -652,7 +671,7 @@ class MoveDbWidget(QDockWidget):
                         branchs = branchs + len(actions) - 1
                     for act in actions:
                         #print(act)
-                        todoListNew.append((new_fen, act['iccs']))
+                        todoListNew.append((new_fen, act['move']))
                         
             if (len(todoListNew) == 0):
                 break
@@ -697,15 +716,26 @@ class MoveDbWidget(QDockWidget):
         if len(ret) == 0:
             return
         elif len(ret) > 1:
-            print('database error', fen, ret)
-        for it in ret:
-            if 'actions' not in it:
+            raise Exception(f'database error: {fen}, {ret}')
+
+        it = ret[0]
+        for act in it['actions']:
+            act['fen'] = fen
+            m = board.copy().move_iccs(act['move'])
+            if m is None:
                 continue
-            for act in it['actions']:
-                act['fen'] = fen
-                act['text'] = board.copy().move_iccs(act['move']).to_text()
-                book_moves.append(act)
-                
+            act['text'] = m.to_text()   
+            new_fen = m.board_done.to_fen()
+
+            #if 'score' in act:
+            #    del act['score']
+            
+            if new_fen in Globl.fenCache:
+                fenInfo = Globl.fenCache[new_fen]
+                if 'score' in fenInfo:
+                    act['score'] = fenInfo['score']
+            book_moves.append(act)
+            
         is_reverse  = True if board.get_move_color() == RED else False        
         book_moves.sort(key=key_func, reverse = is_reverse)
         
@@ -715,20 +745,20 @@ class MoveDbWidget(QDockWidget):
     def updateBookMoves(self, book_moves):
         self.moveListView.clear()
         self.position_len = len(book_moves)
-        for move_info in book_moves:
+        for act in book_moves:
             item = QTreeWidgetItem(self.moveListView)
 
-            item.setText(0, move_info['text'])
+            item.setText(0, act['text'])
 
-            if 'score' in move_info:
-                item.setText(1, str(move_info['score']))
+            if 'score' in act:
+                item.setText(1, str(act['score']))
                 item.setTextAlignment(1, Qt.AlignRight)
 
-            #item.setText(2, str(move_info['count']))
-            if 'memo' in move_info:
-                item.setText(3, move_info['memo'])
+            #item.setText(2, str(act['count']))
+            if 'memo' in act:
+                item.setText(3, act['memo'])
 
-            item.setData(0, Qt.UserRole, move_info)
+            item.setData(0, Qt.UserRole, act)
 
         if self.importFollowMode:
             if self.position_len == 1:
@@ -738,8 +768,8 @@ class MoveDbWidget(QDockWidget):
        
     def onSelectIndex(self, index):
         item = self.moveListView.currentItem()
-        move_info = item.data(0, Qt.UserRole)
-        self.parent.onBookMove(move_info)
+        act = item.data(0, Qt.UserRole)
+        self.parent.onBookMove(act)
 
     def sizeHint(self):
         return QSize(150, 500)
@@ -785,21 +815,21 @@ class CloudDbWidget(QDockWidget):
         
     def updateCloudMoves(self, moves):
         self.cloudMovesView.clear()
-        for move_info in moves:
+        for act in moves:
             item = QTreeWidgetItem(self.cloudMovesView)
-            item.setText(0, move_info['text'])    
-            item.setText(1, str(move_info['score']))
+            item.setText(0, act['text'])    
+            item.setText(1, str(act['score']))
             item.setTextAlignment(1, Qt.AlignRight)
-            if 'memo' in move_info:
-                item.setText(2, str(move_info['memo']))
+            if 'memo' in act:
+                item.setText(2, str(act['memo']))
                 item.setTextAlignment(2, Qt.AlignCenter)
             
-            item.setData(0, Qt.UserRole, move_info)
+            item.setData(0, Qt.UserRole, act)
        
     def onSelectIndex(self, index):
         item = self.cloudMovesView.currentItem()
-        move_info = item.data(0, Qt.UserRole)
-        self.parent.onBookMove(move_info)
+        act = item.data(0, Qt.UserRole)
+        self.parent.onBookMove(act)
         
     def sizeHint(self):
         return QSize(150, 500)
@@ -854,6 +884,10 @@ class EndBookWidget(QDockWidget):
 
         self.libCombo.setCurrentIndex(0)
     
+    def updateBook(self):
+        pass
+
+
     def nextGame(self):
 
         if len(self.curr_book) == 0:
@@ -867,7 +901,7 @@ class EndBookWidget(QDockWidget):
 
         index = self.curr_game['index']
         while self.curr_game['ok'] is True:
-            if index < len(self.curr_book):
+            if index < len(self.curr_book)-1:
                 index += 1
             else:
                 break
@@ -877,11 +911,21 @@ class EndBookWidget(QDockWidget):
             self.bookView.setCurrentItem(self.curr_game['widget'])
             
     def updateCurrent(self, game):
-        item = game['widget']
-        if game['ok'] is True:
-            item.setForeground(QColor(Qt.gray))
-            self.curr_game['ok'] = True
-
+        self.curr_game['ok'] = game['ok']
+        self.updateCurrentBook()
+     
+    def updateCurrentBook(self):
+        self.bookView.clear()
+        for i, game in enumerate(self.books[self.curr_book_name]):
+            item = QListWidgetItem()
+            item.setText(game['name'])
+            if game['ok'] is True:
+                item.setForeground(Qt.gray)
+            item.setData(Qt.UserRole, game)
+            game['index'] = i
+            game['widget'] = item
+            self.bookView.addItem(item)
+        
     def onImportBtnClick(self):
         self.parent.onImportEndBook()
         self.update()
@@ -897,16 +941,7 @@ class EndBookWidget(QDockWidget):
         self.curr_book = self.books[self.curr_book_name]
         self.curr_game = None
 
-        for i, game in enumerate(self.books[self.curr_book_name]):
-            item = QListWidgetItem()
-            item.setText(game['name'])
-            #print(game)
-            if game['ok'] is True:
-                item.setForeground(Qt.gray)
-            item.setData(Qt.UserRole, game)
-            game['index'] = i
-            game['widget'] = item
-            self.bookView.addItem(item)
+        self.updateCurrentBook()
 
     def onCurrentItemChanged(self, current, previous):
         if current is None:
@@ -916,11 +951,27 @@ class EndBookWidget(QDockWidget):
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)
-        copyAction = menu.addAction("Copy Fen String")
+        copyAction = menu.addAction("复制Fen到剪贴板")
+        menu.addSeparator()
+        remarkAction = menu.addAction("标记未完成")
+        remarkAllAction = menu.addAction("标记未完成（全部）")
         action = menu.exec_(self.mapToGlobal(event.pos()))
         if action == copyAction:
             qApp.clipboard().setText(self.parent.board.to_fen())
-
+        
+        elif action == remarkAction:
+            if self.curr_game:
+                self.curr_game['ok'] = False
+                Globl.storage.updateEndBook(self.curr_game)
+            self.updateCurrentBook()
+            
+        elif action == remarkAllAction:
+            for i, game in enumerate(self.books[self.curr_book_name]):
+                if game['ok'] is True:
+                    game['ok'] = False
+                    Globl.storage.updateEndBook(game)
+            self.updateCurrentBook()
+                
     def sizeHint(self):
         return QSize(150, 500)
 

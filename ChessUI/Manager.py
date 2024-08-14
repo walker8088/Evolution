@@ -121,23 +121,23 @@ class EngineManager(QObject):
                     if 'move' in eg_out:
                         iccs = eg_out['move']
                         
+                        ret['iccs'] = iccs
+                        ret['best_move'] = [iccs, ]
+                        
                         if iccs in conf.score_move:
                             score_best = conf.score_move[iccs] 
                             if move_color == BLACK:
                                 score_best = -score_best
                             ret['score'] = score_best
                         
-                        m = ChessBoard(conf.fen).move_iccs(iccs)
-                        if not m:
-                            continue
+                            m = ChessBoard(conf.fen).move_iccs(iccs)
+                            if not m:
+                                continue
 
-                        new_fen = m.board_done.to_fen()
-                        
-                        ret['iccs'] = iccs
-                        ret['best_move'] = [iccs, ]
-                        
-                        ret['actions'] = [{'iccs': iccs, 'score': score_best, 'diff': 0, 'new_fen': new_fen}]
-                        ret['raw_msg'] = eg_out['raw_msg']
+                            new_fen = m.board_done.to_fen()
+      
+                            ret['actions'] = [{'iccs': iccs, 'score': score_best, 'diff': 0, 'new_fen': new_fen}]
+                        #ret['raw_msg'] = eg_out['raw_msg']
 
                     self.best_move_signal.emit(engine_id, ret)
                 elif action == 'dead':  #被将死
@@ -150,10 +150,10 @@ class EngineManager(QObject):
                     move_iccs = eg_out['move'][0]
                     if 'score' in eg_out:
                         conf.score_move[move_iccs] = eg_out['score']
-                    eg_out['actions'] = []
+                        eg_out['actions'] = []
                     
-                    if move_color == BLACK:
-                        eg_out['score'] = -eg_out['score']
+                        if move_color == BLACK:
+                            eg_out['score'] = -eg_out['score']
                                 
                     self.move_probe_signal.emit(engine_id, eg_out)
                 elif action == 'info':
