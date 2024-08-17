@@ -180,7 +180,8 @@ class MainWindow(QMainWindow):
         self.gameMode = None
         self.queryMode = ''
         self.reviewMode = ''
-
+        self.engineLevel = 20
+        
         self.clearAll()
         
         self.openBook = OpenBookYfk()
@@ -317,6 +318,9 @@ class MainWindow(QMainWindow):
                 if self.getConfirm(f"当前棋谱已经走了 {steps} 步, 您确定要从新开始吗?"):
                     self.initGame(FULL_INIT_FEN)
             return
+        
+        if self.gameMode == GameMode.Fight:
+            self.engineLevel = self.engineView.saveGameLevel()
 
         self.lastGameMode = self.gameMode    
         self.gameMode = gameMode
@@ -332,7 +336,7 @@ class MainWindow(QMainWindow):
             self.engineView.eRedBox.setChecked(False)
             self.engineView.eBlackBox.setChecked(False)
             self.engineView.analysisModeBox.setChecked(False)
-            self.engineView.skillLevelSpin.setValue(20)
+            self.engineView.setTopGameLevel()
 
             self.cloudModeBtn.setEnabled(True)
             self.engineModeBtn.setEnabled(True)
@@ -370,7 +374,8 @@ class MainWindow(QMainWindow):
             self.engineView.eRedBox.setChecked(False)
             self.engineView.eBlackBox.setChecked(True)
             self.engineView.analysisModeBox.setChecked(False)
-            
+            self.engineView.restoreGameLevel(self.engineLevel)
+
             if self.lastGameMode in [None, GameMode.EndBook]:
                 self.initGame(FULL_INIT_FEN)
         
@@ -398,7 +403,7 @@ class MainWindow(QMainWindow):
             self.engineView.eRedBox.setChecked(False)
             self.engineView.eBlackBox.setChecked(True)
             self.engineView.analysisModeBox.setChecked(False)
-            self.engineView.skillLevelSpin.setValue(20)
+            self.engineView.setTopGameLevel() #skillLevelSpin.setValue(20)
 
             self.endBookView.nextGame()
                 
@@ -1406,14 +1411,16 @@ class MainWindow(QMainWindow):
         showBest = self.settings.value("showBest", True)
         self.showBestBox.setCheckState(showBest)
 
-        cloudMode = self.settings.value("cloudMode", 'true')
-        if cloudMode == 'true':
+        cloudMode = self.settings.value("cloudMode", True, type=bool)
+        if cloudMode:
             self.cloudModeBtn.setChecked(True)
         
-        engineMode = self.settings.value("engineMode", 'false')
-        if engineMode == 'true':
+        engineMode = self.settings.value("engineMode", False, type=bool)
+        if engineMode:
             self.engineModeBtn.setChecked(True)
         
+        self.engineLevel = self.settings.value("engineLevel", 20)
+
         self.engineView.readSettings(self.settings)
 
     def writeSettings(self):
@@ -1429,8 +1436,10 @@ class MainWindow(QMainWindow):
 
         self.settings.setValue("cloudMode", self.cloudModeBtn.isChecked())
         self.settings.setValue("engineMode", self.engineModeBtn.isChecked())
+        self.settings.setValue("engineLevel", self.engineLevel)
 
         self.settings.setValue("openBookFileName", self.openBookFileName)
+        
 
         self.engineView.writeSettings(self.settings)
 

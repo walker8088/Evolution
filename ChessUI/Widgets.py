@@ -476,7 +476,16 @@ class ChessEngineWidget(QDockWidget):
         self.eRedBox.setChecked(settings.value("engineRed", False, type=bool))
         self.eBlackBox.setChecked(settings.value("engineBlack", False, type=bool))
         self.analysisModeBox.setChecked(settings.value("engineAnalysisMode", False, type=bool))
-        
+    
+    def setTopGameLevel(self):
+        self.skillLevelSpin.setValue(20)
+
+    def restoreGameLevel(self, level):
+        self.skillLevelSpin.setValue(level)
+
+    def saveGameLevel(self):
+        return self.skillLevelSpin.value()
+
     def setGoParams(self):
         
         moveTime = self.moveTimeSpin.value()
