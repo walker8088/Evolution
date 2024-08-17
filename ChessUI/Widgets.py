@@ -26,13 +26,14 @@ class DockWidget(QDockWidget):
         self.setAllowedAreas(dock_areas)
 
 #-----------------------------------------------------#
-class DocksWidget(DockWidget):
-    def __init__(self, parent, inner, dock_areas):
+class DocksWidget(QDockWidget):
+    def __init__(self, name, parent, inner, dock_areas):
         super().__init__(parent)
-        self.setAllowedAreas(dock_areas)
+        self.setObjectName(name)
         self.inner = inner
         self.setWidget(self.inner)
         self.setWindowTitle(self.inner.title)
+        self.setAllowedAreas(dock_areas)
         
 #-----------------------------------------------------#
 class HistoryWidget(QWidget):
@@ -89,15 +90,14 @@ class HistoryWidget(QWidget):
         self.reviewByEngineBtn = QPushButton("引擎复盘")
         #self.reviewByEngineBtn.clicked.connect(self.onReviewByEngineBtnClick)
         
-        '''
+        
         self.addBookmarkBtn = QPushButton("收藏局面")
         self.addBookmarkBtn.clicked.connect(self.onAddBookmarkBtnClick)
         self.addBookmarkBookBtn = QPushButton("收藏棋谱")
         self.addBookmarkBookBtn.clicked.connect(self.onAddBookmarkBookBtnClick)
         self.saveDbBtnBtn = QPushButton("保存到棋谱库")
         self.saveDbBtnBtn.clicked.connect(self.onSaveDbBtnClick)
-        '''
-
+        
         hbox1 = QHBoxLayout()
         hbox1.addWidget(self.firstBtn, 0)
         hbox1.addWidget(self.privBtn, 0)
@@ -107,17 +107,17 @@ class HistoryWidget(QWidget):
         hbox2 = QHBoxLayout()
         hbox2.addWidget(self.reviewByCloudBtn, 0)
         hbox2.addWidget(self.reviewByEngineBtn, 0)
-        '''
+        
         hbox3 = QHBoxLayout()
         hbox3.addWidget(self.addBookmarkBtn, 0)
         hbox3.addWidget(self.addBookmarkBookBtn, 0)
         hbox3.addWidget(self.saveDbBtnBtn, 0)
-        '''
+        
         vbox = QVBoxLayout()
         vbox.addWidget(splitter, 2)
         vbox.addLayout(hbox1)
         vbox.addLayout(hbox2)
-        #vbox.addLayout(hbox3)
+        vbox.addLayout(hbox3)
 
         self.setLayout(vbox)
 
@@ -174,11 +174,12 @@ class HistoryWidget(QWidget):
         self.selectionIndex = item.data(0, Qt.UserRole)
         self.positionSelSignal.emit(self.selectionIndex)
 
-    def selectIndex(self, index):
+    def selectIndex(self, index, fireEvent = True):
         self.selectionIndex = index
         item = self.items[self.selectionIndex]
         self.positionView.setCurrentItem(item)
-        self.positionSelSignal.emit(self.selectionIndex)
+        if fireEvent:
+            self.positionSelSignal.emit(self.selectionIndex)
 
     def onFirstBtnClick(self):
         self.selectIndex(0)
@@ -337,22 +338,25 @@ class BoardHistoryWidget(QWidget):
             self.historyView.onNewPostion(it)
 
 #-----------------------------------------------------#
-class DockHistoryWidget(DockWidget):
+class DockHistoryWidget(QDockWidget):
     def __init__(self, parent):
-        super().__init__(parent,
-                         Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        super().__init__(parent)
+        self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.setObjectName("History")
         self.inner = HistoryWidget(parent)
         self.setWidget(self.inner)
         self.setWindowTitle(self.inner.title)
 
 #-----------------------------------------------------#
 class ChessEngineWidget(QDockWidget):
-    def __init__(self, parent):
 
-        super().__init__("引擎", parent)
+    def __init__(self, parent, engineMgr):
 
+        super().__init__("引擎", parent)    
+        self.setObjectName("ChessEngine")
+        
         self.parent = parent
-        self.engine_id = 0
+        self.engineManager = engineMgr
 
         self.dockedWidget = QWidget(self)
         self.setWidget(self.dockedWidget)
@@ -428,8 +432,8 @@ class ChessEngineWidget(QDockWidget):
         hbox.addWidget(QLabel('    '), 0)
         hbox.addWidget(self.eRedBox, 0)
         hbox.addWidget(self.eBlackBox, 0)
-        hbox.addWidget(self.analysisModeBox, 0)
         hbox.addWidget(self.engineLabel, 2)
+        hbox.addWidget(self.analysisModeBox, 0)
         #hbox.addWidget(self.reviewBtn, 0)
 
         vbox = QVBoxLayout()
@@ -445,9 +449,34 @@ class ChessEngineWidget(QDockWidget):
 
         vbox.addWidget(self.positionView)
 
-        Globl.engineManager.engine_ready_signal.connect(self.onEngineReady)
+        self.engineManager.readySignal.connect(self.onEngineReady)
         self.branchs = []
     
+    def writeSettings(self, settings):
+        settings.setValue("engineDepth", self.DepthSpin.value())
+        settings.setValue("engineMoveTime", self.moveTimeSpin.value())
+        #settings.setValue("engineThreads", self.threadsSpin.value())
+        #settings.setValue("engineMemory", self.memorySpin.value())
+        #settings.setValue("engineMultiPV", self.multiPVSpin.value())
+        settings.setValue("engineSkillLevel", self.skillLevelSpin.value())
+        
+        settings.setValue("engineRed", self.eRedBox.isChecked()) 
+        settings.setValue("engineBlack", self.eBlackBox.isChecked()) 
+        settings.setValue("engineAnalysisMode", self.analysisModeBox.isChecked()) 
+
+    def readSettings(self, settings):
+        
+        self.DepthSpin.setValue(settings.value("engineDepth", 22))
+        self.moveTimeSpin.setValue(settings.value("engineMoveTime", 10))
+        #self.threadsSpin.setValue(settings.value("engineThreads", )
+        #self.memorySpin.setValue(settings.value("engineMemory", )
+        #self.multiPVSpin.setValue(settings.value("engineMultiPV", )
+        self.skillLevelSpin.setValue(settings.value("engineSkillLevel", 20))
+        
+        self.eRedBox.setChecked(settings.value("engineRed", False, type=bool))
+        self.eBlackBox.setChecked(settings.value("engineBlack", False, type=bool))
+        self.analysisModeBox.setChecked(settings.value("engineAnalysisMode", False, type=bool))
+        
     def setGoParams(self):
         
         moveTime = self.moveTimeSpin.value()
@@ -466,7 +495,7 @@ class ChessEngineWidget(QDockWidget):
         else:
             config =  {'depth': depth, 'movetime': moveTime * 1000 }
 
-        Globl.engineManager.set_config( self.engine_id, config) 
+        self.engineManager.set_config(config) 
             
         self.saveEngineOptions()
                         
@@ -485,24 +514,24 @@ class ChessEngineWidget(QDockWidget):
         self.setGoParams()
         
     def onThreadsChanged(self, num):
-        Globl.engineManager.set_engine_option(self.engine_id, 'Threads', num)
+        self.engineManager.set_engine_option('Threads', num)
         self.saveEngineOptions()
         
     def onMemoryChanged(self, num):
-        Globl.engineManager.set_engine_option(self.engine_id, 'Hash', num)
+        self.engineManager.set_engine_option('Hash', num)
         self.saveEngineOptions()
         
     def onMultiPVChanged(self, num):
-        Globl.engineManager.set_engine_option(self.engine_id, 'MultiPV', num)
+        self.engineManager.set_engine_option('MultiPV', num)
         self.saveEngineOptions()
     
     def onSkillLevelChanged(self, num):
-        Globl.engineManager.set_engine_option(self.engine_id, 'Skill Level', num)
+        self.engineManager.set_engine_option('Skill Level', num)
         self.saveEngineOptions()
     
     def saveEngineOptions(self): 
         options = {}
-        Globl.storage.saveEngineOptions(self.engine_id, options)
+        #Globl.storage.saveEngineOptions(options)
      
     def onViewBranch(self):
         self.parent.onViewBranch()
@@ -565,8 +594,13 @@ class ChessEngineWidget(QDockWidget):
 
     def onEngineReady(self, engine_id, name, engine_options):
         #print(engine_options)
+        
         self.engineLabel.setText(name)
+        
+        #self.readSettings()
+
         self.setGoParams()
+
         self.onThreadsChanged(self.threadsSpin.value())
         self.onMemoryChanged(self.memorySpin.value())
         self.onMultiPVChanged(self.multiPVSpin.value())
@@ -583,6 +617,8 @@ class MoveDbWidget(QDockWidget):
 
     def __init__(self, parent):
         super().__init__("我的棋谱库", parent)
+        
+        self.setObjectName("我的棋谱库")
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
 
         self.parent = parent
@@ -623,7 +659,7 @@ class MoveDbWidget(QDockWidget):
 
     def onImportFollow(self):
         self.importFollowMode = True
-        self.onSelectIndex(0)
+        self.onSelectIndex()
     
     def onCleanMoves(self):
         bad_moves = []
@@ -692,7 +728,7 @@ class MoveDbWidget(QDockWidget):
             return
         item = self.moveListView.topLevelItem(0)
         self.moveListView.setCurrentItem(item, 0)
-        self.onSelectIndex(0)
+        self.onSelectIndex()
     
     def onPositionChanged(self, position, is_new):  
 
@@ -767,8 +803,10 @@ class MoveDbWidget(QDockWidget):
             else:
                 self.importFollowMode = False
        
-    def onSelectIndex(self, index):
+    def onSelectIndex(self):
         item = self.moveListView.currentItem()
+        if not item:
+            return
         act = item.data(0, Qt.UserRole)
         self.parent.onBookMove(act)
 
@@ -781,6 +819,7 @@ class CloudDbWidget(QDockWidget):
 
     def __init__(self, parent):
         super().__init__("开局库", parent)
+        self.setObjectName("开局库")
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
 
         self.parent = parent
@@ -841,6 +880,8 @@ class EndBookWidget(QDockWidget):
 
     def __init__(self, parent):
         super().__init__("残局库", parent)
+        self.setObjectName("EndBook")
+        
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
 
         self.parent = parent
@@ -982,6 +1023,7 @@ class BookmarkWidget(QDockWidget):
 
     def __init__(self, parent):
         super().__init__("我的收藏", parent)
+        self.setObjectName("我的收藏")
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
 
         self.parent = parent
@@ -1018,19 +1060,10 @@ class BookmarkWidget(QDockWidget):
 
         self.updateBookmarks()
 
-    #def onBookTypeChanged(self, bookmark_tpye):
-    #    self.curr_bookmark_type = bookmark_tpye
-    #    self.updateBookmarks()
-
     def updateBookmarks(self):
 
         self.bookmarkView.clear()
-        self.bookmarks = Globl.storage.getAllBookmarks()
-
-        #if self.curr_bookmark_type == self.bookmark_type[0]:
-        #    filtered = filter(lambda x: 'moves' not in x, self.bookmarks)
-        #else:
-        #    filtered = filter(lambda x: 'moves' in x, self.bookmarks)
+        self.bookmarks = sorted(Globl.storage.getAllBookmarks(), key = lambda x: x['name'])
 
         for i, it in enumerate(self.bookmarks):
             item = QListWidgetItem()
@@ -1078,11 +1111,12 @@ class BookmarkWidget(QDockWidget):
     def sizeHint(self):
         return QSize(150, 500)
 
-
+'''
 #------------------------------------------------------------------#
 class MyGameWidget(QDockWidget):
     def __init__(self, parent):
         super().__init__("我的对局", parent)
+        self.setObjectName("我的对局")
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
 
         self.parent = parent
@@ -1150,7 +1184,7 @@ class MyGameWidget(QDockWidget):
     def sizeHint(self):
         return QSize(150, 500)
 
-
+'''
 #-----------------------------------------------------#
 class PositionEditDialog(QDialog):
     def __init__(self, parent):

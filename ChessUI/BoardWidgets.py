@@ -276,7 +276,7 @@ class ChessBoardWidget(ChessBoardBaseWidget):
         #等待的运动绘制完成
         while len(self.move_steps_show) > 0:
             qApp.processEvents()
-
+            
         self.update()
 
         self.last_pickup = None

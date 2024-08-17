@@ -555,15 +555,15 @@ class DataStore():
 
     def isNameInBookmark(self, name):
         q = Query()
-        return len(self.bookmark_table.search(q.bookmark_name == name)) > 0
+        return len(self.bookmark_table.search(q.name == name)) > 0
 
     def removeBookmark(self, name):
         q = Query()
-        return self.bookmark_table.remove(q.bookmark_name == name)
+        return self.bookmark_table.remove(q.name == name)
 
     def changeBookmarkName(self, fen, new_name):
         q = Query()
-        ret = self.bookmark_table.update({'bookmark_name': new_name},
+        ret = self.bookmark_table.update({'name': new_name},
                                          (q.book_fen == fen))
 
         if len(ret) == 1:
