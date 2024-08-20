@@ -6,7 +6,6 @@ import logging
 import ctypes
 import traceback
 import platform
-import yaml
 import threading
 import configparser
 from enum import Enum, auto
@@ -182,7 +181,7 @@ class MainWindow(QMainWindow):
         self.gameMode = None
         self.queryMode = ''
         self.reviewMode = ''
-        self.engineLevel = 20
+        self.engineFightLevel = 20
         self.lastOpenFolder = ''
         self.hasNewMove = False
 
@@ -323,7 +322,7 @@ class MainWindow(QMainWindow):
             return
         
         if self.gameMode == GameMode.Fight:
-            self.engineLevel = self.engineView.saveGameLevel()
+            self.engineFightLevel = self.engineView.saveGameLevel()
 
         self.lastGameMode = self.gameMode    
         self.gameMode = gameMode
@@ -335,8 +334,8 @@ class MainWindow(QMainWindow):
             self.endBookView.hide()
             self.moveDbView.show()
             self.cloudDbView.show()
-            self.historyView.inner.isShowScore = True 
-
+            self.showScoreBox.setChecked(True)
+            
             self.engineView.eRedBox.setChecked(False)
             self.engineView.eBlackBox.setChecked(False)
             self.engineView.analysisModeBox.setChecked(False)
@@ -344,7 +343,7 @@ class MainWindow(QMainWindow):
 
             self.cloudModeBtn.setEnabled(True)
             self.engineModeBtn.setEnabled(True)
-            self.cloudModeBtn.setChecked(True)
+            #self.cloudModeBtn.setChecked(True)
             #self.engineModeBtn.setChecked(True)
             
             self.showBestBox.setEnabled(True)
@@ -365,7 +364,7 @@ class MainWindow(QMainWindow):
             self.moveDbView.hide()
             self.cloudDbView.hide()
             
-            self.historyView.inner.isShowScore = False
+            self.showScoreBox.setChecked(False)
 
             self.cloudModeBtn.setEnabled(False)
             #self.cloudModeBtn.setChecked(False)
@@ -381,7 +380,7 @@ class MainWindow(QMainWindow):
             self.engineView.eRedBox.setChecked(False)
             self.engineView.eBlackBox.setChecked(True)
             self.engineView.analysisModeBox.setChecked(False)
-            self.engineView.restoreGameLevel(self.engineLevel)
+            self.engineView.restoreGameLevel(self.engineFightLevel)
 
             if self.lastGameMode in [None, GameMode.EndGame]:
                 self.initGame(FULL_INIT_FEN)
@@ -396,7 +395,7 @@ class MainWindow(QMainWindow):
             self.moveDbView.hide()
             self.cloudDbView.hide()
             
-            self.historyView.inner.isShowScore = False
+            self.showScoreBox.setChecked(False)
 
             self.openFileAct.setEnabled(False)
             self.editBoardAct.setEnabled(False)
@@ -524,7 +523,6 @@ class MainWindow(QMainWindow):
         if isNew:
             self.fenPosDict[fen] = position
             self.positionList.append(position)      
-            self.hasNewMove = True 
             #print(position['index'], fen)
 
             #在fenCach中把招法连起来
@@ -846,7 +844,7 @@ class MainWindow(QMainWindow):
             self.engineModeBtn.setEnabled(False)
         
             self.clearAllScore()
-            self.historyView.inner.isShowScore = True
+            self.showScoreBox.setChecked(True)
             self.reviewList = list(self.fenPosDict.keys())
             self.historyView.inner.reviewByCloudBtn.setText('停止复盘')
             self.onReviewGameStep()
@@ -862,7 +860,7 @@ class MainWindow(QMainWindow):
             self.engineModeBtn.setEnabled(False)
             
             self.clearAllScore()
-            self.historyView.inner.isShowScore = True
+            self.showScoreBox.setChecked(True)
             self.reviewList = list(self.fenPosDict.keys())
             self.engineView.analysisModeBox.setChecked(True)
             self.historyView.inner.reviewByEngineBtn.setText('停止复盘')
@@ -909,14 +907,20 @@ class MainWindow(QMainWindow):
             return
 
         self.queryMode = mode
-
+        
         if self.queryMode == 'Engine':
             self.historyView.inner.reviewByEngineBtn.setEnabled(True)
             self.historyView.inner.reviewByCloudBtn.setEnabled(False)
+            
+            if self.currPosition:
+                self.localSearch(self.currPosition)
+
         elif self.queryMode == 'Cloud':
             self.historyView.inner.reviewByEngineBtn.setEnabled(False)
             self.historyView.inner.reviewByCloudBtn.setEnabled(True)
-        
+            if self.currPosition:
+                fen = self.currPosition['fen']
+                self.cloudQuery.startQuery(fen)
         #self.clearAllScore()
 
     #---------------------------------------------------------------------------
@@ -1085,6 +1089,10 @@ class MainWindow(QMainWindow):
     def onShowBestMoveChanged(self, state):
         showBestMove = (Qt.CheckState(state) == Qt.Checked)
         self.boardView.setShowBestMove(showBestMove)
+    
+    def onShowScoreChanged(self, state):
+        #showScore = (Qt.CheckState(state) == Qt.Checked)
+        self.historyView.inner.setShowScore((Qt.CheckState(state) == Qt.Checked))
 
     def onEditBoard(self):
         dlg = PositionEditDialog(self)
@@ -1360,12 +1368,18 @@ class MainWindow(QMainWindow):
         self.modeBtnGroup.addButton(self.cloudModeBtn, 1)      # ID 1
         self.modeBtnGroup.addButton(self.engineModeBtn, 2)      # ID 2
 
-        self.showBestBox = QCheckBox()  #"最佳提示")
+        self.showBestBox = QCheckBox('提示')  #"最佳提示")
         self.showBestBox.setIcon(QIcon(':Images/info.png'))
         self.showBestBox.setChecked(True)
         self.showBestBox.setToolTip('提示最佳走法')
         self.showBestBox.stateChanged.connect(self.onShowBestMoveChanged)
     
+        self.showScoreBox = QCheckBox('分数')  #"最佳提示")
+        #self.showScoreBox.setIcon(QIcon(':Images/info.png'))
+        self.showScoreBox.setChecked(True)
+        self.showScoreBox.setToolTip('显示走子得分（红优分）')
+        self.showScoreBox.stateChanged.connect(self.onShowScoreChanged)
+        
         self.showBar = self.addToolBar("Show")
         self.showBar.setObjectName("Show")
 
@@ -1377,6 +1391,7 @@ class MainWindow(QMainWindow):
         
         self.showBar.addSeparator()
         self.showBar.addWidget(self.showBestBox)
+        self.showBar.addWidget(self.showScoreBox)
         
         self.sysBar = self.addToolBar("System")
         self.sysBar.setObjectName("System")
@@ -1411,6 +1426,9 @@ class MainWindow(QMainWindow):
 
     def readSettings(self):
         self.settings = QSettings('Company', self.app.APP_NAME)
+        
+        #Test Only Code
+        #self.settings.clear()
 
         self.restoreGeometry(self.settings.value("geometry", QByteArray()))
         self.restoreState(self.settings.value("windowState", QByteArray()));
@@ -1420,18 +1438,18 @@ class MainWindow(QMainWindow):
         
         self.openBookFileName = self.settings.value("openBookFileName", str(Path('game','openbook.yfk')))
         self.lastOpenFolder = self.settings.value("lastOpenFolder", '')
+
+        flip = self.settings.value("flip", False, type=bool)
+        self.flipBox.setChecked(flip)
         
-        self.endBookView.readSettings(self.settings)
+        mirror = self.settings.value("mirror", False, type=bool)
+        self.mirrorBox.setChecked(mirror)
         
-    def readUiSettings(self):
-        flip = self.settings.value("flip", False)
-        self.flipBox.setCheckState(flip)
+        showBest = self.settings.value("showBest", True, type=bool)
+        self.showBestBox.setChecked(showBest)
         
-        mirror = self.settings.value("mirror", False)
-        self.mirrorBox.setCheckState(mirror)
-        
-        showBest = self.settings.value("showBest", True)
-        self.showBestBox.setCheckState(showBest)
+        showScore = self.settings.value("showScore", True, type=bool)
+        self.showScoreBox.setChecked(showScore)
 
         cloudMode = self.settings.value("cloudMode", True, type=bool)
         if cloudMode:
@@ -1441,8 +1459,12 @@ class MainWindow(QMainWindow):
         if engineMode:
             self.engineModeBtn.setChecked(True)
         
-        self.engineLevel = self.settings.value("engineLevel", 20)
+        self.engineFightLevel = self.settings.value("engineFightLevel", 20)
 
+        self.endBookView.readSettings(self.settings)
+        
+    def readUiSettings(self):
+        
         self.engineView.readSettings(self.settings)
 
     def writeSettings(self):
@@ -1452,13 +1474,14 @@ class MainWindow(QMainWindow):
         self.settings.setValue("soundVolume", self.soundVolume)
         self.settings.setValue("gameMode", self.gameMode)
         
-        self.settings.setValue("flip", self.flipBox.checkState())
-        self.settings.setValue("mirror", self.mirrorBox.checkState())
-        self.settings.setValue("showBest", self.showBestBox.checkState())
+        self.settings.setValue("flip", self.flipBox.isChecked())
+        self.settings.setValue("mirror", self.mirrorBox.isChecked())
+        self.settings.setValue("showBest", self.showBestBox.isChecked())
+        self.settings.setValue("showScore", self.showScoreBox.isChecked())
 
         self.settings.setValue("cloudMode", self.cloudModeBtn.isChecked())
         self.settings.setValue("engineMode", self.engineModeBtn.isChecked())
-        self.settings.setValue("engineLevel", self.engineLevel)
+        self.settings.setValue("engineFightLevel", self.engineFightLevel)
 
         self.settings.setValue("openBookFileName", self.openBookFileName)
         self.settings.setValue("lastOpenFolder", self.lastOpenFolder)

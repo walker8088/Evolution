@@ -308,6 +308,12 @@ class HistoryWidget(QWidget):
         self.selectionIndex = index
         self.positionView.setCurrentItem(item)
         self.update()
+    
+    def setShowScore(self, yes):
+        self.isShowScore = yes
+        for it in self.items:
+            position = it.data(1, Qt.UserRole)
+            self.updatePositionItem(it, position)
 
     def clear(self):
         self.items = []
