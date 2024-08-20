@@ -20,5 +20,12 @@ for folder in folders:
 
 shutil.rmtree('build')
 #os.rename('.\\dist', '.\\Evolution')
+for file in [
+    "Evolution.ini",
+    'ReadMe.txt',
+    'ReleaseNote.txt'
+    ]:
+    shutil.copy(file, '.\\dist\\Evolution\\')
+
 print('请到.\\dist\\Evolution目录下查看exe文件。')
 print("Done.")      

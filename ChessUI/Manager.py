@@ -146,7 +146,7 @@ class EngineManager(QObject):
                 self.moveBestSignal.emit(self.id, ret)
             elif action == 'dead':  #被将死
                 eg_out['fen'] = conf.fen
-                self.checkmate_signal.emit(self.id, eg_out)
+                self.checkmateSignal.emit(self.id, eg_out)
             elif action == 'info_move':
                 eg_out['fen'] = conf.fen
                 if len(eg_out['move']) == 0:

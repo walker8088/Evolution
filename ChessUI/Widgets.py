@@ -45,7 +45,8 @@ class HistoryWidget(QWidget):
 
         self.title = "棋谱记录"
         self.parent = parent
-        
+        self.isShowScore = True 
+
         self.positionView = QTreeWidget()
         self.positionView.setColumnCount(1)
         self.positionView.setHeaderLabels(["序号", "着法", "红优分", '', "备注"])
@@ -108,16 +109,16 @@ class HistoryWidget(QWidget):
         hbox2.addWidget(self.reviewByCloudBtn, 0)
         hbox2.addWidget(self.reviewByEngineBtn, 0)
         
-        hbox3 = QHBoxLayout()
-        hbox3.addWidget(self.addBookmarkBtn, 0)
-        hbox3.addWidget(self.addBookmarkBookBtn, 0)
-        hbox3.addWidget(self.saveDbBtnBtn, 0)
+        #hbox3 = QHBoxLayout()
+        #hbox3.addWidget(self.addBookmarkBtn, 0)
+        #hbox3.addWidget(self.addBookmarkBookBtn, 0)
+        #hbox3.addWidget(self.saveDbBtnBtn, 0)
         
         vbox = QVBoxLayout()
         vbox.addWidget(splitter, 2)
         vbox.addLayout(hbox1)
         vbox.addLayout(hbox2)
-        vbox.addLayout(hbox3)
+        #vbox.addLayout(hbox3)
 
         self.setLayout(vbox)
 
@@ -274,28 +275,32 @@ class HistoryWidget(QWidget):
         
         fen = position['fen']
 
-        if fen not in Globl.fenCache:
+        if not self.isShowScore:
             item.setText(2, '')
             item.setIcon(3, QIcon())
-        else:    
-            fenInfo = Globl.fenCache[fen] 
-            if (index > 0) and ('score' in fenInfo) :
-                item.setText(2, str(fenInfo['score']))
-            else:
+        else: 
+            if fen not in Globl.fenCache:
                 item.setText(2, '')
-            
-            if 'diff' in fenInfo:    
-                diff = fenInfo['diff']
-                if diff > -30:
-                    item.setIcon(3, QIcon(":Images/star.png"))
-                elif diff > -70:
-                    item.setIcon(3, QIcon(":Images/good.png"))
-                elif diff > -100:
-                    item.setIcon(3, QIcon(":Images/sad.png"))
+                item.setIcon(3, QIcon())    
+            else:    
+                fenInfo = Globl.fenCache[fen] 
+                if (index > 0) and ('score' in fenInfo) :
+                    item.setText(2, str(fenInfo['score']))
                 else:
-                    item.setIcon(3, QIcon(":Images/bad.png"))    
-            else:
-                item.setIcon(3, QIcon())
+                    item.setText(2, '')
+                
+                if 'diff' in fenInfo:    
+                    diff = fenInfo['diff']
+                    if diff > -30:
+                        item.setIcon(3, QIcon(":Images/star.png"))
+                    elif diff > -70:
+                        item.setIcon(3, QIcon(":Images/good.png"))
+                    elif diff > -100:
+                        item.setIcon(3, QIcon(":Images/sad.png"))
+                    else:
+                        item.setIcon(3, QIcon(":Images/bad.png"))    
+                else:
+                    item.setIcon(3, QIcon())
 
         item.setData(0, Qt.UserRole, index)
         item.setData(1, Qt.UserRole, position)
@@ -622,7 +627,7 @@ class ChessEngineWidget(QDockWidget):
 
 #------------------------------------------------------------------#
 class MoveDbWidget(QDockWidget):
-    #move_select_signal = Signal(int)
+    selectMoveSignal = Signal(dict)
 
     def __init__(self, parent):
         super().__init__("我的棋谱库", parent)
@@ -817,14 +822,15 @@ class MoveDbWidget(QDockWidget):
         if not item:
             return
         act = item.data(0, Qt.UserRole)
-        self.parent.onBookMove(act)
+        #self.parent.onTryBookMove(act)
+        self.selectMoveSignal.emit(act)
 
     def sizeHint(self):
         return QSize(150, 500)
 
 #------------------------------------------------------------------#
 class CloudDbWidget(QDockWidget):
-    #move_select_signal = Signal(int)
+    selectMoveSignal = Signal(dict)
 
     def __init__(self, parent):
         super().__init__("开局库", parent)
@@ -878,14 +884,14 @@ class CloudDbWidget(QDockWidget):
     def onSelectIndex(self, index):
         item = self.cloudMovesView.currentItem()
         act = item.data(0, Qt.UserRole)
-        self.parent.onBookMove(act)
-        
+        self.selectMoveSignal.emit(act)
+
     def sizeHint(self):
         return QSize(150, 500)
 
 #------------------------------------------------------------------#
 class EndBookWidget(QDockWidget):
-    end_game_select_signal = Signal(dict)
+    selectEndGameSignal = Signal(dict)
 
     def __init__(self, parent):
         super().__init__("残局库", parent)
@@ -900,17 +906,15 @@ class EndBookWidget(QDockWidget):
 
         self.bookView = QListWidget()
 
-        hbox = QHBoxLayout()
         # Add widgets to the layout
-        self.libCombo = QComboBox(self)
-        self.libCombo.currentTextChanged.connect(self.onBookChanged)
-
+        self.bookCombo = QComboBox(self)
+        self.bookCombo.currentTextChanged.connect(self.onBookChanged)
         self.importBtn = QPushButton("导入")
         self.importBtn.clicked.connect(self.onImportBtnClick)
-
-        hbox.addWidget(self.libCombo, 2)
+        
+        hbox = QHBoxLayout()
+        hbox.addWidget(self.bookCombo, 2)
         hbox.addWidget(self.importBtn, 0)
-
         vbox = QVBoxLayout()
         vbox.addLayout(hbox)
         vbox.addWidget(self.bookView)
@@ -921,52 +925,47 @@ class EndBookWidget(QDockWidget):
         #self.bookView.doubleClicked.connect(self.onItemDoubleClicked)
         #self.bookView.clicked.connect(self.onItemClicked)
         self.bookView.currentItemChanged.connect(self.onCurrentItemChanged)
-
-        self.update()
-
-    def update(self):
+    
+    def updateBooks(self):
         #super.update()
-        self.curr_book_name = ''
-        self.curr_game = None
+        self.currBookName = ''
+        self.currGame = None
 
         self.books = Globl.storage.getAllEndBooks()
-        self.libCombo.clear()
-        self.libCombo.addItems(self.books.keys())
 
-        self.libCombo.setCurrentIndex(0)
+        self.bookCombo.clear()
+        self.bookCombo.addItems(self.books.keys())
+        self.bookCombo.setCurrentIndex(0)
     
-    def updateBook(self):
-        pass
-
     def nextGame(self):
 
-        if len(self.curr_book) == 0:
+        if len(self.currBook) == 0:
             return
             
-        if self.curr_game is None :
-           self.curr_game = self.curr_book[0]
+        if self.currGame is None :
+           self.currGame = self.currBook[0]
            
-        if self.curr_game['ok'] is False:
-            self.end_game_select_signal.emit(self.curr_game)
+        if self.currGame['ok'] is False:
+            self.selectEndGameSignal.emit(self.currGame)
 
-        index = self.curr_game['index']
-        while self.curr_game['ok'] is True:
-            if index < len(self.curr_book)-1:
+        index = self.currGame['index']
+        while self.currGame['ok'] is True:
+            if index < len(self.currBook)-1:
                 index += 1
             else:
                 break
-            self.curr_game = self.curr_book[index]
+            self.currGame = self.currBook[index]
         
-        if self.curr_game['ok'] is False:
-            self.bookView.setCurrentItem(self.curr_game['widget'])
+        if self.currGame['ok'] is False:
+            self.bookView.setCurrentItem(self.currGame['widget'])
             
     def updateCurrent(self, game):
-        self.curr_game['ok'] = game['ok']
+        self.currGame['ok'] = game['ok']
         self.updateCurrentBook()
      
     def updateCurrentBook(self):
         self.bookView.clear()
-        for i, game in enumerate(self.books[self.curr_book_name]):
+        for i, game in enumerate(self.books[self.currBookName]):
             item = QListWidgetItem()
             item.setText(game['name'])
             if game['ok'] is True:
@@ -987,17 +986,17 @@ class EndBookWidget(QDockWidget):
         if book_name == '':
             return
 
-        self.curr_book_name = book_name
-        self.curr_book = self.books[self.curr_book_name]
-        self.curr_game = None
+        self.currBookName = book_name
+        self.currBook = self.books[self.currBookName]
+        self.currGame = None
 
         self.updateCurrentBook()
 
     def onCurrentItemChanged(self, current, previous):
         if current is None:
             return
-        self.curr_game = current.data(Qt.UserRole)
-        self.end_game_select_signal.emit(self.curr_game)
+        self.currGame = current.data(Qt.UserRole)
+        self.selectEndGameSignal.emit(self.currGame)
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)
@@ -1010,13 +1009,13 @@ class EndBookWidget(QDockWidget):
             qApp.clipboard().setText(self.parent.board.to_fen())
         
         elif action == remarkAction:
-            if self.curr_game:
-                self.curr_game['ok'] = False
-                Globl.storage.updateEndBook(self.curr_game)
+            if self.currGame:
+                self.currGame['ok'] = False
+                Globl.storage.updateEndBook(self.currGame)
             self.updateCurrentBook()
             
         elif action == remarkAllAction:
-            for i, game in enumerate(self.books[self.curr_book_name]):
+            for i, game in enumerate(self.books[self.currBookName]):
                 if game['ok'] is True:
                     game['ok'] = False
                     Globl.storage.updateEndBook(game)
@@ -1025,20 +1024,38 @@ class EndBookWidget(QDockWidget):
     def sizeHint(self):
         return QSize(150, 500)
 
+    def readSettings(self, settings):
+        
+        self.updateBooks()
+
+        endBookName = settings.value("endBookName", '')
+        if endBookName:
+            self.bookCombo.setCurrentText(endBookName)
+            self.onBookChanged(endBookName)
+
+        index = settings.value("endBookIndex", -1)
+        if index < 0:
+            self.currGame = None
+        else:    
+            self.bookView.setCurrentRow(index)
+        
+    def writeSettings(self, settings):
+        settings.setValue("endBookName", self.currBookName)
+        if self.currGame:
+            settings.setValue("endBookIndex", self.currGame['index'])
+        else:
+            settings.setValue("endBookIndex", -1)
+            
 #------------------------------------------------------------------#
 class BookmarkWidget(QDockWidget):
-    #end_game_select_signal = Signal(int)
-    bookmark_type = ('局面收藏', '棋谱收藏')
-
+    
     def __init__(self, parent):
         super().__init__("我的收藏", parent)
         self.setObjectName("我的收藏")
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
 
-        self.parent = parent
-        
+        self.parent = parent        
         self.bookmarks = []
-        #self.curr_bookmark_type = self.bookmark_type[0]
 
         self.dockedWidget = QWidget(self)
         self.setWidget(self.dockedWidget)
@@ -1120,80 +1137,6 @@ class BookmarkWidget(QDockWidget):
     def sizeHint(self):
         return QSize(150, 500)
 
-'''
-#------------------------------------------------------------------#
-class MyGameWidget(QDockWidget):
-    def __init__(self, parent):
-        super().__init__("我的对局", parent)
-        self.setObjectName("我的对局")
-        self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-
-        self.parent = parent
-       
-        self.dockedWidget = QWidget(self)
-        self.setWidget(self.dockedWidget)
-
-        self.bookView = QListWidget()
-        self.bookView.doubleClicked.connect(self.onDoubleClicked)
-
-        vbox = QVBoxLayout()
-        #vbox.addLayout(hbox)
-        vbox.addWidget(self.bookView)
-        self.dockedWidget.setLayout(vbox)
-        self.bookView.setEditTriggers(QAbstractItemView.NoEditTriggers)
-
-        self.curr_item = None
-
-        self.updateMyGames()
-
-    def updateMyGames(self):
-
-        self.bookView.clear()
-        self.games = Globl.storage.getAllMyGames()
-        for i, it in enumerate(self.games):
-            item = QListWidgetItem()
-            item.setText(it['name'])
-            item.setData(Qt.UserRole, it)
-            self.bookView.addItem(item)
-
-    def contextMenuEvent(self, event):
-
-        menu = QMenu(self)
-
-        removeAction = menu.addAction("删除")
-        renameAction = menu.addAction("改名")
-        action = menu.exec_(self.mapToGlobal(event.pos()))
-
-        item = self.bookView.currentItem()
-        old_name = item.text()
-        fen = item.data(Qt.UserRole)['fen']
-
-        if action == removeAction:
-            Globl.storage.removeMyBook(old_name)
-            self.updateMyGames()
-        elif action == renameAction:
-            new_name, ok = QInputDialog.getText(self,
-                                                getTitle(),
-                                                '请输入新名称:',
-                                                text=old_name)
-            if ok:
-                Globl.storage.changeMyBookName(old_name, new_name)
-                self.updateMyGames()
-
-    def onDoubleClicked(self):
-        item = self.bookView.currentItem()
-        position = item.data(Qt.UserRole)
-        position['fen'] = position['fen']
-        name = item.text()
-        self.parent.applyBook(name, position)
-
-    def onSelectIndex(self, index):
-        self.curr_item = self.bookView.itemFromIndex(index)
-
-    def sizeHint(self):
-        return QSize(150, 500)
-
-'''
 #-----------------------------------------------------#
 class PositionEditDialog(QDialog):
     def __init__(self, parent):
