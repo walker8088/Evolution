@@ -1,2 +1,2 @@
-from .Main import *
-from .App import *
+#from .Main import MainWindow
+#from .App import ChessApp, run

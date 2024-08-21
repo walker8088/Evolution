@@ -1,19 +1,15 @@
 # -*- coding: utf-8 -*-
 
-import sys, time
 import math
 
-from PySide6 import *
-from PySide6.QtCore import *
-from PySide6.QtGui import *
-from PySide6.QtWidgets import *
+from PySide6.QtCore import Qt, Signal, qApp
+from PySide6.QtGui import QTimer, QPixmap, QCursor, QPoint, QPen, QColor, QPainter, QSize, QRect, QPolygon
+from PySide6.QtWidgets import QMenu, QWidget, QApplication
 
-from cchess import *
+from cchess import ChessBoard, RED, iccs2pos
 
-from .Utils import *
-from .Resource import *
-
-#import numpy as np
+from .Utils import TimerMessageBox
+#from .Resource import *
 
 #-----------------------------------------------------#
 def scaleImage(img, scale):

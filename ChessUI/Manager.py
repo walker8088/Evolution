@@ -1,13 +1,17 @@
 # -*- coding: utf-8 -*-
 
-from PySide6 import *
-from PySide6.QtCore import *
-from PySide6.QtGui import *
+import time
+#import threading
 
-from cchess import *
+#from PySide6 import *
+from PySide6.QtCore import Signal, QObject, ThreadRunner
+#from PySide6.QtGui import *
 
-from .Utils import *
+from cchess import ChessBoard, BLACK, EMPTY_BOARD, UcciEngine, UciEngine, get_move_color
 
+#from .Utils import *
+
+'''
 #-----------------------------------------------------#
 class EngineConfig():
     def __init__(self, engine):
@@ -16,6 +20,7 @@ class EngineConfig():
         self.fen_engine = None
         self.go_param = {}
         self.score_move = {}
+'''
 
 #-----------------------------------------------------#
 class EngineManager(QObject):
@@ -52,7 +57,7 @@ class EngineManager(QObject):
 
         if engine.load(engine_path):
             self.engine = engine
-            self.econf = EngineConfig(engine)
+            #self.econf = EngineConfig(engine)
             return True 
         else:
             return False   

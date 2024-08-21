@@ -1,24 +1,22 @@
 # -*- coding: utf-8 -*-
-import os
-import hashlib
-import sqlite3
-import json
-import logging
+
 import time
-from collections import OrderedDict
+import logging
 from pathlib import Path
+#from collections import OrderedDict
 
-import cchess
+from cchess import ChessBoard, BLACK, iccs_mirror
 
-from peewee import *
-from playhouse.sqlite_ext import *
+from peewee import Model, CharField, IntegerField, BigIntegerField, JSONField, TextField
+from playhouse.sqlite_ext import SqliteExtDatabase
+
 from tinydb import TinyDB, Query
 
-from PySide6 import *
-from PySide6.QtCore import *
-from PySide6.QtGui import *
-from PySide6.QtWidgets import *
-from PySide6.QtNetwork import *
+#from PySide6 import *
+from PySide6.QtCore import QObject, Signal
+#from PySide6.QtGui import *
+#from PySide6.QtWidgets import *
+from PySide6.QtNetwork import QUrl, QUrlQuery, QNetworkRequest, QNetworkAccessManager
 
 from . import Globl
 
@@ -140,7 +138,7 @@ def vmove2iccs(vmove):
     v_to = vmove >> 8
     
     #print(hex(v_from), hex(v_to))
-    return CoordMap[v_from] + CoordMap[v_to];
+    return CoordMap[v_from] + CoordMap[v_to]
 
 #------------------------------------------------------------------------------
 class OpenBookYfk():
@@ -155,7 +153,7 @@ class OpenBookYfk():
         
     def getMoves(self, fen):
         
-        board = cchess.ChessBoard(fen)
+        board = ChessBoard(fen)
         
         for b, b_state in [(board, ''), (board.mirror(), 'mirror')]:
             query = Bhobk.select().where(Bhobk.vkey == str(b.zhash()), Bhobk.vvalid == 1).order_by(-Bhobk.vscore)
@@ -180,7 +178,7 @@ class OpenBookYfk():
                score_best = score
                     
             if b_state == 'mirror':
-                iccs = cchess.iccs_mirror(ics)
+                iccs = iccs_mirror(ics)
             else:
                 iccs = ics
 
@@ -190,7 +188,7 @@ class OpenBookYfk():
             m['text'] = move_it.to_text()
             m['score'] = score
             m['diff'] =  score - score_best
-            #if move_color == cchess.BLACK:
+            #if move_color == BLACK:
             #    m['score'] = -m['score']
             m['new_fen'] = move_it.board_done.to_fen()
             actions.append(m)
@@ -216,7 +214,7 @@ class OpenBook():
 
     def getMoves(self, fen):
         
-        board = cchess.ChessBoard(fen)
+        board = ChessBoard(fen)
         
         for b, b_state in [(board, ''), (board.mirror(), 'mirror')]:
             try:
@@ -240,7 +238,7 @@ class OpenBook():
         for ics, move_dict in query.vmoves.items():
             
             if b_state == 'mirror':
-                iccs = cchess.iccs_mirror(ics)
+                iccs = iccs_mirror(ics)
             else:
                 iccs = ics
             m = {}  
@@ -251,7 +249,7 @@ class OpenBook():
             m['text'] = move_it.to_text()
             m['score'] = score
             m['diff'] =  score - score_best
-            if move_color == cchess.BLACK:
+            if move_color == BLACK:
                 m['score'] = -m['score']
             m['new_fen'] = move_it.board_done.to_fen()
             actions.append(m)
@@ -275,7 +273,7 @@ class OpenBookJson():
 
     def getMoves(self, fen):
         
-        board = cchess.ChessBoard(fen)
+        board = ChessBoard(fen)
         
         for b, b_state in [(board, ''), (board.mirror(), 'mirror')]:
             fen = b.to_fen()
@@ -298,7 +296,7 @@ class OpenBookJson():
         for ics, info in moves['action'].items():
             score = info['score']
             if b_state == 'mirror':
-                iccs = cchess.iccs_mirror(ics)
+                iccs = iccs_mirror(ics)
             else:
                 iccs = ics
             m = {}  
@@ -311,7 +309,7 @@ class OpenBookJson():
             m['text'] = move_it.to_text()
             m['score'] = score
             m['diff'] =  score - score_best
-            if move_color == cchess.BLACK:
+            if move_color == BLACK:
                 m['score'] = -m['score']
             m['new_fen'] = move_it.board_done.to_fen()
             actions.append(m)
@@ -323,6 +321,7 @@ class OpenBookJson():
 
         return ret
 """
+
 #-----------------------------------------------------#
 class CloudDB(QObject):
     query_result_signal = Signal(dict)
@@ -334,7 +333,7 @@ class CloudDB(QObject):
         
         self.reply = None
         self.fen = None
-        self.board = cchess.ChessBoard()
+        self.board = ChessBoard()
         self.tryCount = 0
         
         self.move_cache = {}
@@ -405,7 +404,7 @@ class CloudDB(QObject):
                 act['text'] = move_it.to_text()
             act['score'] = int(act['score']) 
             act['diff'] =  act['score'] - score_best
-            if move_color == cchess.BLACK:
+            if move_color == BLACK:
                 act['score'] = -act['score']
             act['new_fen'] = move_it.board_done.to_fen()
 
@@ -422,7 +421,7 @@ class CloudDB(QObject):
         score_best = moves[0]['score']
         for it in moves:
             it['diff'] =  it['score'] - score_best
-            if move_color == cchess.BLACK :
+            if move_color == BLACK :
                 it['diff'] = -it['diff']
             if self.score_limit > 0 and abs(it['diff']) >  self.score_limit:
                     continue
@@ -572,6 +571,7 @@ class DataStore():
 
     #------------------------------------------------------------------------------
     #MyGames
+    '''
     def getAllMyGames(self):
         return self.mygame_table.search(Query().name.exists())
 
@@ -592,10 +592,10 @@ class DataStore():
         return self.mygame_table.remove(Query().name == name)
 
     def changeMyGameName(self, old_name, new_name):
-        ret = self.mygame_table.update({'name': new_name},
+        self.mygame_table.update({'name': new_name},
                                        (Query().name == old_name))
         return True
-
+    '''
     #------------------------------------------------------------------------------
     #BookMoves
     def getAllBookMoves(self, fen = None):
@@ -631,11 +631,11 @@ class DataStore():
                     self.position_table.remove(q.fen == fen)
                     
     def saveMovesToBook(self, positions):
-        board = cchess.ChessBoard()
+        board = ChessBoard()
         q = Query()
         for position in positions:
             #print(position)
-            move = position['move']
+            #move = position['move']
             fen = position['fen_prev']
             move_iccs = position['iccs']
             board.from_fen(fen)
