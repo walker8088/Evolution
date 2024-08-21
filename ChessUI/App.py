@@ -1,16 +1,9 @@
 # -*- coding: utf-8 -*-
-import os
 import sys
-import yaml
-import logging
-#import traceback
-from pathlib import Path
 
-from PySide6 import *
-from PySide6.QtCore import *
 from PySide6.QtWidgets import QApplication
 
-from .Main import *
+from .Main import MainWindow
 
 #-----------------------------------------------------#
 class ChessApp(QApplication):

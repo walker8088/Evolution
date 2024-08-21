@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-import os
+import sys
 import time
 import logging
 import ctypes
@@ -8,36 +8,30 @@ import traceback
 import platform
 import threading
 import configparser
-
+from enum import Enum, auto
 from pathlib import Path
-from dataclasses import dataclass
 from collections import OrderedDict
 
-from PySide6 import *
-from PySide6.QtCore import *
-from PySide6.QtGui import *
-from PySide6.QtMultimedia import *
+#from PySide6 import 
+from PySide6.QtCore import Qt, Signal, QByteArray, QSettings, QUrl
+from PySide6.QtGui import QActionGroup, QIcon, QAction
+from PySide6.QtWidgets import QMainWindow, QStyle, QSizePolicy, QMessageBox, QWidget, QCheckBox, QRadioButton, \
+                            QFileDialog, QButtonGroup
 
-from cchess import *
+from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 
-from .Utils import *
-from .BoardWidgets import *
-from .Widgets import *
-from .Manager import *
-from .Storage import *
-from .Online import *
+from cchess import ChessBoard, Game, RED, BLACK, FULL_INIT_FEN, EMPTY_FEN, iccs2pos, pos2iccs, read_from_pgn, read_from_xqf, get_move_color, fench_to_text
+
+from .Utils import  fen_moves_to_step, TimerMessageBox, getTitle, load_eglib, GameMode
+from .BoardWidgets import ChessBoardWidget
+from .Widgets import PositionEditDialog, PositionHistDialog, ChessEngineWidget, EngineConfigDialog, BookmarkWidget, CloudDbWidget, MoveDbWidget, EndBookWidget, DockHistoryWidget
+from .Manager import EngineManager
+from .Storage import DataStore, CloudDB, OpenBookYfk
+
+#from .Online import OnlineDialog
 
 from . import Globl
 
-#-----------------------------------------------------#
-
-'''
-@dataclass
-class Position:
-    fen: str
-    score: int
-    diff: int
-'''
 #-----------------------------------------------------#
 # Back up the reference to the exceptionhook
 sys._excepthook = sys.excepthook
@@ -748,7 +742,7 @@ class MainWindow(QMainWindow):
         #print('engine_move_from:', fen)
         ok = Globl.engineManager.go_from(fen_engine, fen)
         if not ok:
-            QMessageBox.critical(self, f'{getTitle()}', f'象棋引擎命令出错，请确认该程序能正常运行。')
+            QMessageBox.critical(self, f'{getTitle()}', '象棋引擎命令出错，请确认该程序能正常运行。')
         
     #------------------------------------------------------------------------------
     #UI Events
@@ -989,10 +983,11 @@ class MainWindow(QMainWindow):
         self.switchGameMode(GameMode.EndGame)
 
     def onDoOnline(self):
-        self.switchGameMode(GameMode.Online)
-        dlg = OnlineDialog(self)
-        dlg.show()
-        
+        #self.switchGameMode(GameMode.Online)
+        #dlg = OnlineDialog(self)
+        #dlg.show()
+        pass
+
     def onRestartGame(self):
         self.initGame(self.init_fen)
     
@@ -1401,7 +1396,7 @@ class MainWindow(QMainWindow):
 
   
     def center(self):
-        screen = QDesktopWidget().screenGeometry()
+        screen = QWidget.screen().screenGeometry()
         size = self.geometry()
         self.move((screen.width() - size.width()) // 2,
                   (screen.height() - size.height()) // 2)
@@ -1424,7 +1419,7 @@ class MainWindow(QMainWindow):
         #self.settings.clear()
 
         self.restoreGeometry(self.settings.value("geometry", QByteArray()))
-        self.restoreState(self.settings.value("windowState", QByteArray()));
+        self.restoreState(self.settings.value("windowState", QByteArray()))
         
         self.soundVolume = self.settings.value("soundVolume", 30)
         self.savedGameMode = self.settings.value("gameMode", GameMode.Free)

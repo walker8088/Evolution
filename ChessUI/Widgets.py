@@ -1,21 +1,20 @@
 # -*- coding: utf-8 -*-
 
 import os
-import sys
-import time
 from collections import OrderedDict
 
-from PySide6 import *
-from PySide6.QtCore import *
-from PySide6.QtGui import *
-from PySide6.QtWidgets import *
+from PySide6.QtCore import QSize, Signal, Qt, QTimer
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import QStyle, QApplication, QMenu, QHBoxLayout, QVBoxLayout, QFormLayout, QDialog, QLabel, QSpinBox, QCheckBox, QPushButton, QRadioButton, \
+                            QWidget, QDockWidget, QDialogButtonBox, QButtonGroup, QListWidget, QListWidgetItem, QInputDialog, QAbstractItemView, \
+                            QComboBox, QTreeWidgetItem, QTreeWidget, QSplitter, QMessageBox
 
-from cchess import *
+from cchess import ChessBoard, RED, BLACK, FULL_INIT_FEN, EMPTY_FEN, iccs2pos
 
-from .Utils import *
-from .Storage import *
-from .Resource import *
-from .BoardWidgets import *
+from .Utils import getTitle, TimerMessageBox, get_free_memory_mb
+#from .Storage import *
+#from .Resource import *
+from .BoardWidgets import ChessBoardWidget, ChessBoardEditWidget
 
 from . import Globl
  
@@ -343,7 +342,7 @@ class BoardHistoryWidget(QWidget):
         splitter.setStretchFactor(0, 90)
         splitter.setStretchFactor(1, 10)
 
-    def showBoardMoves(fen, moves):
+    def showBoardMoves(self, fen, moves):
         self.boardView.from_fen(fen)
         for it in moves:
             self.historyView.onNewPostion(it)
@@ -563,9 +562,10 @@ class ChessEngineWidget(QDockWidget):
         pass
 
     def saveEngineOptions(self): 
-        options = {}
+        #options = {}
         #Globl.storage.saveEngineOptions(options)
-     
+        pass
+
     def onViewBranch(self):
         self.parent.onViewBranch()
 
@@ -724,7 +724,10 @@ class MoveDbWidget(QDockWidget):
             for fen, iccs in todoList:
                 board.from_fen(fen)
                 move = board.move_iccs(iccs)
+                if move is None:
+                    raise Exception('invalid move')
                 board.next_turn()
+                
                 new_fen = board.to_fen()
                 record = Globl.storage.getAllBookMoves(new_fen)
                 if len(record) > 0:
@@ -749,7 +752,7 @@ class MoveDbWidget(QDockWidget):
         if ok == QMessageBox.Yes:
             for fen, iccs in delFens.items():
                 Globl.storage.delBookMoves(fen, iccs)
-            QMessageBox.information(self, getTitle(), f"已删除。")
+            QMessageBox.information(self, getTitle(), "已删除。")
             self.onPositionChanged(self.curr_pos, is_new = False)
             
     def onImportFollowContinue(self):
@@ -1250,7 +1253,7 @@ class PositionHistDialog(QDialog):
         vbox.addWidget(self.boardEdit)
 
         okBtn = QPushButton("完成", self)
-        cancelBtn = QPushButton("取消", self)
+        #cancelBtn = QPushButton("取消", self)
         #self.quit.setGeometry(62, 40, 75, 30)
 
         hbox = QHBoxLayout()

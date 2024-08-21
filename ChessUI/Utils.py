@@ -1,30 +1,23 @@
 # -*- coding: utf-8 -*-
 
-import os
 import sys
-import time
-from pathlib import Path
-import logging
 import uuid
-import traceback 
+import traceback
 from enum import Enum, auto
 from dataclasses import dataclass
-
+from collections import OrderedDict
 
 import psutil
 import requests
 
-from PySide6 import *
-from PySide6.QtCore import *
-from PySide6.QtGui import *
-from PySide6.QtWidgets import *
-from PySide6.QtNetwork import *
+from PySide6.QtCore import QTimer, QThread
+from PySide6.QtWidgets import QMessageBox, QApplication
 
 #import numpy as np
 #import cv2 as cv
 #from PIL import Image
 
-from cchess import *
+from cchess import ChessBoard, Move, BLACK 
 
 #-----------------------------------------------------#
 class GameMode(Enum):
@@ -82,9 +75,9 @@ def fen_moves_to_step(fen, moves):
     board = ChessBoard(fen)
     for iccs in moves:
         fen_steps.append([fen, iccs])
-        move = board.move_iccs(iccs)
+        #move = board.move_iccs(iccs)
         board.next_turn()
-        fen = board.to_fen()
+        #fen = board.to_fen()
 
     return fen_steps    
 #-----------------------------------------------------#
@@ -189,7 +182,7 @@ def QueryFromCloudDB(fen, score_limit = 70):
             it_dict = {key:value for key, value in items}
             #print(it_dict)
             moves.append(it_dict)
-    except Exception as e:
+    except Exception:
         #traceback.print_exc()
         traceback.print_exception(*sys.exc_info())
         print('cloud query result:', text, "len:", len(text))
