@@ -7,6 +7,8 @@ from pathlib import Path
 import logging
 import uuid
 import traceback 
+from enum import Enum, auto
+from dataclasses import dataclass
 
 
 import psutil
@@ -23,6 +25,24 @@ from PySide6.QtNetwork import *
 #from PIL import Image
 
 from cchess import *
+
+#-----------------------------------------------------#
+class GameMode(Enum):
+    Free = auto()
+    Fight = auto()
+    EndGame = auto()
+    Online = auto()
+
+#-----------------------------------------------------#
+@dataclass
+class Position:
+    fen: str
+    fen_prev: str
+    iccs:str
+    score: int
+    index: int
+    move_color: int
+    move: Move
 
 '''
 #-----------------------------------------------------#

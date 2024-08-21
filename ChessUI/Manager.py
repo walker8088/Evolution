@@ -9,6 +9,7 @@ from cchess import *
 from .Utils import *
 
 #-----------------------------------------------------#
+'''
 class EngineConfig():
     def __init__(self, engine):
         self.engine = engine
@@ -16,7 +17,7 @@ class EngineConfig():
         self.fen_engine = None
         self.go_param = {}
         self.score_move = {}
-
+'''
 #-----------------------------------------------------#
 class EngineManager(QObject):
 
@@ -29,18 +30,23 @@ class EngineManager(QObject):
         super().__init__()
         self.id = id
         self.parent = parent
-        self.econf = None
+
+        self.fen = None
+        self.fen_engine = None
+        self.go_param = {}
+        self.score_move = {}
+        
         self.stoped = True
         self.isReady = False
 
     def get_config(self):
-        return self.econf.go_param.copy()
+        return self.go_param.copy()
 
     def set_config(self, params):
-        self.econf.go_param = params
+        self.go_param = params
     
     def update_config(self, params):
-        self.econf.go_param.update(params)
+        self.go_param.update(params)
 
     def load_engine(self, engine_path, engine_type):
         if engine_type == 'uci':
@@ -52,10 +58,10 @@ class EngineManager(QObject):
 
         if engine.load(engine_path):
             self.engine = engine
-            self.econf = EngineConfig(engine)
             return True 
         else:
-            return False   
+            return False
+
     def set_engine_option(self, name, value):
         
         if not self.isReady:
@@ -78,11 +84,13 @@ class EngineManager(QObject):
         if (EMPTY_BOARD in fen_engine) or (EMPTY_BOARD in fen):
             return False
 
-        self.econf.score_move.clear()
-        self.econf.fen_engine = fen_engine
-        self.econf.fen = fen
+        self.score_move.clear()
+        self.fen_engine = fen_engine
+        self.fen = fen
+        
+        print(self.go_param)
 
-        return self.engine.go_from(fen_engine, self.econf.go_param)
+        return self.engine.go_from(fen_engine, self.go_param)
     
 
     def stop_thinking(self):
@@ -105,36 +113,34 @@ class EngineManager(QObject):
             self.engine.stop_thinking()
 
     def run_once(self):
-        conf = self.econf
-        engine = self.engine
 
-        if conf.fen:
-            move_color = get_move_color(conf.fen) 
+        if self.fen:
+            move_color = get_move_color(self.fen) 
         
-        engine.handle_msg_once()
+        self.engine.handle_msg_once()
         
-        while not engine.move_queue.empty():
-            eg_out = engine.move_queue.get()
+        while not self.engine.move_queue.empty():
+            eg_out = self.engine.move_queue.get()
             #print(eg_out)
             action = eg_out['action']
             if action == 'ready':
                 self.isReady = True
-                self.readySignal.emit(self.id, engine.ids['name'], engine.options)
+                self.readySignal.emit(self.id, self.engine.ids['name'], self.engine.options)
             elif action == 'bestmove':
-                ret = {'fen': conf.fen, }
+                ret = {'fen': self.fen, }
                 if 'move' in eg_out:
                     iccs = eg_out['move']
                     
                     ret['iccs'] = iccs
                     ret['best_move'] = [iccs, ]
                     
-                    if iccs in conf.score_move:
-                        score_best = conf.score_move[iccs] 
+                    if iccs in self.score_move:
+                        score_best = self.score_move[iccs] 
                         if move_color == BLACK:
                             score_best = -score_best
                         ret['score'] = score_best
                     
-                        m = ChessBoard(conf.fen).move_iccs(iccs)
+                        m = ChessBoard(self.fen).move_iccs(iccs)
                         if not m:
                             continue
 
@@ -145,16 +151,16 @@ class EngineManager(QObject):
 
                 self.moveBestSignal.emit(self.id, ret)
             elif action == 'dead':  #被将死
-                eg_out['fen'] = conf.fen
+                eg_out['fen'] = self.fen
                 self.checkmateSignal.emit(self.id, eg_out)
             elif action == 'info_move':
-                eg_out['fen'] = conf.fen
+                eg_out['fen'] = self.fen
                 if len(eg_out['move']) == 0:
                     continue
                 eg_out['moves'] = eg_out['move']    
                 move_iccs = eg_out['move'][0]
                 if 'score' in eg_out:
-                    conf.score_move[move_iccs] = eg_out['score']
+                    self.score_move[move_iccs] = eg_out['score']
                     eg_out['actions'] = []
                 
                     if move_color == BLACK:

@@ -8,7 +8,6 @@ import traceback
 import platform
 import threading
 import configparser
-from enum import Enum, auto
 
 from pathlib import Path
 from dataclasses import dataclass
@@ -32,22 +31,13 @@ from . import Globl
 
 #-----------------------------------------------------#
 
-@dataclass
-class Position:
-    fen: str
-    fen_prev: str
-    iccs:str
-    score: int
-    index: int
-    move_color: int
-    move: Move
-
+'''
 @dataclass
 class Position:
     fen: str
     score: int
     diff: int
-
+'''
 #-----------------------------------------------------#
 # Back up the reference to the exceptionhook
 sys._excepthook = sys.excepthook
@@ -62,12 +52,6 @@ def my_exception_hook(exctype, value, tb):
 sys.excepthook = my_exception_hook
 
 #-----------------------------------------------------#
-class GameMode(Enum):
-    Free = auto()
-    Fight = auto()
-    EndGame = auto()
-    Online = auto()
-
 GameTitle = {
     None : '',
     GameMode.Free: '自由练棋', 
@@ -166,6 +150,7 @@ class MainWindow(QMainWindow):
         
         self.initEngine()
         
+        Globl.engineManager.readySignal.connect(self.onEngineReady)
         Globl.engineManager.moveBestSignal.connect(self.onTryEngineMove)
         Globl.engineManager.moveInfoSignal.connect(self.onEngineMoveInfo)
         #Globl.engineManager.checkmate_signal.connect(self.onEngineCheckmate)
@@ -189,7 +174,7 @@ class MainWindow(QMainWindow):
         
         self.openBook = OpenBookYfk()
         
-        self.readSettings()
+        self.readSettingsBeforeGameInit()
 
         if self.openBookFileName:
             self.openBook.loadBookFile(Path(self.openBookFileName))
@@ -200,7 +185,7 @@ class MainWindow(QMainWindow):
         
         self.switchGameMode(self.savedGameMode)
         
-        self.readUiSettings()
+        #self.readSettingsAfterGameInit()
 
         #splash.finish()
 
@@ -414,7 +399,9 @@ class MainWindow(QMainWindow):
             self.engineView.setTopGameLevel() #skillLevelSpin.setValue(20)
 
             self.endBookView.nextGame()
-                
+        
+        self.engineView.switchGameMode(gameMode)
+
     def onGameOver(self, win_side):
         
         if self.gameMode == GameMode.EndGame:
@@ -651,6 +638,10 @@ class MainWindow(QMainWindow):
         
         self.engineView.onEngineMoveInfo(fenInfo)
 
+    def onEngineReady(self, engine_id, name, engine_options):
+        self.engineView.readSettings(self.settings)
+        self.engineView.onEngineReady(engine_id, name, engine_options)
+
     #-----------------------------------------------------------
     #fenCache 核心逻辑
     def updateFenCache(self, fenInfo):
@@ -862,6 +853,7 @@ class MainWindow(QMainWindow):
             self.clearAllScore()
             self.showScoreBox.setChecked(True)
             self.reviewList = list(self.fenPosDict.keys())
+            self.engineView.setTopGameLevel()
             self.engineView.analysisModeBox.setChecked(True)
             self.historyView.inner.reviewByEngineBtn.setText('停止复盘')
             self.onReviewGameStep()
@@ -900,7 +892,8 @@ class MainWindow(QMainWindow):
         self.engineModeBtn.setEnabled(True)
         
         self.engineView.analysisModeBox.setChecked(False)
-    
+        self.engineView.restoreGameLevel(self.engineFightLevel)
+            
     def setQueryMode(self, mode):
         
         if mode == self.queryMode:
@@ -1368,7 +1361,7 @@ class MainWindow(QMainWindow):
         self.modeBtnGroup.addButton(self.cloudModeBtn, 1)      # ID 1
         self.modeBtnGroup.addButton(self.engineModeBtn, 2)      # ID 2
 
-        self.showBestBox = QCheckBox('提示')  #"最佳提示")
+        self.showBestBox = QCheckBox('最佳提示')  #"最佳提示")
         self.showBestBox.setIcon(QIcon(':Images/info.png'))
         self.showBestBox.setChecked(True)
         self.showBestBox.setToolTip('提示最佳走法')
@@ -1424,7 +1417,7 @@ class MainWindow(QMainWindow):
         Globl.storage.close()
        
 
-    def readSettings(self):
+    def readSettingsBeforeGameInit(self):
         self.settings = QSettings('Company', self.app.APP_NAME)
         
         #Test Only Code
@@ -1463,9 +1456,8 @@ class MainWindow(QMainWindow):
 
         self.endBookView.readSettings(self.settings)
         
-    def readUiSettings(self):
-        
-        self.engineView.readSettings(self.settings)
+    #def readSettingsAfterGameInit(self):
+    #    self.engineView.readSettings(self.settings)
 
     def writeSettings(self):
         self.settings.setValue("geometry", self.saveGeometry())

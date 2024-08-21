@@ -368,7 +368,10 @@ class ChessEngineWidget(QDockWidget):
         
         self.parent = parent
         self.engineManager = engineMgr
-
+        
+        self.MAX_MEM = 5000
+        self.MAX_THREADS = os.cpu_count()
+        
         self.dockedWidget = QWidget(self)
         self.setWidget(self.dockedWidget)
 
@@ -388,35 +391,29 @@ class ChessEngineWidget(QDockWidget):
         self.moveTimeSpin.valueChanged.connect(self.onMoveTimeChanged)
         
         self.threadsSpin = QSpinBox()
-        max_threads =  os.cpu_count()
         self.threadsSpin.setSingleStep(1)
-        self.threadsSpin.setValue(max_threads * 3 // 4)
-        self.threadsSpin.setRange(1, max_threads)
+        self.threadsSpin.setRange(1, self.MAX_THREADS)
+        self.threadsSpin.setValue(self.getDefaultThreads())
         self.threadsSpin.valueChanged.connect(self.onThreadsChanged)
         
-        MAX_MEM = 5000
         self.memorySpin = QSpinBox()
         self.memorySpin.setSingleStep(100)
-        self.memorySpin.setRange(500, MAX_MEM)
+        self.memorySpin.setRange(500, self.MAX_MEM)
+        self.memorySpin.setValue(self.getDefaultMem())
         self.memorySpin.valueChanged.connect(self.onMemoryChanged)
-        mem = get_free_memory_mb()/2
-        m_count = int((mem // 100 ) * 100)
-        if m_count > MAX_MEM: 
-            m_count = MAX_MEM
-        self.memorySpin.setValue(m_count)
         
         self.multiPVSpin = QSpinBox()
         self.multiPVSpin.setSingleStep(1)
-        self.multiPVSpin.setValue(1)
         self.multiPVSpin.setRange(1, 10)
+        self.multiPVSpin.setValue(1)
         self.multiPVSpin.valueChanged.connect(self.onMultiPVChanged)
         
         self.skillLevelSpin = QSpinBox()
         self.skillLevelSpin.setSingleStep(1)
+        self.skillLevelSpin.setRange(1, 20)
         self.skillLevelSpin.setValue(20)
-        self.skillLevelSpin.setRange(0, 20)
         self.skillLevelSpin.valueChanged.connect(self.onSkillLevelChanged)
-
+        
         self.eRedBox = QCheckBox("执红")
         self.eBlackBox = QCheckBox("执黑")
         self.analysisModeBox = QCheckBox("分析模式")
@@ -431,15 +428,14 @@ class ChessEngineWidget(QDockWidget):
         hbox.addWidget(self.moveTimeSpin, 0)
         hbox.addWidget(QLabel(' 级别:'), 0)
         hbox.addWidget(self.skillLevelSpin, 0)
-        '''
+        
         hbox.addWidget(QLabel(' 线程:'), 0)
         hbox.addWidget(self.threadsSpin, 0)
         hbox.addWidget(QLabel(' 存储:'), 0)
         hbox.addWidget(self.memorySpin, 0)
-        hbox.addWidget(QLabel('MB  分支:'), 0)
-        hbox.addWidget(self.multiPVSpin, 0)
-        '''
-
+        #hbox.addWidget(QLabel('MB  分支:'), 0)
+        #hbox.addWidget(self.multiPVSpin, 0)
+        
         hbox.addWidget(QLabel('    '), 0)
         hbox.addWidget(self.eRedBox, 0)
         hbox.addWidget(self.eBlackBox, 0)
@@ -460,14 +456,25 @@ class ChessEngineWidget(QDockWidget):
 
         vbox.addWidget(self.positionView)
 
-        self.engineManager.readySignal.connect(self.onEngineReady)
+        #self.engineManager.readySignal.connect(self.onEngineReady)
         self.branchs = []
     
+    def getDefaultMem(self):
+        mem = get_free_memory_mb()/2
+        m_count = int((mem // 100 ) * 100)
+        if m_count > self.MAX_MEM: 
+            m_count = self.MAX_MEM
+        
+        return m_count
+
+    def getDefaultThreads(self):
+        return self.MAX_THREADS // 2
+
     def writeSettings(self, settings):
         settings.setValue("engineDepth", self.DepthSpin.value())
         settings.setValue("engineMoveTime", self.moveTimeSpin.value())
-        #settings.setValue("engineThreads", self.threadsSpin.value())
-        #settings.setValue("engineMemory", self.memorySpin.value())
+        settings.setValue("engineThreads", self.threadsSpin.value())
+        settings.setValue("engineMemory", self.memorySpin.value())
         #settings.setValue("engineMultiPV", self.multiPVSpin.value())
         settings.setValue("engineSkillLevel", self.skillLevelSpin.value())
         
@@ -479,8 +486,8 @@ class ChessEngineWidget(QDockWidget):
         
         self.DepthSpin.setValue(settings.value("engineDepth", 22))
         self.moveTimeSpin.setValue(settings.value("engineMoveTime", 10))
-        #self.threadsSpin.setValue(settings.value("engineThreads", )
-        #self.memorySpin.setValue(settings.value("engineMemory", )
+        self.threadsSpin.setValue(settings.value("engineThreads", self.getDefaultThreads()))
+        self.memorySpin.setValue(settings.value("engineMemory", self.getDefaultMem()))
         #self.multiPVSpin.setValue(settings.value("engineMultiPV", )
         self.skillLevelSpin.setValue(settings.value("engineSkillLevel", 20))
         
@@ -488,11 +495,19 @@ class ChessEngineWidget(QDockWidget):
         self.eBlackBox.setChecked(settings.value("engineBlack", False, type=bool))
         self.analysisModeBox.setChecked(settings.value("engineAnalysisMode", False, type=bool))
     
+    def switchGameMode(self, gameMode):
+        if gameMode == gameMode.Fight:
+            self.skillLevelSpin.setEnabled(True)
+        else:
+            self.skillLevelSpin.setEnabled(False)
+            
     def setTopGameLevel(self):
         self.skillLevelSpin.setValue(20)
+        self.skillLevelSpin.setEnabled(False)
 
     def restoreGameLevel(self, level):
         self.skillLevelSpin.setValue(level)
+        self.skillLevelSpin.setEnabled(True)
 
     def saveGameLevel(self):
         return self.skillLevelSpin.value()
@@ -508,13 +523,14 @@ class ChessEngineWidget(QDockWidget):
             return
         
         config = {}    
+
         if moveTime == 0:
             config = {'depth': depth }
         elif depth == 0:
             config = {'movetime': moveTime * 1000 }
         else:
             config =  {'depth': depth, 'movetime': moveTime * 1000 }
-
+        
         self.engineManager.set_config(config) 
             
         self.saveEngineOptions()
@@ -535,20 +551,17 @@ class ChessEngineWidget(QDockWidget):
         
     def onThreadsChanged(self, num):
         self.engineManager.set_engine_option('Threads', num)
-        self.saveEngineOptions()
         
     def onMemoryChanged(self, num):
         self.engineManager.set_engine_option('Hash', num)
-        self.saveEngineOptions()
         
     def onMultiPVChanged(self, num):
         self.engineManager.set_engine_option('MultiPV', num)
-        self.saveEngineOptions()
     
     def onSkillLevelChanged(self, num):
-        self.engineManager.set_engine_option('Skill Level', num)
-        self.saveEngineOptions()
-    
+        #self.engineManager.set_engine_option('Skill Level', num)
+        pass
+
     def saveEngineOptions(self): 
         options = {}
         #Globl.storage.saveEngineOptions(options)
@@ -609,22 +622,19 @@ class ChessEngineWidget(QDockWidget):
 
         it.setData(0, Qt.UserRole, move_info['iccs_str'])
 
-    def append_info(self, info):
-        self.positionView.addItem(info)
+    #def append_info(self, info):
+    #    self.positionView.addItem(info)
 
     def onEngineReady(self, engine_id, name, engine_options):
-        #print(engine_options)
         
         self.engineLabel.setText(name)
         
-        #self.readSettings()
-
         self.setGoParams()
-
         self.onThreadsChanged(self.threadsSpin.value())
         self.onMemoryChanged(self.memorySpin.value())
-        self.onMultiPVChanged(self.multiPVSpin.value())
-        
+        #self.onMultiPVChanged(self.multiPVSpin.value())
+        self.onSkillLevelChanged(self.skillLevelSpin.value())
+
     def clear(self):
         self.positionView.clear()
 
