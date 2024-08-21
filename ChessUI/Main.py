@@ -20,11 +20,13 @@ from PySide6.QtWidgets import QMainWindow, QStyle, QSizePolicy, QMessageBox, QWi
 
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 
-from cchess import ChessBoard, Game, RED, BLACK, FULL_INIT_FEN, EMPTY_FEN, iccs2pos, pos2iccs, read_from_pgn, read_from_xqf, get_move_color, fench_to_text
+from cchess import ChessBoard, Game, RED, BLACK, FULL_INIT_FEN, EMPTY_FEN, iccs2pos, pos2iccs, \
+                    read_from_pgn, read_from_xqf, get_move_color, fench_to_text
 
 from .Utils import  fen_moves_to_step, TimerMessageBox, getTitle, load_eglib, GameMode
 from .BoardWidgets import ChessBoardWidget
-from .Widgets import PositionEditDialog, PositionHistDialog, ChessEngineWidget, EngineConfigDialog, BookmarkWidget, CloudDbWidget, MoveDbWidget, EndBookWidget, DockHistoryWidget
+from .Widgets import PositionEditDialog, PositionHistDialog, ChessEngineWidget, EngineConfigDialog, BookmarkWidget, \
+                    CloudDbWidget, MoveDbWidget, EndBookWidget, DockHistoryWidget
 from .Manager import EngineManager
 from .Storage import DataStore, CloudDB, OpenBookYfk
 
@@ -78,7 +80,7 @@ class MainWindow(QMainWindow):
 
         self.setWindowIcon(QIcon(':Images/app.ico'))
         
-        logging.basicConfig(filename = f'{self.app.APP_NAME}.log', filemode = 'w', level = logging.INFO) #logging.DEBUG) 
+        logging.basicConfig(filename = f'{self.app.APP_NAME}.log', filemode = 'w', level = logging.DEBUG) #logging.INFO) # 
                 
         if platform.system() == "Windows":
             #在Windows状态栏上正确显示图标
@@ -119,12 +121,7 @@ class MainWindow(QMainWindow):
         
         self.bookmarkView = BookmarkWidget(self)
         self.bookmarkView.setVisible(False)
-        #self.myGameView = MyGameWidget(self)
-        #self.myGameView.setVisible(False)
-
-        #self.gameReviewView  = GameReviewWidget(self)
-        #self.gameReviewView.setVisible(False)
-
+        
         self.engineView = ChessEngineWidget(self, Globl.engineManager)
         self.engineView.configBtn.clicked.connect(self.onConfigEngine)
         #self.engineView.reviewBtn.clicked.connect(self.onReviewGame)

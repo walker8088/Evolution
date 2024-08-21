@@ -61,7 +61,6 @@ class EngineManager(QObject):
             return False
 
         self.engine.set_option(name, value)
-        
         return True
         
     def go_from(self, fen_engine, fen = None):
@@ -81,8 +80,6 @@ class EngineManager(QObject):
         self.fen_engine = fen_engine
         self.fen = fen
         
-        print(self.go_param)
-
         return self.engine.go_from(fen_engine, self.go_param)
     
 
@@ -103,7 +100,7 @@ class EngineManager(QObject):
         while not self.stoped:
             self.run_once()
             time.sleep(0.1)
-            self.engine.stop_thinking()
+        self.engine.stop_thinking()
 
     def run_once(self):
 
