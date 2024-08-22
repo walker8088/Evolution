@@ -53,6 +53,10 @@ class ActionType(Enum):
     MATE = auto()
     
 #-----------------------------------------------------#
+class ReviewMove(Enum):
+    ByCloud = auto()
+    ByEngine = auto()
+    
 class MainWindow(QMainWindow):
     initGameSignal = Signal(str)
     newBoardSignal = Signal()
@@ -140,7 +144,7 @@ class MainWindow(QMainWindow):
 
         self.gameMode = None
         self.queryMode = ''
-        self.reviewMode = ''
+        self.reviewMode = None
         self.engineFightLevel = 20
         self.lastOpenFolder = ''
         self.hasNewMove = False
@@ -535,7 +539,7 @@ class MainWindow(QMainWindow):
         else:
             self.moveDbView.onPositionChanged(position, isNew)
 
-            if (not quickMode) and ((self.queryMode == 'Cloud') or (self.reviewMode == 'Cloud')):
+            if (not quickMode) and ((self.queryMode == 'Cloud') or (self.reviewMode == ReviewMode.ByCloud)):
                 self.cloudQuery.startQuery(fen)
             else:
                 self.localSearch(position)
@@ -576,14 +580,14 @@ class MainWindow(QMainWindow):
             return
         
         fen = qResult['fen']
-        if (self.queryMode == 'Cloud') or (self.reviewMode == 'Cloud'):
+        if (self.queryMode == 'Cloud') or (self.reviewMode == ReviewMode.ByCloud):
             self.updateFenCache(qResult)
     
             posi = self.fenPosDict[fen]
             if posi == self.currPosition:
                 self.cloudDbView.updateCloudMoves(qResult['actions'])
             
-            if self.reviewMode == 'Cloud':
+            if self.reviewMode == ReviewMode.ByCloud:
                 self.onReviewGameStep()
         
     #-----------------------------------------------------------
@@ -595,10 +599,10 @@ class MainWindow(QMainWindow):
         
         #print('onEngineMoveBest', fenInfo)
 
-        if (self.gameMode != GameMode.EndGame) and ((self.queryMode == 'Engine') or (self.reviewMode == 'Engine')) :
+        if (self.gameMode != GameMode.EndGame) and ((self.queryMode == 'Engine') or (self.reviewMode == ReviewMode.ByEngine)) :
             self.updateFenCache(fenInfo)
 
-        if self.reviewMode == 'Engine' :
+        if self.reviewMode == ReviewMode.ByEngine :
             self.onReviewGameStep()
             return
             
@@ -615,7 +619,7 @@ class MainWindow(QMainWindow):
 
     def onEngineMoveInfo(self, engine_id, fenInfo):
         
-        #if (self.queryMode == 'Engine') or (self.reviewMode == 'Engine'):
+        #if (self.queryMode == 'Engine') or (self.reviewMode == ReviewMode.ByEngine):
         #    self.updateFenCache(fenInfo)
         
         self.engineView.onEngineMoveInfo(fenInfo)
@@ -809,7 +813,7 @@ class MainWindow(QMainWindow):
     def onReviewByCloud(self):    
 
         if not self.reviewMode:
-            self.reviewMode = 'Cloud'
+            self.reviewMode = ReviewMode.ByCloud
             
             self.cloudModeBtn.setEnabled(False)
             self.engineModeBtn.setEnabled(False)
@@ -825,7 +829,7 @@ class MainWindow(QMainWindow):
     def onReviewByEngine(self):    
 
         if not self.reviewMode:
-            self.reviewMode = 'Engine'
+            self.reviewMode = ReviewMode.ByEngine
             
             self.cloudModeBtn.setEnabled(False)
             self.engineModeBtn.setEnabled(False)
@@ -850,9 +854,9 @@ class MainWindow(QMainWindow):
             self.onPositionChanged(position, isNew = False)
             qApp.processEvents()
 
-            if self.reviewMode == 'Cloud':
+            if self.reviewMode == ReviewMode.ByCloud:
                 self.cloudQuery.startQuery(fen_step)
-            elif self.reviewMode == 'Engine':
+            elif self.reviewMode == ReviewMode.ByEngine:
                 self.runEngine(position)
         else:
             self.onReviewGameEnd()
@@ -881,7 +885,7 @@ class MainWindow(QMainWindow):
 
         self.queryMode = mode
         
-        if self.queryMode == 'Engine':
+        if self.queryMode == ReviewMode.ByEngine:
             self.historyView.inner.reviewByEngineBtn.setEnabled(True)
             self.historyView.inner.reviewByCloudBtn.setEnabled(False)
             
