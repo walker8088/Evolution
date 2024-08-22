@@ -380,14 +380,11 @@ class ChessEngineWidget(QDockWidget):
         self.engineLabel.setAlignment(Qt.AlignCenter)
         
         self.DepthSpin = QSpinBox()
-        self.DepthSpin.setRange(0, 100)
+        self.DepthSpin.setRange(1, 100)
         self.DepthSpin.setValue(22)
-        self.DepthSpin.valueChanged.connect(self.onDepthChanged)
-        
         self.moveTimeSpin = QSpinBox()
-        self.moveTimeSpin.setRange(0, 3000)
+        self.moveTimeSpin.setRange(1, 100)
         self.moveTimeSpin.setValue(20)
-        self.moveTimeSpin.valueChanged.connect(self.onMoveTimeChanged)
         
         self.threadsSpin = QSpinBox()
         self.threadsSpin.setSingleStep(1)
@@ -415,7 +412,7 @@ class ChessEngineWidget(QDockWidget):
         
         self.eRedBox = QCheckBox("执红")
         self.eBlackBox = QCheckBox("执黑")
-        self.analysisModeBox = QCheckBox("局面分析")
+        self.analysisBox = QCheckBox("局面分析")
         self.configBtn = QPushButton("参数")
         self.reviewBtn = QPushButton("复盘分析")
 
@@ -430,7 +427,7 @@ class ChessEngineWidget(QDockWidget):
         
         hbox.addWidget(QLabel(' 线程:'), 0)
         hbox.addWidget(self.threadsSpin, 0)
-        hbox.addWidget(QLabel(' 存储:'), 0)
+        hbox.addWidget(QLabel(' 存储(MB):'), 0)
         hbox.addWidget(self.memorySpin, 0)
         #hbox.addWidget(QLabel('MB  分支:'), 0)
         #hbox.addWidget(self.multiPVSpin, 0)
@@ -439,7 +436,7 @@ class ChessEngineWidget(QDockWidget):
         hbox.addWidget(self.eRedBox, 0)
         hbox.addWidget(self.eBlackBox, 0)
         hbox.addWidget(self.engineLabel, 2)
-        hbox.addWidget(self.analysisModeBox, 0)
+        hbox.addWidget(self.analysisBox, 0)
         #hbox.addWidget(self.reviewBtn, 0)
 
         vbox = QVBoxLayout()
@@ -479,7 +476,7 @@ class ChessEngineWidget(QDockWidget):
         
         settings.setValue("engineRed", self.eRedBox.isChecked()) 
         settings.setValue("engineBlack", self.eBlackBox.isChecked()) 
-        settings.setValue("engineAnalysisMode", self.analysisModeBox.isChecked()) 
+        settings.setValue("engineAnalysis", self.analysisBox.isChecked()) 
 
     def readSettings(self, settings):
         
@@ -492,7 +489,7 @@ class ChessEngineWidget(QDockWidget):
         
         self.eRedBox.setChecked(settings.value("engineRed", False, type=bool))
         self.eBlackBox.setChecked(settings.value("engineBlack", False, type=bool))
-        self.analysisModeBox.setChecked(settings.value("engineAnalysisMode", False, type=bool))
+        self.analysisBox.setChecked(settings.value("engineAnalysis", False, type=bool))
     
     def onSwitchGameMode(self, gameMode):
         if gameMode == gameMode.Fight:
@@ -511,29 +508,11 @@ class ChessEngineWidget(QDockWidget):
     def saveGameLevel(self):
         return self.skillLevelSpin.value()
 
-    def setGoParams(self):
-        
-        moveTime = self.moveTimeSpin.value()
+    def getGoParams(self):
         depth = self.DepthSpin.value()
-        
-        if depth == 0 and moveTime == 0:
-            msgbox = TimerMessageBox("***ERROR*** 分析深度与分析时间不能同时为0。", timeout=1)
-            msgbox.exec()
-            return
-        
-        config = {}    
+        moveTime = self.moveTimeSpin.value()
+        return {'depth': depth, 'movetime': moveTime * 1000 }
 
-        if moveTime == 0:
-            config = {'depth': depth }
-        elif depth == 0:
-            config = {'movetime': moveTime * 1000 }
-        else:
-            config =  {'depth': depth, 'movetime': moveTime * 1000 }
-        
-        self.engineManager.set_config(config) 
-            
-        self.saveEngineOptions()
-                        
     def contextMenuEvent(self, event):
         return
         menu = QMenu(self)
@@ -542,36 +521,24 @@ class ChessEngineWidget(QDockWidget):
         if action == viewBranchAction:
             self.onViewBranch()
     
-    def onDepthChanged(self, num):
-        self.setGoParams()
-        
-    def onMoveTimeChanged(self, num):
-        self.setGoParams()
-        
     def onThreadsChanged(self, num):
-        self.engineManager.set_engine_option('Threads', num)
+        self.engineManager.setOption('Threads', num)
         
     def onMemoryChanged(self, num):
-        self.engineManager.set_engine_option('Hash', num)
+        self.engineManager.setOption('Hash', num)
         
     def onMultiPVChanged(self, num):
-        self.engineManager.set_engine_option('MultiPV', num)
+        self.engineManager.setOption('MultiPV', num)
     
     def onSkillLevelChanged(self, num):
-        #self.engineManager.set_engine_option('Skill Level', num)
-        pass
-
-    def saveEngineOptions(self): 
-        #options = {}
-        #Globl.storage.saveEngineOptions(options)
-        pass
-
+        self.engineManager.setOption('Skill Level', num)
+        
     def onViewBranch(self):
         self.parent.onViewBranch()
 
     def onEngineMoveInfo(self, move_info):
 
-        if not self.analysisModeBox.isChecked():
+        if not self.analysisBox.isChecked():
             return
 
         board = ChessBoard(move_info['fen'])
@@ -598,20 +565,20 @@ class ChessEngineWidget(QDockWidget):
             it = self.positionView.topLevelItem(i)
             iccs_it = it.data(0, Qt.UserRole)
             if iccs_str.find(iccs_it) == 0:  #新的步骤提示比已有的长
-                self.update_node(it, move_info, True)
+                self.updateNode(it, move_info, True)
                 found = True
                 break
             elif iccs_it.find(iccs_str) == 0:  #新的步骤提示比已有的短
-                self.update_node(it, move_info, False)
+                self.updateNode(it, move_info, False)
                 found = True
 
         if not found:
             it = QTreeWidgetItem(self.positionView)
-            self.update_node(it, move_info, True)
+            self.updateNode(it, move_info, True)
 
         self.positionView.sortItems(0, Qt.DescendingOrder)  #Qt.AscendingOrder)
 
-    def update_node(self, it, move_info, is_new_text=True):
+    def updateNode(self, it, move_info, is_new_text=True):
         if 'depth' in move_info:
             depth = int(move_info['depth'])
             it.setText(0, f'{depth:02d}')
@@ -626,7 +593,6 @@ class ChessEngineWidget(QDockWidget):
         
         self.engineLabel.setText(name)
         
-        self.setGoParams()
         self.onThreadsChanged(self.threadsSpin.value())
         self.onMemoryChanged(self.memorySpin.value())
         #self.onMultiPVChanged(self.multiPVSpin.value())

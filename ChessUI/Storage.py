@@ -6,7 +6,7 @@ from pathlib import Path
 #from collections import OrderedDict
 
 import cchess
-from cchess import ChessBoard, iccs_mirror
+from cchess import ChessBoard
 
 from peewee import Model, CharField, IntegerField, BigIntegerField, TextField
 from playhouse.sqlite_ext import SqliteExtDatabase, JSONField
@@ -196,7 +196,7 @@ class OpenBookYfk():
                score_best = score
                     
             if b_state == 'mirror':
-                iccs = iccs_mirror(ics)
+                iccs = cchess.iccs_mirror(ics)
             else:
                 iccs = ics
 
@@ -217,7 +217,8 @@ class OpenBookYfk():
         ret['actions'] = actions
 
         return ret
-        
+
+"""        
 #------------------------------------------------------------------------------
 #OpenBook
 
@@ -279,7 +280,7 @@ class OpenBook():
 
         return ret
 
-"""        
+        
 #------------------------------------------------------------------------------
 #OpenBookJson
 class OpenBookJson():
@@ -483,24 +484,10 @@ class DataStore():
         self.bookmark_table = self.db.table('bookmark')
         self.endbook_table = self.db.table('endbook')
         self.position_table = self.db.table('position')
-        self.engine_option_table = self.db.table('engine')
 
     def close(self):
         self.db.close()
 
-    #------------------------------------------------------------------------------
-    #EngineConfig
-    def loadEngineOptions(self, engine_id):
-        ret = self.engine_option_table.search(Query().engine_id == engine_id) 
-        
-        if len(ret) == 0:
-            return None
-        
-        return ret[0]
-        
-    def saveEngineOptions(self, engine_id, options):
-        self.engine_option_table.update({'engine_id': engine_id, 'options': options }) 
-          
     #------------------------------------------------------------------------------
     #EndBooks
     def getAllEndBooks(self):
@@ -587,33 +574,6 @@ class DataStore():
             return True
         return False
 
-    #------------------------------------------------------------------------------
-    #MyGames
-    '''
-    def getAllMyGames(self):
-        return self.mygame_table.search(Query().name.exists())
-
-    def saveMyGame(self, name, fen):
-
-        if self.isNameInMyGames(name) > 0:
-            return False
-
-        item = {'name': name, 'fen': fen, 'moves': moves}
-        self.mygame_table.insert(item)
-
-        return True
-
-    def isNameInMyGames(self, name):
-        return len(self.mygame_table.search(Query().name == name)) > 0
-
-    def removeMyGame(self, name):
-        return self.mygame_table.remove(Query().name == name)
-
-    def changeMyGameName(self, old_name, new_name):
-        self.mygame_table.update({'name': new_name},
-                                       (Query().name == old_name))
-        return True
-    '''
     #------------------------------------------------------------------------------
     #BookMoves
     def getAllBookMoves(self, fen = None):

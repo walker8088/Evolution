@@ -9,7 +9,8 @@ import logging
 from PySide6.QtCore import Signal, QObject
 #from PySide6.QtGui import *
 
-from cchess import ChessBoard, BLACK, EMPTY_BOARD, UcciEngine, UciEngine, get_move_color
+import cchess
+from cchess import ChessBoard, UcciEngine, UciEngine, get_move_color
 
 from .Utils import ThreadRunner
 
@@ -28,22 +29,12 @@ class EngineManager(QObject):
 
         self.fen = None
         self.fen_engine = None
-        self.go_param = {}
         self.score_move = {}
         
         self.isRunning = False
         self.isReady = False
 
-    def get_config(self):
-        return self.go_param.copy()
-
-    def set_config(self, params):
-        self.go_param = params
-    
-    def update_config(self, params):
-        self.go_param.update(params)
-
-    def load_engine(self, engine_path, engine_type):
+    def loadEngine(self, engine_path, engine_type):
         if engine_type == 'uci':
             engine = UciEngine('')
         elif engine_type == 'ucci':
@@ -57,16 +48,16 @@ class EngineManager(QObject):
         else:
             return False
 
-    def set_engine_option(self, name, value):
+    def setOption(self, name, value):
         
         if not self.isReady:
             return False
 
-        logging.info(f'Engine[{self.id}] set_option: {name} = {value}')
+        logging.info(f'Engine[{self.id}] setOption: {name} = {value}')
         self.engine.set_option(name, value)
         return True
         
-    def go_from(self, fen_engine, fen = None):
+    def goFrom(self, fen_engine, fen = None, params = {}):
         
         if not self.isReady:
             return True
@@ -76,22 +67,25 @@ class EngineManager(QObject):
 
         #print(fen)
         #跳过不合理的fen,免得引擎误报
-        if (EMPTY_BOARD in fen_engine) or (EMPTY_BOARD in fen):
+        if (cchess.EMPTY_BOARD in fen_engine) or (cchess.EMPTY_BOARD in fen):
             return False
 
         self.score_move.clear()
         self.fen_engine = fen_engine
         self.fen = fen
         
-        logging.info(f'Engine[{self.id}] go_from: {fen} {self.go_param}')
+        logging.info(f'Engine[{self.id}] goFrom: {fen} {params}')
         
-        return self.engine.go_from(fen_engine, self.go_param)
+        return self.engine.go_from(fen_engine, params)
     
-
-    def stop_thinking(self):
+    def stopThinking(self):
+        if not self.isReady:
+            return True
+            
         self.engine.stop_thinking()
         time.sleep(0.2)
         self.engine.handle_msg_once()
+        return True 
 
     def start(self):
         self.thread = ThreadRunner(self)
@@ -112,11 +106,11 @@ class EngineManager(QObject):
     def run(self):
         self.isRunning = True
         while self.isRunning:
-            self.run_once()
+            self.runOnce()
             time.sleep(0.1)
         #self.engine.stop_thinking()
 
-    def run_once(self):
+    def runOnce(self):
 
         if self.fen:
             move_color = get_move_color(self.fen) 
@@ -140,7 +134,7 @@ class EngineManager(QObject):
                     
                     if iccs in self.score_move:
                         score_best = self.score_move[iccs] 
-                        if move_color == BLACK:
+                        if move_color == cchess.BLACK:
                             score_best = -score_best
                         ret['score'] = score_best
                     
@@ -167,7 +161,7 @@ class EngineManager(QObject):
                     self.score_move[move_iccs] = eg_out['score']
                     eg_out['actions'] = []
                 
-                    if move_color == BLACK:
+                    if move_color == cchess.BLACK:
                         eg_out['score'] = -eg_out['score']
                             
                 self.moveInfoSignal.emit(self.id, eg_out)

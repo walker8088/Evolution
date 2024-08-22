@@ -17,37 +17,24 @@ from PySide6.QtCore import Qt, Signal, QByteArray, QSettings, QUrl
 from PySide6.QtGui import QActionGroup, QIcon, QAction
 from PySide6.QtWidgets import QMainWindow, QStyle, QSizePolicy, QMessageBox, QWidget, QCheckBox, QRadioButton, \
                             QFileDialog, QButtonGroup
-
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 
-from cchess import ChessBoard, Game, RED, BLACK, FULL_INIT_FEN, EMPTY_FEN, iccs2pos, pos2iccs, \
-                    read_from_pgn, read_from_xqf, get_move_color, fench_to_text
+import cchess
+from cchess import ChessBoard, Game, iccs2pos, pos2iccs, read_from_pgn, read_from_xqf, get_move_color, fench_to_text
 
+from .Version import release_version
 from .Resource import qt_resource_data
-from .Utils import  GameMode, TimerMessageBox, getTitle, loadEglib, getStepsFromFenMoves
+from .Manager import EngineManager
+from .Storage import DataStore, CloudDB, OpenBookYfk
+from .Utils import GameMode, TimerMessageBox, getTitle, loadEglib, getStepsFromFenMoves
 from .BoardWidgets import ChessBoardWidget
 from .Widgets import PositionEditDialog, PositionHistDialog, ChessEngineWidget, EngineConfigDialog, BookmarkWidget, \
                     CloudDbWidget, MoveDbWidget, EndBookWidget, DockHistoryWidget
 
-from .Manager import EngineManager
-from .Storage import DataStore, CloudDB, OpenBookYfk
-
+        
 #from .Online import OnlineDialog
 
 from . import Globl
-
-#-----------------------------------------------------#
-# Back up the reference to the exceptionhook
-sys._excepthook = sys.excepthook
-
-def my_exception_hook(exctype, value, tb):
-    # Print the error and traceback
-    msg = ''.join(traceback.format_exception(exctype, value, tb))
-    QMessageBox.critical(None, getTitle(), msg)
-    logging.error(f'Critical Error: {msg}')
-
-# Set the exception hook to our wrapping function
-sys.excepthook = my_exception_hook
 
 #-----------------------------------------------------#
 GameTitle = {
@@ -73,16 +60,14 @@ class MainWindow(QMainWindow):
     moveEndSignal = Signal()
     newPositionSignal = Signal()
 
-    def __init__(self, app):
+    def __init__(self):
         super().__init__()
 
         self.setAttribute(Qt.WA_DeleteOnClose)
 
-        self.app = app
+        #self.app = app
 
         self.setWindowIcon(QIcon(':Images/app.ico'))
-        
-        logging.basicConfig(filename = f'{self.app.APP_NAME}.log', filemode = 'w', level = logging.INFO) #logging.DEBUG) # 
                 
         if platform.system() == "Windows":
             #在Windows状态栏上正确显示图标
@@ -126,11 +111,9 @@ class MainWindow(QMainWindow):
         
         self.engineView = ChessEngineWidget(self, Globl.engineManager)
         self.engineView.configBtn.clicked.connect(self.onConfigEngine)
-        #self.engineView.reviewBtn.clicked.connect(self.onReviewGame)
         self.engineView.eRedBox.stateChanged.connect(self.onRedBoxChanged)
         self.engineView.eBlackBox.stateChanged.connect(self.onBlackBoxChanged)
-        self.engineView.analysisModeBox.stateChanged.connect(
-            self.onAnalysisModeBoxChanged)
+        self.engineView.analysisBox.stateChanged.connect(self.onAnalysisBoxChanged)
 
         self.addDockWidget(Qt.LeftDockWidgetArea, self.moveDbView)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.cloudDbView)
@@ -141,6 +124,8 @@ class MainWindow(QMainWindow):
         #self.addDockWidget(Qt.LeftDockWidgetArea, self.myGameView)
         self.addDockWidget(Qt.BottomDockWidgetArea, self.engineView)
         
+        self.isRunEngine = False
+        self.engineRunColor = [0, 0, 0]
         self.initEngine()
         
         Globl.engineManager.readySignal.connect(self.onEngineReady)
@@ -149,9 +134,6 @@ class MainWindow(QMainWindow):
         #Globl.engineManager.checkmate_signal.connect(self.onEngineCheckmate)
 
         self.initSound()
-        self.engine_working = False
-        self.bind_engines = [None, None, None]
-
         self.createActions()
         self.createMenus()
         self.createToolBars()
@@ -225,7 +207,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, f'{getTitle()}', f'配置文件[{self.config_file}]格式错误：{e}')
             return False
         
-        ok = Globl.engineManager.load_engine(engine_exec, engine_type)
+        ok = Globl.engineManager.loadEngine(engine_exec, engine_type)
         if not ok:
             QMessageBox.critical(self, f'{getTitle()}', f'加载象棋引擎[{engine_exec.absolute()}]出错，请确认该程序能在您的电脑上正确运行。')
         
@@ -278,7 +260,7 @@ class MainWindow(QMainWindow):
     #基础信息
     def updateTitle(self, subText = ''):
        
-        title = f'{self.app.APP_NAME_TEXT} - {GameTitle[self.gameMode]}'
+        title = f'{Globl.app.APP_NAME_TEXT} - {GameTitle[self.gameMode]}'
         if subText:
             title = f'{title} - {subText}'
 
@@ -301,7 +283,7 @@ class MainWindow(QMainWindow):
             if (self.gameMode == GameMode.Free) and self.hasNewMove:
                 steps = len(self.positionList) - 1
                 if self.getConfirm(f"当前棋谱已经走了 {steps} 步, 您确定要从新开始吗?"):
-                    self.initGame(FULL_INIT_FEN)
+                    self.initGame(cchess.FULL_INIT_FEN)
             return
         
         if self.gameMode == GameMode.Fight:
@@ -319,25 +301,26 @@ class MainWindow(QMainWindow):
             self.cloudDbView.show()
             self.showScoreBox.setChecked(True)
             
-            self.engineView.eRedBox.setChecked(False)
-            self.engineView.eBlackBox.setChecked(False)
-            self.engineView.analysisModeBox.setChecked(False)
             self.engineView.setTopGameLevel()
-
+            
+            if self.lastGameMode == GameMode.EndGame:
+                self.engineView.eRedBox.setChecked(False)
+                self.engineView.eBlackBox.setChecked(False)
+            
+            #self.engineView.analysisBox.setChecked(False)
+    
             self.cloudModeBtn.setEnabled(True)
             self.engineModeBtn.setEnabled(True)
-            #self.cloudModeBtn.setChecked(True)
-            #self.engineModeBtn.setChecked(True)
             
             self.showBestBox.setEnabled(True)
             self.showBestBox.setChecked(True)
+            self.showScoreBox.setChecked(True)
             
             self.openFileAct.setEnabled(True)
             self.editBoardAct.setEnabled(True)
     
-            
             if self.lastGameMode not in [GameMode.Fight, ]:        
-                self.initGame(FULL_INIT_FEN)
+                self.initGame(cchess.FULL_INIT_FEN)
         
         elif self.gameMode == GameMode.Fight:
             self.myGamesAct.setEnabled(True)
@@ -362,11 +345,11 @@ class MainWindow(QMainWindow):
         
             self.engineView.eRedBox.setChecked(False)
             self.engineView.eBlackBox.setChecked(True)
-            self.engineView.analysisModeBox.setChecked(False)
+            self.engineView.analysisBox.setChecked(False)
             self.engineView.restoreGameLevel(self.engineFightLevel)
 
             if self.lastGameMode in [None, GameMode.EndGame]:
-                self.initGame(FULL_INIT_FEN)
+                self.initGame(cchess.FULL_INIT_FEN)
         
         elif self.gameMode == GameMode.EndGame:
             self.myGamesAct.setEnabled(False)
@@ -393,7 +376,7 @@ class MainWindow(QMainWindow):
 
             self.engineView.eRedBox.setChecked(False)
             self.engineView.eBlackBox.setChecked(True)
-            self.engineView.analysisModeBox.setChecked(False)
+            self.engineView.analysisBox.setChecked(False)
             self.engineView.setTopGameLevel() #skillLevelSpin.setValue(20)
 
             self.endBookView.nextGame()
@@ -403,24 +386,24 @@ class MainWindow(QMainWindow):
     def onGameOver(self, win_side):
         
         if self.gameMode == GameMode.EndGame:
-            if win_side == BLACK:
+            if win_side == cchess.BLACK:
                 msgbox = TimerMessageBox("挑战失败, 重新再来!")
             else:
                 msgbox = TimerMessageBox("太棒了！ 挑战成功！！！")
             msgbox.exec()
 
-            if win_side == RED:
+            if win_side == cchess.RED:
                 self.currGame['ok'] = True
                 Globl.storage.updateEndBook(self.currGame)
                 self.endBookView.updateCurrent(self.currGame)
                 self.endBookView.nextGame()
             
         else:
-            win_msg = '红方被将死!' if win_side == BLACK else '黑方被将死!'
+            win_msg = '红方被将死!' if win_side == cchess.BLACK else '黑方被将死!'
             msgbox = TimerMessageBox(win_msg)
             msgbox.exec()
 
-        #self.engine_working = False
+        #self.isRunEngine = False
         #self.boardView.setViewOnly(True)
 
     #-----------------------------------------------------------
@@ -431,7 +414,7 @@ class MainWindow(QMainWindow):
         self.moveLock = threading.RLock()
         
         with self.moveLock:
-            Globl.engineManager.stop_thinking()
+            Globl.engineManager.stopThinking()
             self.clearAll()
             self.boardView.from_fen(self.init_fen, clear = True)
             position = {
@@ -557,9 +540,8 @@ class MainWindow(QMainWindow):
             else:
                 self.localSearch(position)
         
-        #确定是否进行本地引擎搜索
-        if isNew or self.isEngineAssitRun():
-            self.detectRunEngine()
+        #引擎搜索
+        self.runEngine(position)
         
     #------------------------------------------------------------------------------
     #None UI Events
@@ -609,7 +591,7 @@ class MainWindow(QMainWindow):
     def onTryEngineMove(self, engine_id, fenInfo):
         
         fen = fenInfo['fen']
-        logging.info(f'Engine[{engine_id}] BestMove {fenInfo}' )
+        logging.debug(f'Engine[{engine_id}] BestMove {fenInfo}' )
         
         #print('onEngineMoveBest', fenInfo)
 
@@ -624,7 +606,7 @@ class MainWindow(QMainWindow):
             return
 
         move_color = self.board.get_move_color()
-        if self.bind_engines[move_color] != engine_id:
+        if self.engineRunColor[move_color] != engine_id:
             return
         
         ok = self.onMoveGo(fenInfo['iccs'])
@@ -691,7 +673,7 @@ class MainWindow(QMainWindow):
                 prevInfo = Globl.fenCache[fen_prev]
                 if 'score' in prevInfo:
                     diff = prevInfo['score'] - fenInfo['score']
-                    if get_move_color(fen) == BLACK:
+                    if get_move_color(fen) == cchess.BLACK:
                         diff = -diff 
                     fenInfo['diff'] = diff
                     if (diff < -50) and ('best_next' in prevInfo):
@@ -702,57 +684,50 @@ class MainWindow(QMainWindow):
                     
     #--------------------------------------------------------------------
     #引擎相关
-    def detectRunEngine(self):
-        new_working = False
+    def enginePlayColor(self, engine_id, color, yes):
+        if yes:
+            self.engineRunColor[color] = engine_id
+        else:
+            self.engineRunColor[color] = 0
+        
+        needRun = (sum(self.engineRunColor) > 0)
 
-        for it in self.bind_engines:
-            if it is not None:
-                new_working = True
-                break
-        
-        #print(new_working, self.engine_working, (self.currPosition is not None)) 
-        
-        if new_working: # and (new_working != self.engine_working):
-            self.engine_working = True
-            if self.currPosition is not None:
+        if needRun:
+            if self.isRunEngine: #Engine已经在运行了
+                return
+            self.isRunEngine = True
+            if self.currPosition and not self.reviewMode:
                 self.runEngine(self.currPosition)
+        else:
+            if not self.isRunEngine: #Engine已经不运行了
+                return
+            Globl.engineManager.stopThinking()        
 
-        self.engine_working = new_working
+        self.isRunEngine = needRun
         
     def runEngine(self, position):
         
-        self.engineView.clear()
+        #self.engineView.clear()
         
-        if not self.engine_working:
-            return
+        #if not self.isRunEngine:
+        #    return
         
         fen_engine = fen = position['fen']
-        if fen == EMPTY_FEN:
+        if cchess.EMPTY_BOARD in fen:
             return 
                 
         move_color = get_move_color(fen)
         
-        need_go = True if self.bind_engines[0] else False
-        if not need_go:
-            if move_color == RED and (self.bind_engines[RED] is not None):
-                need_go = True
-        if not need_go:     
-            if move_color == BLACK and (self.bind_engines[BLACK] is not None):
-                need_go = True
-        
-        print(need_go, move_color, self.bind_engines)
-
-        if not need_go:
-            print('not_neeed_go')
-            return
-
-        if 'move' in position:
-            fen_engine = position['move'].to_engine_fen()
-        
-        ok = Globl.engineManager.go_from(fen_engine, fen)
-        if not ok:
-            QMessageBox.critical(self, f'{getTitle()}', '象棋引擎命令出错，请确认该程序能正常运行。')
-        
+        if self.engineRunColor[move_color] or self.engineRunColor[0]:
+            #首行会没有move项
+            if 'move' in position:
+                fen_engine = position['move'].to_engine_fen()
+            
+            params = self.engineView.getGoParams()
+            ok = Globl.engineManager.goFrom(fen_engine, fen, params)
+            if not ok:
+                QMessageBox.critical(self, f'{getTitle()}', '象棋引擎命令出错，请确认该程序能正常运行。')
+            
     #------------------------------------------------------------------------------
     #UI Events
     def onTryBoardMove(self,  move_from,  move_to):
@@ -859,7 +834,7 @@ class MainWindow(QMainWindow):
             self.showScoreBox.setChecked(True)
             self.reviewList = list(self.fenPosDict.keys())
             self.engineView.setTopGameLevel()
-            self.engineView.analysisModeBox.setChecked(True)
+            self.engineView.analysisBox.setChecked(True)
             self.historyView.inner.reviewByEngineBtn.setText('停止复盘')
             self.onReviewGameStep()
         else:
@@ -896,7 +871,7 @@ class MainWindow(QMainWindow):
         self.cloudModeBtn.setEnabled(True)
         self.engineModeBtn.setEnabled(True)
         
-        self.engineView.analysisModeBox.setChecked(False)
+        self.engineView.analysisBox.setChecked(False)
         self.engineView.restoreGameLevel(self.engineFightLevel)
             
     def setQueryMode(self, mode):
@@ -923,32 +898,20 @@ class MainWindow(QMainWindow):
 
     #---------------------------------------------------------------------------
     #Engine config
-    def enginePlayColor(self, engine_id, side, yes):
-        self.bind_engines[side] = engine_id if yes else None
-        self.detectRunEngine()
-
-    def isEngineAssitRun(self):
-        e_id = Globl.engineManager.id
-        return (self.bind_engines[0] == e_id)
-        
-    def setEngineAnalysisMode(self, yes):
-        e_id = Globl.engineManager.id
-        self.bind_engines[0] = e_id if yes else None
-        self.detectRunEngine()
-
     def onConfigEngine(self):
-        params = Globl.engineManager.get_config()
+        params = {} # Globl.engineManager.get_config()
 
         dlg = EngineConfigDialog()
         if dlg.config(params):
-            Globl.engineManager.update_config(params)
+            #Globl.engineManager.update_config(params)
+            pass
 
     def onRedBoxChanged(self, state):
         e_id = Globl.engineManager.id
-        self.enginePlayColor(e_id, RED, Qt.CheckState(state) == Qt.Checked)
+        red_checked = self.engineView.eRedBox.isChecked()
+        self.enginePlayColor(e_id, cchess.RED, red_checked)
         
         if self.gameMode in [GameMode.EndGame, GameMode.Fight]:
-            red_checked = self.engineView.eRedBox.isChecked()
             black_checked = self.engineView.eBlackBox.isChecked()
             
             if self.reviewMode:
@@ -959,11 +922,11 @@ class MainWindow(QMainWindow):
             
     def onBlackBoxChanged(self, state):
         e_id = Globl.engineManager.id
-        self.enginePlayColor(e_id, BLACK, Qt.CheckState(state) == Qt.Checked)
+        black_checked = self.engineView.eBlackBox.isChecked()
+        self.enginePlayColor(e_id, cchess.BLACK, black_checked)
 
         if self.gameMode in [GameMode.EndGame, GameMode.Fight]:
             red_checked = self.engineView.eRedBox.isChecked()
-            black_checked = self.engineView.eBlackBox.isChecked()
             
             if self.reviewMode:
                 return
@@ -971,8 +934,10 @@ class MainWindow(QMainWindow):
             if red_checked == black_checked:
                 self.engineView.eRedBox.setChecked(not black_checked)
         
-    def onAnalysisModeBoxChanged(self, state):
-        self.setEngineAnalysisMode(Qt.CheckState(state) == Qt.Checked)
+    def onAnalysisBoxChanged(self, state):
+        e_id = Globl.engineManager.id
+        yes = (Qt.CheckState(state) == Qt.Checked)
+        self.enginePlayColor(e_id, 0, yes)
     
     #------------------------------------------------------------------------------
     #UI Event Handler
@@ -1045,7 +1010,6 @@ class MainWindow(QMainWindow):
             if not self.getConfirm(f"当前棋谱已经走了 {steps} 步, 您确定要加载收藏并丢弃当前棋谱吗?"):
                 return 
             
-        #print('loadBookmark',position)
         self.bookmarkView.setEnabled(False)
 
         fen = position['fen']        
@@ -1090,7 +1054,6 @@ class MainWindow(QMainWindow):
         self.boardView.setShowBestMove(showBestMove)
     
     def onShowScoreChanged(self, state):
-        #showScore = (Qt.CheckState(state) == Qt.Checked)
         self.historyView.inner.setShowScore((Qt.CheckState(state) == Qt.Checked))
 
     def onEditBoard(self):
@@ -1426,7 +1389,7 @@ class MainWindow(QMainWindow):
         
 
     def readSettingsBeforeGameInit(self):
-        self.settings = QSettings('XQSoft', self.app.APP_NAME)
+        self.settings = QSettings('XQSoft', Globl.app.APP_NAME)
         
         #Test Only Code
         #self.settings.clear()
@@ -1492,11 +1455,9 @@ class MainWindow(QMainWindow):
         self.endBookView.writeSettings(self.settings)
 
     def about(self):
-        from .Version import release_version
-        
         QMessageBox.about(
-            self, f"关于 {self.app.APP_NAME}",
-            f"{self.app.APP_NAME_TEXT} Version {release_version}\n个人棋谱管家.\n 云库支持：https://www.chessdb.cn/\n 引擎支持：皮卡鱼(https://pikafish.org/)\n\n 联系作者：1053386709@qq.com\n QQ 进群：101947824\n"
+            self, f"关于 {Globl.app.APP_NAME}",
+            f"{Globl.app.APP_NAME_TEXT} Version {release_version}\n个人棋谱管家.\n 云库支持：https://www.chessdb.cn/\n 引擎支持：皮卡鱼(https://pikafish.org/)\n\n 联系作者：1053386709@qq.com\n QQ 进群：101947824\n"
         )
 
 #-----------------------------------------------------#
