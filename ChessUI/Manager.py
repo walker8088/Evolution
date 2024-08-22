@@ -29,7 +29,7 @@ class EngineManager(QObject):
         self.go_param = {}
         self.score_move = {}
         
-        self.stoped = True
+        self.isRunning = False
         self.isReady = False
 
     def get_config(self):
@@ -93,14 +93,23 @@ class EngineManager(QObject):
         self.thread.start()
 
     def stop(self):
-        self.stoped = True
+        self.isRunning = False
+    
+    def quit(self):
+        
+        if not self.isReady:
+            return 
+        
+        self.stop()
+        time.sleep(0.2)
+        self.engine.quit()
 
     def run(self):
-        self.stoped = False
-        while not self.stoped:
+        self.isRunning = True
+        while self.isRunning:
             self.run_once()
             time.sleep(0.1)
-        self.engine.stop_thinking()
+        #self.engine.stop_thinking()
 
     def run_once(self):
 

@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QStyle, QApplication, QMenu, QHBoxLayout, QVBoxLay
 
 from cchess import ChessBoard, RED, BLACK, FULL_INIT_FEN, EMPTY_FEN, iccs2pos
 
-from .Utils import getTitle, TimerMessageBox, get_free_memory_mb
+from .Utils import getTitle, TimerMessageBox, getFreeMem
 #from .Storage import *
 #from .Resource import *
 from .BoardWidgets import ChessBoardWidget, ChessBoardEditWidget
@@ -459,7 +459,7 @@ class ChessEngineWidget(QDockWidget):
         self.branchs = []
     
     def getDefaultMem(self):
-        mem = get_free_memory_mb()/2
+        mem = getFreeMem()/2
         m_count = int((mem // 100 ) * 100)
         if m_count > self.MAX_MEM: 
             m_count = self.MAX_MEM
@@ -494,7 +494,7 @@ class ChessEngineWidget(QDockWidget):
         self.eBlackBox.setChecked(settings.value("engineBlack", False, type=bool))
         self.analysisModeBox.setChecked(settings.value("engineAnalysisMode", False, type=bool))
     
-    def switchGameMode(self, gameMode):
+    def onSwitchGameMode(self, gameMode):
         if gameMode == gameMode.Fight:
             self.skillLevelSpin.setEnabled(True)
         else:
@@ -621,9 +621,6 @@ class ChessEngineWidget(QDockWidget):
             it.setText(2, move_info['move_text'])
 
         it.setData(0, Qt.UserRole, move_info['iccs_str'])
-
-    #def append_info(self, info):
-    #    self.positionView.addItem(info)
 
     def onEngineReady(self, engine_id, name, engine_options):
         

@@ -149,8 +149,11 @@ class OpenBookYfk():
     def loadBookFile(self, file_name):
         global openBookYfk
         #create = not Path(file_name).is_file()
-        openBookYfk.init(file_name, pragmas={'journal_mode': 'wal'})
-        
+        openBookYfk.init(file_name, pragmas={}) #'journal_mode': 'wal'})
+    
+    def close(self):
+        pass
+
     def getMoves(self, fen):
         
         board = ChessBoard(fen)

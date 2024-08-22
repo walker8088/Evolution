@@ -70,7 +70,7 @@ def image_to_cv(img: Image) -> np.ndarray:
 
 '''    
 #-----------------------------------------------------#
-def fen_moves_to_step(fen, moves): 
+def getStepsFromFenMoves(fen, moves): 
     fen_steps = []
     board = ChessBoard(fen)
     for iccs in moves:
@@ -90,7 +90,7 @@ def get_mac_address():
     mac = uuid.UUID(int=uuid.getnode()).hex[-12:]
     return ":".join([mac[e:e + 2] for e in range(0, 11, 2)])
 
-def get_free_memory_mb():
+def getFreeMem():
     return psutil.virtual_memory().available/1024/1024
         
 #-----------------------------------------------------#
@@ -107,7 +107,7 @@ class ThreadRunner(QThread):
         self.runner.run()
 
 #-----------------------------------------------------#
-def load_eglib(lib_file):
+def loadEglib(lib_file):
     games = OrderedDict()
 
     with open(lib_file, 'rb') as f:

@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QMenu, QWidget, QApplication
 from cchess import ChessBoard, RED, iccs2pos
 
 from .Utils import TimerMessageBox
-from .Resource import *
+from .Resource import qt_resource_data
 
 #-----------------------------------------------------#
 def scaleImage(img, scale):

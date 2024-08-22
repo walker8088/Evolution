@@ -23,10 +23,12 @@ from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from cchess import ChessBoard, Game, RED, BLACK, FULL_INIT_FEN, EMPTY_FEN, iccs2pos, pos2iccs, \
                     read_from_pgn, read_from_xqf, get_move_color, fench_to_text
 
-from .Utils import  fen_moves_to_step, TimerMessageBox, getTitle, load_eglib, GameMode
+from .Resource import qt_resource_data
+from .Utils import  GameMode, TimerMessageBox, getTitle, loadEglib, getStepsFromFenMoves
 from .BoardWidgets import ChessBoardWidget
 from .Widgets import PositionEditDialog, PositionHistDialog, ChessEngineWidget, EngineConfigDialog, BookmarkWidget, \
                     CloudDbWidget, MoveDbWidget, EndBookWidget, DockHistoryWidget
+
 from .Manager import EngineManager
 from .Storage import DataStore, CloudDB, OpenBookYfk
 
@@ -80,7 +82,7 @@ class MainWindow(QMainWindow):
 
         self.setWindowIcon(QIcon(':Images/app.ico'))
         
-        logging.basicConfig(filename = f'{self.app.APP_NAME}.log', filemode = 'w', level = logging.DEBUG) #logging.INFO) # 
+        logging.basicConfig(filename = f'{self.app.APP_NAME}.log', filemode = 'w', level = logging.INFO) #logging.DEBUG) # 
                 
         if platform.system() == "Windows":
             #在Windows状态栏上正确显示图标
@@ -176,7 +178,7 @@ class MainWindow(QMainWindow):
         
         self.switchGameMode(self.savedGameMode)
         
-        #self.readSettingsAfterGameInit()
+        self.readSettingsAfterGameInit()
 
         #splash.finish()
 
@@ -275,7 +277,8 @@ class MainWindow(QMainWindow):
        
         title = f'{self.app.APP_NAME_TEXT} - {GameTitle[self.gameMode]}'
         if subText:
-            title = f'{title} - {subText}'    
+            title = f'{title} - {subText}'
+
         self.setWindowTitle(title)
         
     def getGameIccsMoves(self):
@@ -284,6 +287,7 @@ class MainWindow(QMainWindow):
 
     def saveGameToDB(self):
         Globl.storage.saveMovesToBook(self.positionList[1:])
+        self.hasNewMove = False
 
     #-----------------------------------------------------------------------
     #Game 相关
@@ -291,7 +295,7 @@ class MainWindow(QMainWindow):
 
         #模式未变
         if self.gameMode == gameMode:
-            if (self.gameMode == GameMode.Free) and (len(self.positionList) > 1):
+            if (self.gameMode == GameMode.Free) and self.hasNewMove:
                 steps = len(self.positionList) - 1
                 if self.getConfirm(f"当前棋谱已经走了 {steps} 步, 您确定要从新开始吗?"):
                     self.initGame(FULL_INIT_FEN)
@@ -391,7 +395,7 @@ class MainWindow(QMainWindow):
 
             self.endBookView.nextGame()
         
-        self.engineView.switchGameMode(gameMode)
+        self.engineView.onSwitchGameMode(gameMode)
 
     def onGameOver(self, win_side):
         
@@ -433,7 +437,8 @@ class MainWindow(QMainWindow):
                 'move_side': self.boardView.get_move_color()
                 }
             self.onPositionChanged(position, isNew = True)
-     
+        self.hasNewMove = False
+
     def onMoveGo(self, move_iccs, quickMode = False): #, score = None):
 
         with self.moveLock:
@@ -441,16 +446,15 @@ class MainWindow(QMainWindow):
             self.isInMoveMode = True  #用historyMode保护在此期间引擎输出的move信息被忽略
             if not self.board.is_valid_iccs_move(move_iccs):
                 self.isInMoveMode = False
-                return
+                return False
            
-            
             #--------------------------------
             #尝试走棋
             move = self.board.move_iccs(move_iccs)
             if move is None:
                 #不能走就返回
                 self.isInMoveMode = False  #结束保护
-                return
+                return False
             #self.board在做了这个move动作后，棋子已经更新到新位置了
             #board是下个走子的position了
             self.board.next_turn()
@@ -474,8 +478,6 @@ class MainWindow(QMainWindow):
 
             self.onPositionChanged(position, isNew = True, quickMode = quickMode)
 
-            self.isInMoveMode = False  #结束保护
-            
             if move.is_checking:
                 if move.is_checkmate:
                     msg = "将死！"
@@ -492,7 +494,9 @@ class MainWindow(QMainWindow):
                 msg = ""
 
             self.statusBar().showMessage(msg)
-                
+            self.isInMoveMode = False  #结束保护
+            return True 
+
     def onPositionChanged(self, position, isNew = True, quickMode = False):   
         
         fen = position['fen']
@@ -620,7 +624,9 @@ class MainWindow(QMainWindow):
         if self.bind_engines[move_color] != engine_id:
             return
         
-        self.onMoveGo(fenInfo['iccs'])
+        ok = self.onMoveGo(fenInfo['iccs'])
+        if ok:
+            self.hasNewMove = True
 
     def onEngineMoveInfo(self, engine_id, fenInfo):
         
@@ -749,8 +755,9 @@ class MainWindow(QMainWindow):
             return
         
         move_iccs = pos2iccs(move_from, move_to)
-        self.onMoveGo(move_iccs)
-        self.hasNewMove = True
+        ok = self.onMoveGo(move_iccs)
+        if ok:
+            self.hasNewMove = True
 
     def onTryBookMove(self, moveInfo):
         
@@ -766,8 +773,9 @@ class MainWindow(QMainWindow):
         '''
 
         #print('onBookMove', moveInfo['iccs'])
-        self.onMoveGo(moveInfo['iccs'])
-        self.hasNewMove = True
+        ok = self.onMoveGo(moveInfo['iccs'])
+        if ok:
+            self.hasNewMove = True
                 
     def onBoardRightMouse(self, is_mouse_pressed):
         
@@ -964,7 +972,9 @@ class MainWindow(QMainWindow):
     #UI Event Handler
     def getConfirm(self, msg):
         ok = QMessageBox.question(self, getTitle(), msg, QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        return True if (ok == QMessageBox.Yes) else False
+        if (ok == QMessageBox.Yes):
+            return True 
+        return False
 
     def onDoFreeGame(self):
         self.switchGameMode(GameMode.Free)
@@ -973,9 +983,9 @@ class MainWindow(QMainWindow):
         self.switchGameMode(GameMode.Fight)
         
     def onDoEndGame(self):
-        if (self.gameMode != GameMode.EndGame) and (len(self.positionList) > 1):
+        if (self.gameMode != GameMode.EndGame) and self.hasNewMove:
             steps = len(self.positionList) - 1
-            if not self.getConfirm(f"当前棋谱已经走了 {steps} 步, 您确定要切换到其他模式并丢弃当前棋谱吗?"):
+            if not self.getConfirm(f"当前棋谱已经走了 {steps} 步, 您确定要切换到 [残局挑战] 模式并丢弃当前棋谱吗?"):
                 return
         self.switchGameMode(GameMode.EndGame)
 
@@ -996,10 +1006,8 @@ class MainWindow(QMainWindow):
         self.currGame = game
         self.book_moves = game['moves'].split(' ') if 'moves' in game else []
         
-        #print(game)
         fen = game['fen']
-        steps = fen_moves_to_step(fen, self.book_moves)
-        #print(game["book_name"])
+        steps = getStepsFromFenMoves(fen, self.book_moves)
         
         self.initGame(fen)
 
@@ -1026,7 +1034,7 @@ class MainWindow(QMainWindow):
         self.updateTitle(name)
 
     def loadBookmark(self, name, position):
-        if len(self.positionList) > 1:
+        if self.hasNewMove :
             steps = len(self.positionList) - 1
             if not self.getConfirm(f"当前棋谱已经走了 {steps} 步, 您确定要加载收藏并丢弃当前棋谱吗?"):
                 return 
@@ -1401,16 +1409,18 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         steps = len(self.positionList) - 1
         if self.hasNewMove and (self.gameMode in [GameMode.Free, GameMode.Fight]):
-            if not self.getConfirm(f"当前棋谱已经走了 {steps} 步, 尚未保存到文件，您确定要关闭程序吗?"):
-                event.ignore()            
+            if not self.getConfirm(f"当前棋谱已经走了 {steps} 步, 尚未保存，您确定要关闭程序吗?"):
+                event.ignore()
+
         self.writeSettings()
-        Globl.engineManager.stop()
-        time.sleep(0.6)
+        Globl.engineManager.quit()
+        time.sleep(0.5)
         Globl.storage.close()
-       
+        self.openBook.close()
+        
 
     def readSettingsBeforeGameInit(self):
-        self.settings = QSettings('Company', self.app.APP_NAME)
+        self.settings = QSettings('XQSoft', self.app.APP_NAME)
         
         #Test Only Code
         #self.settings.clear()
@@ -1419,11 +1429,14 @@ class MainWindow(QMainWindow):
         self.restoreState(self.settings.value("windowState", QByteArray()))
         
         self.soundVolume = self.settings.value("soundVolume", 30)
+        self.showMoveSoundAct.setChecked(self.soundVolume > 0)
+        
         self.savedGameMode = self.settings.value("gameMode", GameMode.Free)
         
         self.openBookFileName = self.settings.value("openBookFileName", str(Path('game','openbook.yfk')))
         self.lastOpenFolder = self.settings.value("lastOpenFolder", '')
 
+    def readSettingsAfterGameInit(self):
         flip = self.settings.value("flip", False, type=bool)
         self.flipBox.setChecked(flip)
         
@@ -1448,7 +1461,6 @@ class MainWindow(QMainWindow):
 
         self.endBookView.readSettings(self.settings)
         
-    #def readSettingsAfterGameInit(self):
     #    self.engineView.readSettings(self.settings)
 
     def writeSettings(self):
