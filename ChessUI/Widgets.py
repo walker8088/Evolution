@@ -415,7 +415,7 @@ class ChessEngineWidget(QDockWidget):
         
         self.eRedBox = QCheckBox("执红")
         self.eBlackBox = QCheckBox("执黑")
-        self.analysisModeBox = QCheckBox("分析模式")
+        self.analysisModeBox = QCheckBox("局面分析")
         self.configBtn = QPushButton("参数")
         self.reviewBtn = QPushButton("复盘分析")
 

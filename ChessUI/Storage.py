@@ -5,7 +5,8 @@ import logging
 from pathlib import Path
 #from collections import OrderedDict
 
-from cchess import ChessBoard, BLACK, iccs_mirror
+import cchess
+from cchess import ChessBoard, iccs_mirror
 
 from peewee import Model, CharField, IntegerField, BigIntegerField, TextField
 from playhouse.sqlite_ext import SqliteExtDatabase, JSONField
@@ -145,17 +146,31 @@ class OpenBookYfk():
     
     def __init__(self):
         buildCoordMap()
-
+        self.isBookOpened = False
+        
     def loadBookFile(self, file_name):
         global openBookYfk
+        
         #create = not Path(file_name).is_file()
         openBookYfk.init(file_name, pragmas={}) #'journal_mode': 'wal'})
-    
+        self.isBookOpened = True
+        
+        try:
+            self.getMoves(cchess.FULL_INIT_FEN)
+        except Exception as e:
+            logging.error(str(e))
+            self.isBookOpened = False
+            
+        return self.isBookOpened
+            
     def close(self):
         pass
 
     def getMoves(self, fen):
-        
+
+        if not self.isBookOpened:
+            return {}
+
         board = ChessBoard(fen)
         
         for b, b_state in [(board, ''), (board.mirror(), 'mirror')]:
@@ -191,7 +206,7 @@ class OpenBookYfk():
             m['text'] = move_it.to_text()
             m['score'] = score
             m['diff'] =  score - score_best
-            #if move_color == BLACK:
+            #if move_color == cchess.BLACK:
             #    m['score'] = -m['score']
             m['new_fen'] = move_it.board_done.to_fen()
             actions.append(m)
@@ -252,7 +267,7 @@ class OpenBook():
             m['text'] = move_it.to_text()
             m['score'] = score
             m['diff'] =  score - score_best
-            if move_color == BLACK:
+            if move_color ==cchess.BLACK:
                 m['score'] = -m['score']
             m['new_fen'] = move_it.board_done.to_fen()
             actions.append(m)
@@ -312,7 +327,7 @@ class OpenBookJson():
             m['text'] = move_it.to_text()
             m['score'] = score
             m['diff'] =  score - score_best
-            if move_color == BLACK:
+            if move_color == cchess.BLACK:
                 m['score'] = -m['score']
             m['new_fen'] = move_it.board_done.to_fen()
             actions.append(m)
@@ -407,7 +422,7 @@ class CloudDB(QObject):
                 act['text'] = move_it.to_text()
             act['score'] = int(act['score']) 
             act['diff'] =  act['score'] - score_best
-            if move_color == BLACK:
+            if move_color == cchess.BLACK:
                 act['score'] = -act['score']
             act['new_fen'] = move_it.board_done.to_fen()
 
@@ -424,7 +439,7 @@ class CloudDB(QObject):
         score_best = moves[0]['score']
         for it in moves:
             it['diff'] =  it['score'] - score_best
-            if move_color == BLACK :
+            if move_color == cchess.BLACK :
                 it['diff'] = -it['diff']
             if self.score_limit > 0 and abs(it['diff']) >  self.score_limit:
                     continue

@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 
 import time
+import logging
+
 #import threading
 
 #from PySide6 import *
@@ -60,6 +62,7 @@ class EngineManager(QObject):
         if not self.isReady:
             return False
 
+        logging.info(f'Engine[{self.id}] set_option: {name} = {value}')
         self.engine.set_option(name, value)
         return True
         
@@ -79,6 +82,8 @@ class EngineManager(QObject):
         self.score_move.clear()
         self.fen_engine = fen_engine
         self.fen = fen
+        
+        logging.info(f'Engine[{self.id}] go_from: {fen} {self.go_param}')
         
         return self.engine.go_from(fen_engine, self.go_param)
     

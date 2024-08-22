@@ -150,7 +150,7 @@ class MainWindow(QMainWindow):
 
         self.initSound()
         self.engine_working = False
-        self.bind_engines = [None, None, None, None]
+        self.bind_engines = [None, None, None]
 
         self.createActions()
         self.createMenus()
@@ -168,10 +168,15 @@ class MainWindow(QMainWindow):
         self.openBook = OpenBookYfk()
         
         self.readSettingsBeforeGameInit()
+        
+        if self.openBookFile.is_file():
+            if not self.openBook.loadBookFile(self.openBookFile):
+                msgbox = TimerMessageBox(f"打开开局库文件【{self.openBookFile}】出错, 请重新配置开局库。")
+                msgbox.exec()
+        else:
+            msgbox = TimerMessageBox(f"开局库文件【{self.openBookFile}】不存在, 请重新配置开局库。")
+            msgbox.exec()
 
-        if self.openBookFileName:
-            self.openBook.loadBookFile(Path(self.openBookFileName))
-    
         Globl.engineManager.start()
         self.cloudQuery = CloudDB(self)
         self.cloudQuery.query_result_signal.connect(self.onCloudQueryResult)
@@ -243,11 +248,9 @@ class MainWindow(QMainWindow):
         '''
             
     def loadOpenBook(self, file_name):
-        self.openBook = OpenBookYfk()
-        self.openBook.loadBookFile(file_name)
-        self.openBookFileName = file_name
-        #self.openBook.getMoves(FULL_INIT_FEN)
-
+        if self.openBook.loadBookFile(file_name):
+            self.openBookFile = Path(file_name)
+        
     #-----------------------------------------------------------------------
     #声音播放
     def initSound(self):
@@ -346,10 +349,10 @@ class MainWindow(QMainWindow):
             
             self.showScoreBox.setChecked(False)
 
-            self.cloudModeBtn.setEnabled(False)
+            self.cloudModeBtn.setEnabled(True)
             #self.cloudModeBtn.setChecked(False)
             self.engineModeBtn.setEnabled(True)
-            self.engineModeBtn.setChecked(True)
+            #self.engineModeBtn.setChecked(True)
             
             self.showBestBox.setEnabled(True)
             self.showBestBox.setChecked(False)
@@ -580,11 +583,10 @@ class MainWindow(QMainWindow):
         fen = position['fen']
         qResult = self.openBook.getMoves(fen)
         if not qResult:
-            return
-        
-        #self.updateFenCache(qResult)
-
-        self.cloudDbView.updateCloudMoves(qResult['actions'])
+            self.cloudDbView.updateCloudMoves([])
+        else:    
+            #self.updateFenCache(qResult)
+            self.cloudDbView.updateCloudMoves(qResult['actions'])
 
     def onCloudQueryResult(self, qResult):
         
@@ -607,6 +609,7 @@ class MainWindow(QMainWindow):
     def onTryEngineMove(self, engine_id, fenInfo):
         
         fen = fenInfo['fen']
+        logging.info(f'Engine[{engine_id}] BestMove {fenInfo}' )
         
         #print('onEngineMoveBest', fenInfo)
 
@@ -636,6 +639,7 @@ class MainWindow(QMainWindow):
         self.engineView.onEngineMoveInfo(fenInfo)
 
     def onEngineReady(self, engine_id, name, engine_options):
+        logging.info(f'Engine[{engine_id}] {name} Ready.' )
         self.engineView.readSettings(self.settings)
         self.engineView.onEngineReady(engine_id, name, engine_options)
 
@@ -728,7 +732,7 @@ class MainWindow(QMainWindow):
                 
         move_color = get_move_color(fen)
         
-        need_go = True if self.bind_engines[3] else False
+        need_go = True if self.bind_engines[0] else False
         if not need_go:
             if move_color == RED and (self.bind_engines[RED] is not None):
                 need_go = True
@@ -736,13 +740,15 @@ class MainWindow(QMainWindow):
             if move_color == BLACK and (self.bind_engines[BLACK] is not None):
                 need_go = True
         
+        print(need_go, move_color, self.bind_engines)
+
         if not need_go:
+            print('not_neeed_go')
             return
 
         if 'move' in position:
             fen_engine = position['move'].to_engine_fen()
         
-        #print('engine_move_from:', fen)
         ok = Globl.engineManager.go_from(fen_engine, fen)
         if not ok:
             QMessageBox.critical(self, f'{getTitle()}', '象棋引擎命令出错，请确认该程序能正常运行。')
@@ -923,11 +929,11 @@ class MainWindow(QMainWindow):
 
     def isEngineAssitRun(self):
         e_id = Globl.engineManager.id
-        return (self.bind_engines[3] == e_id)
+        return (self.bind_engines[0] == e_id)
         
     def setEngineAnalysisMode(self, yes):
         e_id = Globl.engineManager.id
-        self.bind_engines[3] = e_id if yes else None
+        self.bind_engines[0] = e_id if yes else None
         self.detectRunEngine()
 
     def onConfigEngine(self):
@@ -1188,7 +1194,7 @@ class MainWindow(QMainWindow):
             msgbox.exec()
             return
 
-        games = load_eglib(fileName)
+        games = loadEglib(fileName)
 
         Globl.storage.saveEndBook(lib_name, games)
         
@@ -1433,7 +1439,7 @@ class MainWindow(QMainWindow):
         
         self.savedGameMode = self.settings.value("gameMode", GameMode.Free)
         
-        self.openBookFileName = self.settings.value("openBookFileName", str(Path('game','openbook.yfk')))
+        self.openBookFile = Path(self.settings.value("openBookFile", str(Path('game','openbook.yfk'))))
         self.lastOpenFolder = self.settings.value("lastOpenFolder", '')
 
     def readSettingsAfterGameInit(self):
@@ -1479,7 +1485,7 @@ class MainWindow(QMainWindow):
         self.settings.setValue("engineMode", self.engineModeBtn.isChecked())
         self.settings.setValue("engineFightLevel", self.engineFightLevel)
 
-        self.settings.setValue("openBookFileName", self.openBookFileName)
+        self.settings.setValue("openBookFile", self.openBookFile)
         self.settings.setValue("lastOpenFolder", self.lastOpenFolder)
         
         self.engineView.writeSettings(self.settings)
