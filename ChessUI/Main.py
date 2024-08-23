@@ -517,15 +517,16 @@ class MainWindow(QMainWindow):
         if self.gameMode == GameMode.EndGame:        
             pass
         else:
-            self.moveDbView.onPositionChanged(position, isNew)
-
-            if (not quickMode) and ((self.queryMode == QueryMode.CloudFirst) or (self.reviewMode == ReviewMode.ByCloud)):
-                self.cloudQuery.startQuery(position)
-            else:
-                self.localSearch(position)
+            if not quickMode:
+                self.moveDbView.onPositionChanged(position, isNew)
+                if (self.queryMode == QueryMode.CloudFirst) or (self.reviewMode == ReviewMode.ByCloud):
+                    self.cloudQuery.startQuery(position)
+                if self.queryMode == QueryMode.EngineFirst:
+                    self.localSearch(position)
         
         #引擎搜索
-        self.runEngine(position)
+        if not quickMode:
+            self.runEngine(position)
         
     #------------------------------------------------------------------------------
     #None UI Events
@@ -835,7 +836,6 @@ class MainWindow(QMainWindow):
 
         if not self.reviewMode:
             self.reviewMode = ReviewMode.ByCloud
-            
             self.cloudModeBtn.setEnabled(False)
             self.engineModeBtn.setEnabled(False)
         
@@ -843,6 +843,7 @@ class MainWindow(QMainWindow):
             self.showScoreBox.setChecked(True)
             self.reviewList = list(self.fenPosDict.keys())
             self.historyView.inner.reviewByCloudBtn.setText('停止复盘')
+            self.engineView.onReviewBegin(self.reviewMode)
             self.onReviewGameStep()
         else:
             self.onReviewGameEnd(isCanceled=True)
