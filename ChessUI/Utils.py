@@ -80,10 +80,18 @@ def getStepsFromFenMoves(fen, moves):
         #fen = board.to_fen()
 
     return fen_steps    
-#-----------------------------------------------------#
 
-#def is_valid_move(fen, iccs)
-#    board = ChessBoard(fen)
+def getStepsTextFromFenMoves(fen, moves): 
+    fen_steps = []
+    board = ChessBoard(fen)
+    for iccs in moves:
+        move = board.move_iccs(iccs)
+        board.next_turn()
+        if move is not None:
+            fen_steps.append(move.to_text())
+        else:
+            fen_steps.append(iccs)
+    return fen_steps    
 
 #-----------------------------------------------------#
 def get_mac_address():

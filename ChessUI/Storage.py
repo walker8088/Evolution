@@ -2,7 +2,7 @@
 
 import time
 import logging
-from pathlib import Path
+#from pathlib import Path
 #from collections import OrderedDict
 
 import cchess
@@ -357,8 +357,10 @@ class CloudDB(QObject):
         
         self.move_cache = {}
         
-    def startQuery(self, fen, score_limit = 70):
-        
+    def startQuery(self, position, score_limit = 70):
+
+        fen = position['fen']
+
         if fen in self.move_cache:
             ret = self.move_cache[fen]
             self.query_result_signal.emit(ret)
@@ -377,6 +379,7 @@ class CloudDB(QObject):
         query.addQueryItem("action", 'queryall')
         url.setQuery(query)
         
+        self.tryCount = 1
         self.req = QNetworkRequest(url)
         self.reply = self.net_mgr.get(self.req)
         self.reply.finished.connect(self.onQueryFinished)

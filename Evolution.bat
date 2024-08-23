@@ -1,2 +1,2 @@
-python Evolution.py -d
+python Evolution.py
 pause

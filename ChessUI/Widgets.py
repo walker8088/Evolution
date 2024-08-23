@@ -9,11 +9,10 @@ from PySide6.QtWidgets import QStyle, QApplication, QMenu, QHBoxLayout, QVBoxLay
                             QWidget, QDockWidget, QDialogButtonBox, QButtonGroup, QListWidget, QListWidgetItem, QInputDialog, QAbstractItemView, \
                             QComboBox, QTreeWidgetItem, QTreeWidget, QSplitter, QMessageBox
 
-from cchess import ChessBoard, RED, BLACK, FULL_INIT_FEN, EMPTY_FEN, iccs2pos
+import cchess
+from cchess import ChessBoard #, iccs2pos
 
-from .Utils import getTitle, TimerMessageBox, getFreeMem
-#from .Storage import *
-#from .Resource import *
+from .Utils import GameMode, getTitle, TimerMessageBox, getFreeMem, getStepsTextFromFenMoves
 from .BoardWidgets import ChessBoardWidget, ChessBoardEditWidget
 
 from . import Globl
@@ -367,6 +366,8 @@ class ChessEngineWidget(QDockWidget):
         
         self.parent = parent
         self.engineManager = engineMgr
+        self.gameMode = None
+        self.engineFightLevel = 20
         
         self.MAX_MEM = 5000
         self.MAX_THREADS = os.cpu_count()
@@ -410,11 +411,16 @@ class ChessEngineWidget(QDockWidget):
         self.skillLevelSpin.setValue(20)
         self.skillLevelSpin.valueChanged.connect(self.onSkillLevelChanged)
         
-        self.eRedBox = QCheckBox("执红")
-        self.eBlackBox = QCheckBox("执黑")
+        self.redBox = QCheckBox("执红")
+        self.blackBox = QCheckBox("执黑")
         self.analysisBox = QCheckBox("局面分析")
         self.configBtn = QPushButton("参数")
         self.reviewBtn = QPushButton("复盘分析")
+        
+        self.configBtn.clicked.connect(self.onConfigEngine)
+        self.redBox.stateChanged.connect(self.onRedBoxChanged)
+        self.blackBox.stateChanged.connect(self.onBlackBoxChanged)
+        self.analysisBox.stateChanged.connect(self.onAnalysisBoxChanged)
 
         #hbox.addWidget(self.configBtn, 0)
         
@@ -433,8 +439,8 @@ class ChessEngineWidget(QDockWidget):
         #hbox.addWidget(self.multiPVSpin, 0)
         
         hbox.addWidget(QLabel('    '), 0)
-        hbox.addWidget(self.eRedBox, 0)
-        hbox.addWidget(self.eBlackBox, 0)
+        hbox.addWidget(self.redBox, 0)
+        hbox.addWidget(self.blackBox, 0)
         hbox.addWidget(self.engineLabel, 2)
         hbox.addWidget(self.analysisBox, 0)
         #hbox.addWidget(self.reviewBtn, 0)
@@ -473,9 +479,10 @@ class ChessEngineWidget(QDockWidget):
         settings.setValue("engineMemory", self.memorySpin.value())
         #settings.setValue("engineMultiPV", self.multiPVSpin.value())
         settings.setValue("engineSkillLevel", self.skillLevelSpin.value())
-        
-        settings.setValue("engineRed", self.eRedBox.isChecked()) 
-        settings.setValue("engineBlack", self.eBlackBox.isChecked()) 
+        settings.setValue("engineFightLevel", self.engineFightLevel)
+
+        settings.setValue("engineRed", self.redBox.isChecked()) 
+        settings.setValue("engineBlack", self.blackBox.isChecked()) 
         settings.setValue("engineAnalysis", self.analysisBox.isChecked()) 
 
     def readSettings(self, settings):
@@ -486,17 +493,13 @@ class ChessEngineWidget(QDockWidget):
         self.memorySpin.setValue(settings.value("engineMemory", self.getDefaultMem()))
         #self.multiPVSpin.setValue(settings.value("engineMultiPV", )
         self.skillLevelSpin.setValue(settings.value("engineSkillLevel", 20))
-        
-        self.eRedBox.setChecked(settings.value("engineRed", False, type=bool))
-        self.eBlackBox.setChecked(settings.value("engineBlack", False, type=bool))
+        self.engineFightLevel = settings.value("engineFightLevel", 20)
+
+        self.redBox.setChecked(settings.value("engineRed", False, type=bool))
+        self.blackBox.setChecked(settings.value("engineBlack", False, type=bool))
         self.analysisBox.setChecked(settings.value("engineAnalysis", False, type=bool))
     
-    def onSwitchGameMode(self, gameMode):
-        if gameMode == gameMode.Fight:
-            self.skillLevelSpin.setEnabled(True)
-        else:
-            self.skillLevelSpin.setEnabled(False)
-            
+    '''
     def setTopGameLevel(self):
         self.skillLevelSpin.setValue(20)
         self.skillLevelSpin.setEnabled(False)
@@ -507,6 +510,7 @@ class ChessEngineWidget(QDockWidget):
 
     def saveGameLevel(self):
         return self.skillLevelSpin.value()
+    '''
 
     def getGoParams(self):
         depth = self.DepthSpin.value()
@@ -536,58 +540,45 @@ class ChessEngineWidget(QDockWidget):
     def onViewBranch(self):
         self.parent.onViewBranch()
 
-    def onEngineMoveInfo(self, move_info):
+    def onEngineMoveInfo(self, fenInfo):
 
-        if not self.analysisBox.isChecked():
-            return
+        fen = fenInfo['fen']
+        
+        iccs_str = ','.join(fenInfo["moves"])
+        fenInfo['iccs_str'] = iccs_str
 
-        board = ChessBoard(move_info['fen'])
-        #board.from_fen(fen)
-
-        iccs_str = ','.join(move_info["moves"])
-        move_info['iccs_str'] = iccs_str
-
-        moves_text = []
-        for step_str in move_info["moves"]:
-            move_from, move_to = iccs2pos(step_str)
-            if board.is_valid_move(move_from, move_to):
-                move = board.move(move_from, move_to)
-                moves_text.append(move.to_text())
-                board.next_turn()
-            else:
-                #moves_text.append(f'err:{move_info["move"]}')
-                return
-
-        move_info['move_text'] = ','.join(moves_text)
+        moves_text = getStepsTextFromFenMoves(fen, fenInfo["moves"])
+        fenInfo['move_text'] = ','.join(moves_text)
 
         found = False
         for i in range(self.positionView.topLevelItemCount()):
             it = self.positionView.topLevelItem(i)
             iccs_it = it.data(0, Qt.UserRole)
             if iccs_str.find(iccs_it) == 0:  #新的步骤提示比已有的长
-                self.updateNode(it, move_info, True)
+                self.updateNode(it, fenInfo, True)
                 found = True
                 break
             elif iccs_it.find(iccs_str) == 0:  #新的步骤提示比已有的短
-                self.updateNode(it, move_info, False)
+                self.updateNode(it, fenInfo, False)
                 found = True
 
         if not found:
             it = QTreeWidgetItem(self.positionView)
-            self.updateNode(it, move_info, True)
+            self.updateNode(it, fenInfo, True)
 
         self.positionView.sortItems(0, Qt.DescendingOrder)  #Qt.AscendingOrder)
 
-    def updateNode(self, it, move_info, is_new_text=True):
-        if 'depth' in move_info:
-            depth = int(move_info['depth'])
-            it.setText(0, f'{depth:02d}')
-        if 'score' in move_info:
-            it.setText(1, str(move_info['score']))
-        if is_new_text:
-            it.setText(2, move_info['move_text'])
+    def updateNode(self, it, fenInfo, is_new_text=True):
 
-        it.setData(0, Qt.UserRole, move_info['iccs_str'])
+        if 'depth' in fenInfo:
+            depth = int(fenInfo['depth'])
+            it.setText(0, f'{depth:02d}')
+        if 'score' in fenInfo:
+            it.setText(1, str(fenInfo['score']))
+        if is_new_text:
+            it.setText(2, fenInfo['move_text'])
+
+        it.setData(0, Qt.UserRole, fenInfo['iccs_str'])
 
     def onEngineReady(self, engine_id, name, engine_options):
         
@@ -597,7 +588,80 @@ class ChessEngineWidget(QDockWidget):
         self.onMemoryChanged(self.memorySpin.value())
         #self.onMultiPVChanged(self.multiPVSpin.value())
         self.onSkillLevelChanged(self.skillLevelSpin.value())
+    
+    def onSwitchGameMode(self, gameMode):
+        
+        #保存在人机模式下的engineSkillLevel
+        if self.gameMode == GameMode.Fight:
+            self.engineFightLevel = self.skillLevelSpin.value()
+        
+        lastGameMode = self.gameMode   
+        self.gameMode = gameMode
 
+        if self.gameMode == GameMode.Free:
+            self.skillLevelSpin.setValue(20)
+            if lastGameMode == GameMode.EndGame:
+                self.redBox.setChecked(False)
+                self.blackBox.setChecked(False)
+            
+        elif self.gameMode == gameMode.Fight:
+            self.redBox.setChecked(False)
+            self.blackBox.setChecked(True)
+            self.analysisBox.setChecked(False)
+            self.skillLevelSpin.setValue(self.engineFightLevel)
+
+        elif self.gameMode == GameMode.EndGame:
+            self.redBox.setChecked(False)
+            self.blackBox.setChecked(True)
+            self.analysisBox.setChecked(False)
+            self.skillLevelSpin.setValue(20)
+            #self.skillLevelSpin.setEnabled(False)
+        
+    def onReviewBegin(self, mode):
+        self.savedSkillLevel = self.skillLevelSpin.value()
+        self.redBox.setEnabled(False)
+        self.blackBox.setEnabled(False)
+        self.analysisBox.setEnabled(False)
+        self.analysisBox.setChecked(True)
+        self.skillLevelSpin.setValue(20)
+
+    def onReviewEnd(self):
+        self.redBox.setEnabled(True)
+        self.blackBox.setEnabled(True)
+        self.analysisBox.setEnabled(True)
+        self.skillLevelSpin.setValue(self.savedSkillLevel)
+
+    def onConfigEngine(self):
+        params = {} # self.engineManager.get_config()
+
+        dlg = EngineConfigDialog()
+        if dlg.config(params):
+            #self.engineManager.update_config(params)
+            pass
+
+    def onRedBoxChanged(self, state):
+        
+        red_checked = self.redBox.isChecked()
+        self.parent.enginePlayColor(self.engineManager.id, cchess.RED, red_checked)
+        
+        if self.gameMode in [GameMode.EndGame, GameMode.Fight]:
+            black_checked = self.blackBox.isChecked()
+            if red_checked == black_checked:
+                self.blackBox.setChecked(not red_checked)
+            
+    def onBlackBoxChanged(self, state):
+
+        black_checked = self.blackBox.isChecked()
+        self.parent.enginePlayColor(self.engineManager.id, cchess.BLACK, black_checked)
+
+        if self.gameMode in [GameMode.EndGame, GameMode.Fight]:
+            red_checked = self.redBox.isChecked()
+            if red_checked == black_checked:
+                self.redBox.setChecked(not black_checked)
+        
+    def onAnalysisBoxChanged(self, state):
+        self.parent.enginePlayColor(self.engineManager.id, 0, (Qt.CheckState(state) == Qt.Checked))
+        
     def clear(self):
         self.positionView.clear()
 
@@ -670,9 +734,9 @@ class MoveDbWidget(QDockWidget):
 
     def onDeleteBranch(self):
         item = self.moveListView.currentItem()
-        move_info = item.data(0, Qt.UserRole)
-        fen = move_info['fen']
-        iccs = move_info['iccs']
+        fenInfo = item.data(0, Qt.UserRole)
+        fen = fenInfo['fen']
+        iccs = fenInfo['iccs']
         board = ChessBoard()
         todoList = [(fen, iccs)]
         todoListNew = []
@@ -769,7 +833,7 @@ class MoveDbWidget(QDockWidget):
                     act['score'] = fenInfo['score']
             book_moves.append(act)
             
-        is_reverse  = True if board.get_move_color() == RED else False        
+        is_reverse  = True if board.get_move_color() == cchess.RED else False        
         book_moves.sort(key=key_func, reverse = is_reverse)
         
         self.updateBookMoves(book_moves)
@@ -821,22 +885,23 @@ class CloudDbWidget(QDockWidget):
 
         self.parent = parent
          
-        self.cloudMovesView = QTreeWidget()
-        self.cloudMovesView.setColumnCount(1)
-        self.cloudMovesView.setHeaderLabels(["备选着法", "红优分", '', '备注'])
-        self.cloudMovesView.setColumnWidth(0, 80)
-        self.cloudMovesView.setColumnWidth(1, 60)
-        self.cloudMovesView.setColumnWidth(2, 1)
-        self.cloudMovesView.setColumnWidth(3, 20)
-        self.cloudMovesView.clicked.connect(self.onSelectIndex)
+        self.actionsView = QTreeWidget()
+        self.actionsView.setColumnCount(1)
+        self.actionsView.setHeaderLabels(["备选着法", "红优分", '', '备注'])
+        self.actionsView.setColumnWidth(0, 80)
+        self.actionsView.setColumnWidth(1, 60)
+        self.actionsView.setColumnWidth(2, 1)
+        self.actionsView.setColumnWidth(3, 20)
+        self.actionsView.clicked.connect(self.onSelectIndex)
 
         self.importFollowMode = False
 
-        self.setWidget( self.cloudMovesView)
+        self.setWidget( self.actionsView)
 
     def clear(self):
-        self.cloudMovesView.clear()
-
+        self.actionsView.clear()
+        self.update()
+        
     def contextMenuEvent(self, event):
         return
         menu = QMenu(self)
@@ -850,10 +915,10 @@ class CloudDbWidget(QDockWidget):
         #self.onSelectIndex(0)
         pass
         
-    def updateCloudMoves(self, moves):
-        self.cloudMovesView.clear()
-        for act in moves:
-            item = QTreeWidgetItem(self.cloudMovesView)
+    def updateActions(self, actions):
+        self.actionsView.clear()
+        for act in actions:
+            item = QTreeWidgetItem(self.actionsView)
             item.setText(0, act['text'])    
             item.setText(1, str(act['score']))
             item.setTextAlignment(1, Qt.AlignRight)
@@ -862,9 +927,10 @@ class CloudDbWidget(QDockWidget):
                 item.setTextAlignment(2, Qt.AlignCenter)
             
             item.setData(0, Qt.UserRole, act)
-       
+        self.update()
+
     def onSelectIndex(self, index):
-        item = self.cloudMovesView.currentItem()
+        item = self.actionsView.currentItem()
         act = item.data(0, Qt.UserRole)
         self.selectMoveSignal.emit(act)
 
@@ -909,15 +975,16 @@ class EndBookWidget(QDockWidget):
         self.bookView.currentItemChanged.connect(self.onCurrentItemChanged)
     
     def updateBooks(self):
-        #super.update()
+      
         self.currBookName = ''
+        self.currBook = []
         self.currGame = None
 
         self.books = Globl.storage.getAllEndBooks()
-
         self.bookCombo.clear()
-        self.bookCombo.addItems(self.books.keys())
-        self.bookCombo.setCurrentIndex(0)
+        if len(self.books) > 0:
+            self.bookCombo.addItems(self.books.keys())
+            self.bookCombo.setCurrentIndex(0)
     
     def nextGame(self):
 
@@ -959,7 +1026,7 @@ class EndBookWidget(QDockWidget):
         
     def onImportBtnClick(self):
         self.parent.onImportEndBook()
-        self.update()
+        self.updateBooks()
 
     def onBookChanged(self, book_name):
 
@@ -968,11 +1035,12 @@ class EndBookWidget(QDockWidget):
         if book_name == '':
             return
 
-        self.currBookName = book_name
-        self.currBook = self.books[self.currBookName]
-        self.currGame = None
+        if book_name in self.books:
+            self.currBookName = book_name
+            self.currBook = self.books[self.currBookName]
+            self.currGame = None
 
-        self.updateCurrentBook()
+            self.updateCurrentBook()
 
     def onCurrentItemChanged(self, current, previous):
         if current is None:
@@ -985,7 +1053,7 @@ class EndBookWidget(QDockWidget):
         copyAction = menu.addAction("复制Fen到剪贴板")
         menu.addSeparator()
         remarkAction = menu.addAction("标记未完成")
-        remarkAllAction = menu.addAction("标记未完成（全部）")
+        remarkAllAction = menu.addAction("标记全部未完成")
         action = menu.exec_(self.mapToGlobal(event.pos()))
         if action == copyAction:
             qApp.clipboard().setText(self.parent.board.to_fen())
@@ -1171,25 +1239,25 @@ class PositionEditDialog(QDialog):
         cancelBtn.clicked.connect(self.close)
 
     def onInitBoard(self):
-        self.boardEdit.from_fen(FULL_INIT_FEN)
+        self.boardEdit.from_fen(cchess.FULL_INIT_FEN)
 
     def onClearBoard(self):
-        self.boardEdit.from_fen(EMPTY_FEN)
+        self.boardEdit.from_fen(cchess.EMPTY_FEN)
 
     def onRedMoveBtnClicked(self):
-        self.boardEdit.set_move_color(RED)
+        self.boardEdit.set_move_color(cchess.RED)
 
     def onBlackMoveBtnClicked(self):
-        self.boardEdit.set_move_color(BLACK)
+        self.boardEdit.set_move_color(cchess.BLACK)
 
     def onBoardFenChanged(self, fen):
 
         self.fenLabel.setText(fen)
 
         color = self.boardEdit.get_move_color()
-        if color == RED:
+        if color == cchess.RED:
             self.redMoveBtn.setChecked(True)
-        elif color == BLACK:
+        elif color == cchess.BLACK:
             self.blackMoveBtn.setChecked(True)
 
     def edit(self, fen_str):
@@ -1228,7 +1296,7 @@ class PositionHistDialog(QDialog):
         #cancelBtn.clicked.connect(self.onClose)
 
     def onInitBoard(self):
-        self.boardEdit.from_fen(FULL_INIT_FEN)
+        self.boardEdit.from_fen(cchess.FULL_INIT_FEN)
         self.fenLabel.setText(self.boardEdit.to_fen())
 
 
