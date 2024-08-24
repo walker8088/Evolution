@@ -25,8 +25,8 @@ from cchess import ChessBoard, Game, iccs2pos, pos2iccs, read_from_pgn, read_fro
 from .Version import release_version
 from .Resource import qt_resource_data
 from .Manager import EngineManager
-from .Storage import DataStore, CloudDB, OpenBookYfk
-from .Utils import GameMode, TimerMessageBox, getTitle, loadEglib, getStepsFromFenMoves
+from .Storage import CloudDB, OpenBookYfk, BookmarkStore, EndBookStore, LocalBookStore
+from .Utils import GameMode, ReviewMode, TimerMessageBox, getTitle, getStepsFromFenMoves
 from .BoardWidgets import ChessBoardWidget
 from .Widgets import PositionEditDialog, PositionHistDialog, ChessEngineWidget, EngineConfigDialog, BookmarkWidget, \
                     CloudDbWidget, MoveDbWidget, EndBookWidget, DockHistoryWidget
@@ -51,12 +51,7 @@ class ActionType(Enum):
     CAPTRUE = auto()
     CHECKING = auto()
     MATE = auto()
-    
-#-----------------------------------------------------#
-class ReviewMode(Enum):
-    ByCloud = auto()
-    ByEngine = auto()
-    
+        
 #-----------------------------------------------------#
 class QueryMode(Enum):
     CloudFirst = auto()
@@ -88,8 +83,9 @@ class MainWindow(QMainWindow):
         gamePath = Path('Game')
         gamePath.mkdir(exist_ok=True)
         
-        Globl.storage = DataStore()
-        Globl.storage.open(Path(gamePath, 'Evolution.jdb'))
+        Globl.bookmarkStore = BookmarkStore(Path(gamePath, 'bookmarks.json'))
+        Globl.endbookStore = EndBookStore(Path(gamePath, 'endbooks.json'))
+        Globl.localbookStore = LocalBookStore(Path(gamePath, 'localbooks.json'))
 
         Globl.engineManager = EngineManager(self, id = 1)
         
@@ -275,7 +271,7 @@ class MainWindow(QMainWindow):
         return (self.positionList[0]['fen'], moves)
 
     def saveGameToDB(self):
-        Globl.storage.saveMovesToBook(self.positionList[1:])
+        Globl.localbookStore.saveMovesToBook(self.positionList[1:])
         self.hasNewMove = False
 
     #-----------------------------------------------------------------------
@@ -334,7 +330,7 @@ class MainWindow(QMainWindow):
             self.showBestBox.setEnabled(True)
             self.showBestBox.setChecked(False)
         
-            self.openFileAct.setEnabled(False)
+            self.openFileAct.setEnabled(True)
             self.editBoardAct.setEnabled(True)
         
             if self.lastGameMode in [None, GameMode.EndGame]:
@@ -377,7 +373,7 @@ class MainWindow(QMainWindow):
 
             if win_side == cchess.RED:
                 self.currGame['ok'] = True
-                Globl.storage.updateEndBook(self.currGame)
+                Globl.endbookStore.updateEndBook(self.currGame)
                 self.endBookView.updateCurrent(self.currGame)
                 self.endBookView.nextGame()
             
@@ -509,7 +505,8 @@ class MainWindow(QMainWindow):
              self.boardView.clearPickup()
         
         #清空显示，同步棋盘状态    
-        self.engineView.clear()       
+        self.engineView.clear()
+        self.moveDbView.clear()     
         self.cloudDbView.clear()
         self.boardView.from_fen(fen)
         
@@ -720,49 +717,7 @@ class MainWindow(QMainWindow):
             else:
                 QMessageBox.critical(self, f'{getTitle()}', '象棋引擎命令出错，请确认该程序能正常运行。')
         
-        #print('isRunEngine', self.isRunEngine)
-
-    '''    
-    #---------------------------------------------------------------------------
-    #Engine config
-    def onConfigEngine(self):
-        params = {} # Globl.engineManager.get_config()
-
-        dlg = EngineConfigDialog()
-        if dlg.config(params):
-            #Globl.engineManager.update_config(params)
-            pass
-
-    def onRedBoxChanged(self, state):
-        e_id = Globl.engineManager.id
-        red_checked = self.engineView.redBox.isChecked()
-        #print('onRedBoxChanged', red_checked)
-        self.enginePlayColor(e_id, cchess.RED, red_checked)
-        
-        if self.gameMode in [GameMode.EndGame, GameMode.Fight]:
-            black_checked = self.engineView.blackBox.isChecked()
-            if red_checked == black_checked:
-                self.engineView.blackBox.setChecked(not red_checked)
-            
-    def onBlackBoxChanged(self, state):
-        e_id = Globl.engineManager.id
-        black_checked = self.engineView.blackBox.isChecked()
-        #print('onBlackBoxChanged', black_checked)
-        
-        self.enginePlayColor(e_id, cchess.BLACK, black_checked)
-
-        if self.gameMode in [GameMode.EndGame, GameMode.Fight]:
-            red_checked = self.engineView.redBox.isChecked()
-            if red_checked == black_checked:
-                self.engineView.redBox.setChecked(not black_checked)
-        
-    def onAnalysisBoxChanged(self, state):
-        e_id = Globl.engineManager.id
-        yes = (Qt.CheckState(state) == Qt.Checked)
-        #print('onAnalysisBoxChanged', yes)
-        self.enginePlayColor(e_id, 0, yes)
-    '''
-
+ 
     #------------------------------------------------------------------------------
     #UI Events
     def onTryBoardMove(self,  move_from,  move_to):
@@ -887,17 +842,16 @@ class MainWindow(QMainWindow):
         
         self.historyView.inner.reviewByCloudBtn.setText('云库复盘')
         self.historyView.inner.reviewByEngineBtn.setText('引擎复盘')
-        
-        self.reviewMode = None
+        self.engineView.onReviewEnd(self.reviewMode)
         
         if not isCanceled:
             msgbox = TimerMessageBox("  复盘分析完成。  ", timeout=1)
             msgbox.exec()
         
+        self.reviewMode = None
         self.cloudModeBtn.setEnabled(True)
         self.engineModeBtn.setEnabled(True)
         
-        self.engineView.onReviewEnd()
             
     def setQueryMode(self, mode):
         
@@ -1120,29 +1074,6 @@ class MainWindow(QMainWindow):
 
         self.loadOpenBook(fileName)
 
-    def onImportEndBook(self):
-        options = QFileDialog.Options()
-        #options |= QFileDialog.DontUseNativeDialog
-        fileName, _ = QFileDialog.getOpenFileName(
-            self,
-            "打开杀局谱文件",
-            "",
-            "杀局谱文件(*.eglib);;All Files (*)",
-            options=options)
-        if not fileName:
-            return
-
-        lib_name = Path(fileName).stem
-        if Globl.storage.isEndBookExist(lib_name):
-            msgbox = TimerMessageBox(f"杀局谱[{lib_name}]系统中已经存在，不能重复导入。",
-                                     timeout=2)
-            msgbox.exec()
-            return
-
-        games = loadEglib(fileName)
-
-        Globl.storage.saveEndBook(lib_name, games)
-        
     #------------------------------------------------------------------------------
     #UI Base
     def createActions(self):
@@ -1366,9 +1297,11 @@ class MainWindow(QMainWindow):
         self.writeSettings()
         Globl.engineManager.quit()
         time.sleep(0.6)
-        self.openBook.close()
-        Globl.storage.close()
         
+        self.openBook.close()
+        Globl.bookmarkStore.close()
+        Globl.endbookStore.close()
+        Globl.localbookStore.close()
 
     def readSettingsBeforeGameInit(self):
         self.settings = QSettings('XQSoft', Globl.app.APP_NAME)

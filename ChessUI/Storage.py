@@ -27,7 +27,7 @@ def trim_fen(fen):
 
 
 #------------------------------------------------------------------------------
-def updateFenCache(qResult):
+def updateCache(qResult):
     fen = qResult['fen']
     if fen not in Globl.fenCache:
         Globl.fenCache[fen] = {}
@@ -456,7 +456,7 @@ class CloudDB(QObject):
             
         self.move_cache[self.fen]  = ret
         
-        updateFenCache(ret)
+        updateCache(ret)
 
         self.reply = None
         self.query_result_signal.emit(ret)
@@ -475,28 +475,64 @@ class CloudDB(QObject):
             self.query_result_signal.emit({})
         
 #------------------------------------------------------------------------------
-class DataStore():
-    def __init__(self):
-        self.db = None
-
-    def open(self, file):
-
-        self.db = TinyDB(file)
-
-        self.mygame_table = self.db.table('mygame')
-        self.bookmark_table = self.db.table('bookmark')
-        self.endbook_table = self.db.table('endbook')
-        self.position_table = self.db.table('position')
+#Bookmarks
+class BookmarkStore():
+    def __init__(self, file_name):
+       self.db = TinyDB(file_name)
 
     def close(self):
         self.db.close()
+        
+    def getAllBookmarks(self):
+        return self.db.search(Query().name.exists())
+        
+    def saveBookmark(self, name, fen, moves=None):
 
-    #------------------------------------------------------------------------------
-    #EndBooks
+        if self.isFenInBookmark(fen) or self.isNameInBookmark(name) > 0:
+            return False
+
+        item = {'name': name, 'fen': fen, 'moves': moves}
+
+        if moves is not None:
+            item['moves'] = moves
+
+        self.db.insert(item)
+
+        return True
+
+    def isFenInBookmark(self, fen):
+        q = Query()
+        return len(self.db.search(q.fen == fen)) > 0
+
+    def isNameInBookmark(self, name):
+        q = Query()
+        return len(self.db.search(q.name == name)) > 0
+
+    def removeBookmark(self, name):
+        q = Query()
+        return self.db.remove(q.name == name)
+
+    def changeBookmarkName(self, fen, new_name):
+        q = Query()
+        ret = self.db.update({'name': new_name},
+                                         (q.fen == fen))
+        if len(ret) == 1:
+            return True
+        return False
+
+#------------------------------------------------------------------------------
+#Endbooks
+class EndBookStore():
+    def __init__(self, file_name):
+        self.endbooks = TinyDB(file_name)
+    
+    def close(self):
+        self.endbooks.close()
+
     def getAllEndBooks(self):
         q = Query()
         books = {}
-        ret = self.endbook_table.search(q.book_name.exists())
+        ret = self.endbooks.search(q.book_name.exists())
         for it in ret:
             if 'ok' not in it:
                 it['ok'] = False
@@ -511,88 +547,56 @@ class DataStore():
 
         for game in games:
             game['book_name'] = book_name
-            ret = self.endbook_table.search((q.book_name == book_name)
+            ret = self.endbooks.search((q.book_name == book_name)
                                             & (q.name == game['name']))
             if len(ret) == 0:
-                self.endbook_table.insert(game)
+                self.endbooks.insert(game)
                 #yield game['name']
     
     def updateEndBook(self, game):
         q = Query()
         
-        ret = self.endbook_table.search((q.book_name ==  game['book_name'] )
+        ret = self.endbooks.search((q.book_name ==  game['book_name'] )
                                             & (q.name == game['name']))
         if len(ret) != 1:
             raise Exception(f"Game Not Exist：{game}")
         else:    
-            self.endbook_table.update({'ok':game['ok']}, ((q.book_name ==  game['book_name'])
+            self.endbooks.update({'ok':game['ok']}, ((q.book_name ==  game['book_name'])
                                             & (q.name == game['name'])))
             
     def isEndBookExist(self, book_name):
         q = Query()
-        ret = self.endbook_table.search((q.book_name == book_name))
+        ret = self.endbooks.search((q.book_name == book_name))
         return len(ret) >= 1
 
     def deleteEndBook(self, book_name):
         q = Query()
-        self.endbook_table.remove((q.book_name == book_name))
+        self.endbooks.remove((q.book_name == book_name))
+    
+    
+#------------------------------------------------------------------------------
+#LocalBooks
+class LocalBookStore():
+    def __init__(self, file_name):
+        self.localbooks = TinyDB(file_name)
 
-    #------------------------------------------------------------------------------
-    #Bookmarks
-    def getAllBookmarks(self):
-        return self.bookmark_table.search(Query().name.exists())
+    def close(self):
+        self.localbooks.close()
 
-    def saveBookmark(self, name, fen, moves=None):
-
-        if self.isFenInBookmark(fen) or self.isNameInBookmark(name) > 0:
-            return False
-
-        item = {'name': name, 'fen': fen, 'moves': moves}
-
-        if moves is not None:
-            item['moves'] = moves
-
-        self.bookmark_table.insert(item)
-
-        return True
-
-    def isFenInBookmark(self, fen):
-        q = Query()
-        return len(self.bookmark_table.search(q.book_fen == fen)) > 0
-
-    def isNameInBookmark(self, name):
-        q = Query()
-        return len(self.bookmark_table.search(q.name == name)) > 0
-
-    def removeBookmark(self, name):
-        q = Query()
-        return self.bookmark_table.remove(q.name == name)
-
-    def changeBookmarkName(self, fen, new_name):
-        q = Query()
-        ret = self.bookmark_table.update({'name': new_name},
-                                         (q.book_fen == fen))
-
-        if len(ret) == 1:
-            return True
-        return False
-
-    #------------------------------------------------------------------------------
-    #BookMoves
     def getAllBookMoves(self, fen = None):
         if fen :
-            ret = self.position_table.search(Query().fen == fen)
+            ret = self.localbooks.search(Query().fen == fen)
         else:
-            ret = self.position_table.all()    
+            ret = self.localbooks.all()    
         return ret
     
     def delBookMoves(self, fen, iccs):
         q = Query()
         
         if iccs is None: #删除该fen对应的数据记录
-            self.position_table.remove(q.fen == fen)
+            self.localbooks.remove(q.fen == fen)
         else: #删除该fen和该iccs对应的数据记录
-            ret = self.position_table.search(q.fen == fen)
+            ret = self.localbooks.search(q.fen == fen)
             if len(ret) == 0:
                 return False
             record = ret[0]
@@ -606,10 +610,10 @@ class DataStore():
             if found:
                 if len(new_record) > 0: 
                     #该fen尚有其它actions
-                    self.position_table.update({'actions': new_record}, q.fen == fen)
+                    self.localbooks.update({'actions': new_record}, q.fen == fen)
                 else:
                     #该fen下的actions已经为空了
-                    self.position_table.remove(q.fen == fen)
+                    self.localbooks.remove(q.fen == fen)
                     
     def saveMovesToBook(self, positions):
         board = ChessBoard()
@@ -622,12 +626,12 @@ class DataStore():
             board.from_fen(fen)
             if not board.is_valid_iccs_move(move_iccs):
                 raise Exception(f'**ERROR** {fen} move {move_iccs}')
-            ret = self.position_table.search(q.fen == fen)
+            ret = self.localbooks.search(q.fen == fen)
             
             action_to_save = {'iccs': move_iccs}
             
             if len(ret) == 0:
-                self.position_table.insert({
+                self.localbooks.insert({
                     'fen': fen,
                     'actions': [
                         action_to_save,
@@ -641,12 +645,12 @@ class DataStore():
                     if act['iccs'] == move_iccs:
                         act_found = True
                         act.update(action_to_save)
-                        self.position_table.update({'actions': db_actions},
+                        self.localbooks.update({'actions': db_actions},
                                                    q.fen == fen)
                         break
                 if not act_found:
                     db_actions.append(action_to_save)
-                    self.position_table.update({'actions': db_actions},
+                    self.localbooks.update({'actions': db_actions},
                                                q.fen == fen)
             else:
                 print('database error', ret)
@@ -663,7 +667,7 @@ for name, games in books.items():
     print(games)
 '''
 '''
-position_table = db1.table('position')
+localbook = db1.table('position')
 ret = db2.search((q.fen.exists() & q.actions.exists()))
 for it in ret:
     if 'name' in it:
@@ -671,15 +675,15 @@ for it in ret:
         continue
     new_fen = ' '.join(it['fen'].split(' ')[:2])
     it['fen'] = new_fen
-    ret = position_table.search(Query().fen == new_fen)
+    ret = localbook.search(Query().fen == new_fen)
     if len(ret) == 0:
-        position_table.insert(it)
+        localbook.insert(it)
         print("inserted", it)
     else:
         print("Error", ret)
         break
 
-bookmark_table = db1.table('bookmark')
+bookmarks = db1.table('bookmark')
 ret = db2.search(Query().bookmark_name.exists())
 for it in ret:
     new = {}
@@ -689,7 +693,7 @@ for it in ret:
         new['moves'] = []
         for iccs in it['moves']:
             new['moves'] .append({'iccs': iccs})
-    bookmark_table.insert(new)
+    bookmarks.insert(new)
     print(it)
     print(new)
 '''

@@ -27,6 +27,11 @@ class GameMode(Enum):
     Online = auto()
 
 #-----------------------------------------------------#
+class ReviewMode(Enum):
+    ByCloud = auto()
+    ByEngine = auto()
+
+#-----------------------------------------------------#
 @dataclass
 class Position:
     fen: str
