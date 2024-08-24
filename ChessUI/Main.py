@@ -126,10 +126,6 @@ class MainWindow(QMainWindow):
         #self.addDockWidget(Qt.LeftDockWidgetArea, self.myGameView)
         self.addDockWidget(Qt.BottomDockWidgetArea, self.engineView)
         
-        self.isRunEngine = False
-        self.engineRunColor = [0, 0, 0]
-        self.initEngine()
-        
         Globl.engineManager.readySignal.connect(self.onEngineReady)
         Globl.engineManager.moveBestSignal.connect(self.onTryEngineMove)
         Globl.engineManager.moveInfoSignal.connect(self.onEngineMoveInfo)
@@ -145,11 +141,18 @@ class MainWindow(QMainWindow):
         self.reviewMode = None
         self.lastOpenFolder = ''
         self.hasNewMove = False
-
+        self.isRunEngine = False
+        self.engineRunColor = [0, 0, 0]
+        
         self.clearAll()
         
+        ok = self.initEngine()
+        if not ok:
+            sys.exit(-1)
+
+        Globl.engineManager.start()
+            
         self.openBook = OpenBookYfk()
-        
         self.readSettingsBeforeGameInit()
         
         if self.openBookFile.is_file():
@@ -160,7 +163,6 @@ class MainWindow(QMainWindow):
             msgbox = TimerMessageBox(f"开局库文件【{self.openBookFile}】不存在, 请重新配置开局库。")
             msgbox.exec()
 
-        Globl.engineManager.start()
         self.cloudQuery = CloudDB(self)
         self.cloudQuery.query_result_signal.connect(self.onCloudQueryResult)
         
@@ -734,7 +736,28 @@ class MainWindow(QMainWindow):
         
         if self.isInMoveMode or  self.isHistoryMode:
             return
+            
+        #判断重复局面次数，大于2次被认为是循环导入
+        fen = moveInfo['fen']
+        iccs = moveInfo['iccs']
+        board = ChessBoard(fen)
         
+        move = board.move_iccs(iccs)
+        if move is None:
+            return
+
+        board.next_turn()
+        new_fen = board.to_fen()
+        
+        fen_count = 0
+        for position in self.positionList:
+            if new_fen == position['fen']:
+                fen_count += 1
+        
+        #重复的局面次数过多，不再导入
+        if fen_count >= 2:
+            return
+
         ok = self.onMoveGo(moveInfo['iccs'])
         if ok:
             self.hasNewMove = True

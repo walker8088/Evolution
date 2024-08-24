@@ -577,7 +577,8 @@ class ChessEngineWidget(QDockWidget):
             it.setText(0, f'{depth:02d}')
         if 'score' in fenInfo:
             it.setText(1, str(fenInfo['score']))
-        if is_new_text:
+
+        if is_new_text and self.analysisBox.isChecked():
             it.setText(2, fenInfo['move_text'])
 
         it.setData(0, Qt.UserRole, fenInfo['iccs_str'])
@@ -883,7 +884,6 @@ class MoveDbWidget(QDockWidget):
         if not item:
             return
         act = item.data(0, Qt.UserRole)
-        #self.parent.onTryBookMove(act)
         self.selectMoveSignal.emit(act)
 
     def sizeHint(self):
