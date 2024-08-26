@@ -49,5 +49,5 @@ for file in [
     shutil.copy(file, '.\\dist\\Evolution\\')
 final_folder = f'.\\dist\\Evolution-{release_version}'    
 shutil.move('.\\dist\\Evolution', final_folder)
-print('请到 {final_folder} 目录下查看exe文件。')
+print(f'请到 {final_folder} 目录下查看exe文件。')
 print("Done.")      

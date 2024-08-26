@@ -160,17 +160,8 @@ class HistoryWidget(QWidget):
         if self.selectionIndex < 0:
             return
 
-        self.parent.deleteHistoryFollow(self.selectionIndex)
-        #TODO 同步更新逻辑
-        root = self.positionView.invisibleRootItem()
-        while True:
-            it = self.items[-1]
-            it_num = it.data(0, Qt.UserRole)
-            if it_num <= self.selectionIndex:
-                break
-            root.removeChild(it)
-            self.items.pop(-1)
-
+        self.parent.removeHistoryFollow(self.selectionIndex)
+        
     def onItemClicked(self, item, col):
         self.selectionIndex = item.data(0, Qt.UserRole)
         self.positionSelSignal.emit(self.selectionIndex)
@@ -253,6 +244,17 @@ class HistoryWidget(QWidget):
         item.setTextAlignment(2, Qt.AlignRight)
         self.items.append(item)
         self.updatePositionItem(item, position)
+        
+        self.selectionIndex = position['index']
+        self.positionView.setCurrentItem(item)
+        
+    def onRemovePosition(self, position):
+        root = self.positionView.invisibleRootItem()
+        it = self.items[-1]
+        index = it.data(0, Qt.UserRole)
+        if index == position['index']:
+            item = self.items.pop(-1)
+            root.removeChild(item)
 
     def onUpdatePosition(self, position):
         for it in self.items:
@@ -305,8 +307,6 @@ class HistoryWidget(QWidget):
         item.setData(0, Qt.UserRole, index)
         item.setData(1, Qt.UserRole, position)
 
-        #self.selectionIndex = index
-        #self.positionView.setCurrentItem(item)
         self.update()
     
     def setShowScore(self, yes):

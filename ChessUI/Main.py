@@ -383,9 +383,6 @@ class MainWindow(QMainWindow):
             msgbox = TimerMessageBox(win_msg)
             msgbox.exec()
 
-        #self.isRunEngine = False
-        #self.boardView.setViewOnly(True)
-
     #-----------------------------------------------------------
     #走子核心逻辑
     def initGame(self, fen):
@@ -777,7 +774,7 @@ class MainWindow(QMainWindow):
 
         self.boardView.showBestMoveNext(best_next)    
 
-    def deleteHistoryFollow(self, move_step):
+    def removeHistoryFollow(self, move_step):
 
         for position in reversed(self.positionList):
             fen = position['fen']
@@ -786,7 +783,8 @@ class MainWindow(QMainWindow):
                 break
             if fen in self.fenPosDict:    
                 del self.fenPosDict[fen]
-
+            self.historyView.inner.onRemovePosition(position)
+                
         self.positionList = self.positionList[:move_step + 1]
         self.currPosition = self.positionList[-1]
         
