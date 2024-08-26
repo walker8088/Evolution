@@ -41,7 +41,7 @@ GameTitle = {
     None : '',
     GameMode.Free: '自由练棋', 
     GameMode.Fight: '人机对战', 
-    GameMode.EndGame: '杀局练习', 
+    GameMode.EndGame: '杀法挑战', 
     GameMode.Online: '连线分析',          
 }
 
@@ -369,16 +369,15 @@ class MainWindow(QMainWindow):
         if self.gameMode == GameMode.EndGame:
             if win_side == cchess.BLACK:
                 msgbox = TimerMessageBox("挑战失败, 重新再来!")
+                msgbox.exec()
+                self.onRestartGame()
             else:
                 msgbox = TimerMessageBox("太棒了！ 挑战成功！！！")
-            msgbox.exec()
-
-            if win_side == cchess.RED:
+                msgbox.exec()
                 self.currGame['ok'] = True
                 Globl.endbookStore.updateEndBook(self.currGame)
                 self.endBookView.updateCurrent(self.currGame)
-                self.endBookView.nextGame()
-            
+                self.endBookView.nextGame()            
         else:
             win_msg = '红方被将死!' if win_side == cchess.BLACK else '黑方被将死!'
             msgbox = TimerMessageBox(win_msg)
@@ -736,29 +735,30 @@ class MainWindow(QMainWindow):
         
         if self.isInMoveMode or  self.isHistoryMode:
             return
-            
+
         #判断重复局面次数，大于2次被认为是循环导入
-        fen = moveInfo['fen']
         iccs = moveInfo['iccs']
-        board = ChessBoard(fen)
-        
-        move = board.move_iccs(iccs)
-        if move is None:
-            return
+        if 'fen' in moveInfo: 
+            fen = moveInfo['fen']
+            board = ChessBoard(fen)
+            
+            move = board.move_iccs(iccs)
+            if move is None:
+                return
 
-        board.next_turn()
-        new_fen = board.to_fen()
-        
-        fen_count = 0
-        for position in self.positionList:
-            if new_fen == position['fen']:
-                fen_count += 1
-        
-        #重复的局面次数过多，不再导入
-        if fen_count >= 2:
-            return
+            board.next_turn()
+            new_fen = board.to_fen()
+            
+            fen_count = 0
+            for position in self.positionList:
+                if new_fen == position['fen']:
+                    fen_count += 1
+            
+            #重复的局面次数过多，不再导入
+            if fen_count >= 2:
+                return
 
-        ok = self.onMoveGo(moveInfo['iccs'])
+        ok = self.onMoveGo(iccs)
         if ok:
             self.hasNewMove = True
                 
@@ -797,14 +797,13 @@ class MainWindow(QMainWindow):
         
         #print("onSelectHistoryPosition", move_index)
 
+        if self.reviewMode:
+            return
+        
         if (move_index < 0) or (move_index >= len(self.positionList)):
             return
         
-        if self.reviewMode:
-            return
-
-        position = self.positionList[move_index]
-             
+        position = self.positionList[move_index]     
         self.onPositionChanged(position, isNew = False)
     
     
@@ -926,6 +925,12 @@ class MainWindow(QMainWindow):
         pass
 
     def onRestartGame(self):
+
+        if (self.gameMode in [GameMode.Free, GameMode.Fight]) and self.hasNewMove:
+            steps = len(self.positionList) - 1
+            if not self.getConfirm(f"当前棋谱已经走了 {steps} 步, 您确定要从新开始吗?"):
+                return
+        
         self.initGame(self.init_fen)
     
     def onSelectEndGame(self, game):
@@ -1001,6 +1006,7 @@ class MainWindow(QMainWindow):
             self.bookmarkView.hide()
         else:
             self.bookmarkView.show()
+            self.bookmarkView.setFocus(Qt.TabFocusReason)
 
     def onFlipBoardChanged(self, state):
         self.boardView.setFlipBoard(state)
@@ -1303,7 +1309,6 @@ class MainWindow(QMainWindow):
 
     def onShowMoveSound(self, yes):
         self.soundVolume = 30 if yes else 0
-
   
     def center(self):
         screen = QWidget.screen().screenGeometry()
@@ -1329,8 +1334,8 @@ class MainWindow(QMainWindow):
     def readSettingsBeforeGameInit(self):
         self.settings = QSettings('XQSoft', Globl.app.APP_NAME)
         
-        #Test Only Code
-        #self.settings.clear()
+        if Globl.app.isClean:
+            self.settings.clear()
 
         self.restoreGeometry(self.settings.value("geometry", QByteArray()))
         self.restoreState(self.settings.value("windowState", QByteArray()))

@@ -78,11 +78,14 @@ def image_to_cv(img: Image) -> np.ndarray:
 def getStepsFromFenMoves(fen, moves): 
     fen_steps = []
     board = ChessBoard(fen)
-    for iccs in moves:
+    for index, iccs in enumerate(moves):
         fen_steps.append([fen, iccs])
-        #move = board.move_iccs(iccs)
-        board.next_turn()
-        #fen = board.to_fen()
+        move = board.move_iccs(iccs)
+        if move is not None:
+            board.next_turn()
+            fen = board.to_fen()
+        else:
+            raise Exception(f'{index}-{iccs}')
 
     return fen_steps    
 

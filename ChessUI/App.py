@@ -45,9 +45,14 @@ class ChessApp(QApplication):
 
         debug_option = QCommandLineOption( ["d", "debug"], "Debug app.")
         parser.addOption(debug_option)
+        clean_option = QCommandLineOption( ["c", "clean"], "Clean app setttings.")
+        parser.addOption(clean_option)
+        
         parser.process(self)
+        
         self.isDebug = parser.isSet(debug_option)
-    
+        self.isClean = parser.isSet(clean_option)
+
         if self.isDebug:
             logging.basicConfig(filename = f'{self.APP_NAME}.log', filemode = 'w', level = logging.DEBUG)
         else:

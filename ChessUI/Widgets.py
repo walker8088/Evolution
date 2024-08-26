@@ -305,8 +305,8 @@ class HistoryWidget(QWidget):
         item.setData(0, Qt.UserRole, index)
         item.setData(1, Qt.UserRole, position)
 
-        self.selectionIndex = index
-        self.positionView.setCurrentItem(item)
+        #self.selectionIndex = index
+        #self.positionView.setCurrentItem(item)
         self.update()
     
     def setShowScore(self, yes):
@@ -660,7 +660,7 @@ class ChessEngineWidget(QDockWidget):
         red_checked = self.redBox.isChecked()
         self.parent.enginePlayColor(self.engineManager.id, cchess.RED, red_checked)
         
-        if self.gameMode in [GameMode.EndGame, GameMode.Fight]:
+        if self.gameMode in [GameMode.Fight,]:
             black_checked = self.blackBox.isChecked()
             if red_checked == black_checked:
                 self.blackBox.setChecked(not red_checked)
@@ -669,8 +669,8 @@ class ChessEngineWidget(QDockWidget):
 
         black_checked = self.blackBox.isChecked()
         self.parent.enginePlayColor(self.engineManager.id, cchess.BLACK, black_checked)
-
-        if self.gameMode in [GameMode.EndGame, GameMode.Fight]:
+        
+        if self.gameMode in [GameMode.Fight, ]:
             red_checked = self.redBox.isChecked()
             if red_checked == black_checked:
                 self.redBox.setChecked(not black_checked)
@@ -1024,6 +1024,8 @@ class EndBookWidget(QDockWidget):
             self.bookView.setCurrentItem(self.currGame['widget'])
             
     def updateCurrent(self, game):
+        if self.currGame['fen'] != game['fen']:
+            return
         self.currGame['ok'] = game['ok']
         self.updateCurrentBook()
      
@@ -1072,12 +1074,13 @@ class EndBookWidget(QDockWidget):
         if book_name == '':
             return
 
-        if book_name in self.books:
-            self.currBookName = book_name
-            self.currBook = self.books[self.currBookName]
-            self.currGame = None
+        #if book_name in self.books:
+        self.currBookName = book_name
+        self.currBook = self.books[self.currBookName]
+        self.currGame = None
 
-            self.updateCurrentBook()
+        self.updateCurrentBook()
+        self.nextGame()
 
     def onCurrentItemChanged(self, current, previous):
         if current is None:
