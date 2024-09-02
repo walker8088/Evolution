@@ -1,0 +1,453 @@
+# -*- coding: utf-8 -*-
+
+import time
+import logging
+import threading
+from pathlib import Path
+from collections import OrderedDict
+
+import cchess
+from cchess import ChessBoard
+
+from peewee import Proxy, Model, CharField, IntegerField, BigIntegerField, TextField, BlobField
+from playhouse.sqlite_ext import SqliteExtDatabase, JSONField
+from playhouse.apsw_ext import APSWDatabase
+
+from . import Globl
+        
+#----------------------------------------------------------------
+#python -m pwiz -e sqlite path/to/sqlite_database.db > 要生成的python文件名称.py
+
+'''
+#------------------------------------------------------------------------------
+book_db = SqliteExtDatabase(None)
+#'game/openbook.db', pragmas=(
+#    ('cache_size', -1024 * 64),  # 64MB page-cache.
+#   ('journal_mode', 'wal'),  # Use WAL-mode (you should always use this!).
+#   #('foreign_keys', 1),
+#    ))  # Enforce foreign-key constraints.
+
+     
+#------------------------------------------------------------------------------
+class PosMove(Model):
+    fen = CharField(unique=True, index=True)
+    vkey = BigIntegerField(unique=True)
+    step  = IntegerField()
+    score = IntegerField()
+    mark  = CharField(null=True)
+    vmoves = JSONField()
+   
+    class Meta:
+        database = book_db
+'''
+
+#------------------------------------------------------------------------------
+#本地库，包括古典库，大师库
+#
+#master_book_db = SqliteExtDatabase(None)
+master_book_db = Proxy()
+
+#------------------------------------------------------------------------------
+class MasterPosAction(Model):
+    fen = CharField(unique=True, index=True)
+    step  = IntegerField()
+    score = IntegerField(null=True)
+    actions  = JSONField()
+    
+    class Meta:
+        database = master_book_db
+        table_name = 'posaction'
+
+#------------------------------------------------------------------------------
+#MasterBook #存储古典以及大师对局谱
+class MasterBook():
+    def __init__(self):
+        self.db_master = None
+
+    def open(self, fileName):
+        global master_book_db
+
+        if not Path(fileName).is_file():
+            return False
+
+        #master_book_db.init(fileName)
+        self.db_master = SqliteExtDatabase(fileName)
+        master_book_db.initialize(self.db_master)
+
+        #self.getRecord(cchess.FULL_INIT_FEN)
+
+        return True
+    
+    def close(self):
+        if self.db_master:
+            self.db_master.close()
+        self.db_master = None
+    
+    def getMoves(self, fen):
+        
+        item = self.getRecord(fen)
+        if not item:
+            return {}
+
+        record, record_state = item    
+        actions = OrderedDict()    
+        score_best = None
+        board = ChessBoard(fen)
+        move_color = board.get_move_color()        
+        
+        for ics, act in record.actions.items():
+            score = act['sc']
+            if record_state == 'mirror':
+                iccs = cchess.iccs_mirror(ics)
+            else:
+                iccs = ics
+
+            m = {}  
+            m['mark'] = act['mk']
+            m['iccs'] = iccs
+            move_it = board.copy().move_iccs(iccs)
+            m['text'] = move_it.to_text()
+            m['new_fen'] = move_it.board_done.to_fen()
+            
+            if score is not None:
+                if score_best is  None:
+                    score_best = score
+                m['score'] = score 
+                if move_color == cchess.BLACK:
+                    m['score'] = -m['score']
+                m['diff'] = score - score_best
+            
+            if 'mt' in act:
+                m['mate'] = act['mt']
+
+            actions[iccs] = m
+            
+        ret = {}
+        ret['fen'] = fen
+        ret['mirror'] = (record_state == 'mirror')
+        
+        if score_best is not None:
+            ret['score'] = score_best 
+        ret['actions'] = actions
+        
+        return ret
+
+    def removeMoves(self, fen, iccs, mark):
+        
+        item = self.getRecord(fen)
+        
+        #没有fen的记录
+        if item is None:
+            return False
+
+        record, record_state = item
+        if record_state == 'mirror':
+            new_iccs = cchess.iccs_mirror(iccs)
+        else:
+            ne_iccs = iccs
+
+        #没有iccs的记录    
+        if iccs not in record.actions:
+            return False
+
+        if not mark:
+            #该走子的全部数据都删除
+            del record.actions[iccs]
+        else:
+            #只去掉这个走子的mark
+            act = record.actions[iccs]
+            
+            old_mark =  act['mk']
+            act['mk'] = old_mark.replace(mark, '')
+
+            if len(act['mk']) == 0:
+                #这个步骤的mark为空，可以移走了           
+                del record.actions[iccs]
+
+        if len(record.actions) == 0:
+            #该局面移动为空，删除
+            self.removeRecord(fen, record_state)
+        else:
+            #尚有其他数据，保存新结果
+            record.save()
+
+    #界面的类型转化为数据库类型然后保存        
+    def saveActions(self, fen, step, score, actions, mark):
+        db_actions = {}
+        for iccs, act in actions.items():
+            it = {}
+            if 'score' in act:
+                it['sc'] = act['score']
+            else:
+                it['sc'] = None
+            it['mk'] = mark
+            db_actions[iccs] = it
+        return saveRecord(fen, step, score, db_actions)        
+    
+    def savePositionList(self, positionList, mark):
+        for position in positionList:
+            fen = position['fen_prev']
+            step = position['index']
+            score = None
+            actions = [position['iccs']]
+            self.saveActions(fen, step, score, actions, mark)
+
+    #--------------------------------------------------------------
+    #底层处理
+    def getRecord(self, fen):
+        board = ChessBoard(fen)
+        for b, b_state in [(board, ''), (board.mirror(), 'mirror')]:
+            query = MasterPosAction.select().where(MasterPosAction.fen == b.to_fen())
+            query.execute()
+            #print(query.count(), b_state) 
+            if query.count() > 0:
+                break
+            
+        if query.count() == 0:
+            return None
+        
+        if query.count() > 1:
+            raise Exception(f'database error：{b_state} {fen}')
+        
+        return (list(query)[0], b_state)
+    
+    def removeRecord(self, fen, state): 
+
+        if state == 'mirror':
+            new_fen = ChessBoard(fen).mirror().to_fen() 
+        else:
+            new_fen = fen 
+        
+        query = MasterPosAction.delete().where(MasterPosAction.fen == new_fen)
+        query.execute()
+        
+        return True
+
+    def saveRecord(self, fen, step, score, actions):
+        item = self.getRecord(fen)
+        if item is None:
+            #没查到数据，直接保存
+            new_record = PosAction(fen, step, score, actions)
+            new_record.save()
+        else:
+            #查到数据了，要进行合并
+            record, record_state = item
+            
+            if record_state == 'mirror':
+                #查到的数据与本次保存的相比是镜像移动，本次移动镜像化
+                new_actions = { cchess.iccs_mirror(iccs):act for iccs, act in actions.items() }
+            else:
+                new_actions = actions
+            
+            #要保存的数据与已有的数据进行合并
+            for iccs, act in new_actions:
+                if iccs not in record.actions:
+                    record.actions[iccs] = act
+                else:
+                    old_act = record.actions[iccs]
+
+                    if act['score'] is not None:
+                        old_act['score'] = act['score']
+                    
+                    mark = act['mk']
+                    if mark not in old_act['mk']:
+                        old_act['mk'].append(mark)
+
+            #处理新旧记录的分数合并，避免无分数冲掉有分数
+            if score is not None:
+                new_score = score
+            else:
+                new_score = record.score                    
+            #保存数据
+            new_record = PosAction(fen, record.step, new_score, record.actions)
+            new_record.save()
+                    
+    
+#------------------------------------------------------------------------------
+#勇芳开局库
+#openBookYfk = SqliteExtDatabase(None)
+#openBookYfk = APSWDatabase(None)
+openBookYfk = Proxy()
+
+class YfkBaseModel(Model):
+    class Meta:
+        database = openBookYfk
+
+class Bhobk(YfkBaseModel):
+    vdraw = IntegerField(null=True)
+    vindex = IntegerField(null=True)
+    vkey = IntegerField(null=True)
+    vlost = IntegerField(null=True)
+    vmove = IntegerField(null=True)
+    vscore = IntegerField(null=True)
+    vvalid = IntegerField(null=True)
+    vwin = IntegerField(null=True)
+
+    class Meta:
+        table_name = 'bhobk'
+
+class Ltext(YfkBaseModel):
+    lma = TextField(null=True)
+
+    class Meta:
+        table_name = 'ltext'
+
+#------------------------------------------------------------------------------
+#鹏飞开局库
+openBookPfBook = SqliteExtDatabase(None)
+
+class BaseModelPfBook(Model):
+    class Meta:
+        database = openBookPfBook
+
+class BookVersion(BaseModelPfBook):
+    key = TextField(index=True, null=True)
+    version = TextField(null=True)
+
+    class Meta:
+        table_name = 'bookVersion'
+        primary_key = False
+
+class PfBook(BaseModelPfBook):
+    vdraw = IntegerField(null=True)
+    vindex = IntegerField(null=True)
+    vkey = IntegerField(index=True, null=True)
+    vlost = IntegerField(null=True)
+    vmemo = BlobField(null=True)
+    vmove = IntegerField(null=True)
+    vscore = IntegerField(null=True)
+    vvalid = IntegerField(null=True)
+    vwin = IntegerField(null=True)
+
+    class Meta:
+        table_name = 'pfBook'
+
+#------------------------------------------------------------------------------
+c90 =   [ 
+        0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b,
+        0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b,
+        0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b,
+        0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b,
+        0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7a, 0x7b,
+        0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x8b,
+        0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9a, 0x9b,
+        0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xab,
+        0xb3, 0xb4, 0xb5, 0xb6, 0xb7, 0xb8, 0xb9, 0xba, 0xbb,
+        0xc3, 0xc4, 0xc5, 0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xcb
+        ]
+
+s90 = [ 
+        "a9", "b9", "c9", "d9", "e9", "f9", "g9", "h9", "i9",
+        "a8", "b8", "c8", "d8", "e8", "f8", "g8", "h8", "i8",
+        "a7", "b7", "c7", "d7", "e7", "f7", "g7", "h7", "i7",
+        "a6", "b6", "c6", "d6", "e6", "f6", "g6", "h6", "i6",
+        "a5", "b5", "c5", "d5", "e5", "f5", "g5", "h5", "i5",
+        "a4", "b4", "c4", "d4", "e4", "f4", "g4", "h4", "i4",
+        "a3", "b3", "c3", "d3", "e3", "f3", "g3", "h3", "i3",
+        "a2", "b2", "c2", "d2", "e2", "f2", "g2", "h2", "i2",
+        "a1", "b1", "c1", "d1", "e1", "f1", "g1", "h1", "i1",
+        "a0", "b0", "c0", "d0", "e0", "f0", "g0", "h0", "i0"
+        ]
+
+CoordMap = {}
+
+def buildCoordMap():
+    global c90, s90, CoordMap
+    for i in range(90):
+        CoordMap[c90[i]] = s90[i]
+    
+#------------------------------------------------------------------------------
+def vmove2iccs(vmove):
+    global CoordMap
+    
+    v_from =  vmove & 0xff
+    v_to = vmove >> 8
+    
+    #print(hex(v_from), hex(v_to))
+    return CoordMap[v_from] + CoordMap[v_to]
+
+#------------------------------------------------------------------------------
+class OpenBookYfk():
+    
+    def __init__(self):
+        buildCoordMap()
+        self.isBookOpened = False
+        self.db_yfk = None
+
+    def open(self, fileName):
+        global openBookYfk
+        
+        #create = not Path(fileName).is_file()
+        #openBookYfk.init(fileName, pragmas={}) #'journal_mode': 'wal'})
+
+        self.db_yfk = SqliteExtDatabase(fileName)
+        openBookYfk.initialize(self.db_yfk)
+
+        self.isBookOpened = True
+        
+        try:
+            self.getMoves(cchess.FULL_INIT_FEN)
+        except Exception as e:
+            logging.error(str(e))
+            self.isBookOpened = False
+            
+        return self.isBookOpened
+            
+    def close(self):
+        if self.db_yfk:
+            self.db_yfk.close()
+        self.db_yfk = None
+    
+    def getMoves(self, fen):
+
+        if not self.isBookOpened:
+            return {}
+
+        board = ChessBoard(fen)
+        
+        for b, b_state in [(board, ''), (board.mirror(), 'mirror')]:
+            query = Bhobk.select().where(Bhobk.vkey == str(b.zhash()), Bhobk.vvalid == 1).order_by(-Bhobk.vscore)
+            query.execute()
+            if len(query) > 0:
+                break
+        
+        if len(query) == 0:
+            return None
+
+        actions = OrderedDict() 
+        score_best = None
+        #move_color = board.get_move_color()        
+        
+        for it in query:
+            #print(b_state, vmove2iccs(it.vmove), it.vscore, )
+
+            ics = vmove2iccs(it.vmove)
+            score = it.vscore
+            
+            if score_best is None:
+               score_best = score
+                    
+            if b_state == 'mirror':
+                iccs = cchess.iccs_mirror(ics)
+            else:
+                iccs = ics
+
+            m = {}  
+            m['iccs'] = iccs
+            move_it = board.copy().move_iccs(iccs)
+            m['text'] = move_it.to_text()
+            m['score'] = score
+            m['diff'] =  score - score_best
+            #if move_color == cchess.BLACK:
+            #    m['score'] = -m['score']
+            m['new_fen'] = move_it.board_done.to_fen()
+           
+            actions[iccs] = m
+        
+        ret = {}
+        ret['fen'] = fen
+        ret['score'] = score_best 
+        ret['actions'] = actions
+
+        return ret
+        

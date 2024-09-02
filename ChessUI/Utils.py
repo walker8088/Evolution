@@ -75,6 +75,9 @@ def image_to_cv(img: Image) -> np.ndarray:
 
 '''    
 #-----------------------------------------------------#
+def trim_fen(fen):
+    return ' '.join(fen.split(' ')[:2])
+    
 def getStepsFromFenMoves(fen, moves): 
     fen_steps = []
     board = ChessBoard(fen)

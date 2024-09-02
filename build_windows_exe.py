@@ -6,7 +6,7 @@ from ChessUI.Version import release_version
 
 #cmd = "pyinstaller.exe -F .\\Evolution.py -i images\\app.ico --noconsole --exclude-module PyQt5"
 cmd = "pyinstaller.exe .\\Evolution.py -i images\\app.ico --clean --noconsole --exclude-module=PyQt5 \
-            --exclude-module=numpy --exclude-module=nacl --exclude-module=psycopg2"
+            --exclude-module=nacl --exclude-module=psycopg2"
 
 ret = os.system(cmd)
 

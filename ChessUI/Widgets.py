@@ -12,10 +12,11 @@ from PySide6.QtWidgets import QStyle, QApplication, QMenu, QHBoxLayout, QVBoxLay
                     QAbstractItemView, QComboBox, QTreeWidgetItem, QTreeWidget, QSplitter, QMessageBox
 
 import cchess
-from cchess import ChessBoard #, iccs2pos
+from cchess import ChessBoard
 
 from .Utils import GameMode, ReviewMode, getTitle, TimerMessageBox, getFreeMem, getStepsTextFromFenMoves, loadEglib
 from .BoardWidgets import ChessBoardWidget, ChessBoardEditWidget
+from .SnippingWidget import SnippingWidget
 
 from . import Globl
  
@@ -294,13 +295,13 @@ class HistoryWidget(QWidget):
                 if 'diff' in fenInfo:    
                     diff = fenInfo['diff']
                     if diff > -30:
-                        item.setIcon(3, QIcon(":Images/star.png"))
+                        item.setIcon(3, QIcon(":ImgRes/star.png"))
                     elif diff > -70:
-                        item.setIcon(3, QIcon(":Images/good.png"))
+                        item.setIcon(3, QIcon(":ImgRes/good.png"))
                     elif diff > -100:
-                        item.setIcon(3, QIcon(":Images/sad.png"))
+                        item.setIcon(3, QIcon(":ImgRes/sad.png"))
                     else:
-                        item.setIcon(3, QIcon(":Images/bad.png"))    
+                        item.setIcon(3, QIcon(":ImgRes/bad.png"))    
                 else:
                     item.setIcon(3, QIcon())
 
@@ -685,6 +686,7 @@ class ChessEngineWidget(QDockWidget):
         return QSize(500, 100)
 
 #------------------------------------------------------------------#
+"""
 class MoveDbWidget(QDockWidget):
     selectMoveSignal = Signal(dict)
 
@@ -825,7 +827,8 @@ class MoveDbWidget(QDockWidget):
         board = ChessBoard(fen)
         book_moves = []
 
-        ret = Globl.localbookStore.getAllBookMoves(fen)
+        ret = Globl.localbook.getMoves(fen)
+        '''
         if len(ret) == 0:
             return
         elif len(ret) > 1:
@@ -853,7 +856,7 @@ class MoveDbWidget(QDockWidget):
         book_moves.sort(key=key_func, reverse = is_reverse)
         
         self.updateBookMoves(book_moves)
-    
+        '''
         
     def updateBookMoves(self, book_moves):
         self.moveListView.clear()
@@ -888,25 +891,27 @@ class MoveDbWidget(QDockWidget):
 
     def sizeHint(self):
         return QSize(150, 500)
+"""
 
 #------------------------------------------------------------------#
-class CloudDbWidget(QDockWidget):
+class BoardActionsWidget(QDockWidget):
     selectMoveSignal = Signal(dict)
 
     def __init__(self, parent):
-        super().__init__("开局库", parent)
-        self.setObjectName("开局库")
+        super().__init__("棋谱库", parent)
+        self.setObjectName("棋谱库")
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
 
         self.parent = parent
          
         self.actionsView = QTreeWidget()
         self.actionsView.setColumnCount(1)
-        self.actionsView.setHeaderLabels(["备选着法", "红优分", '', '备注'])
-        self.actionsView.setColumnWidth(0, 80)
-        self.actionsView.setColumnWidth(1, 60)
-        self.actionsView.setColumnWidth(2, 1)
-        self.actionsView.setColumnWidth(3, 20)
+        self.actionsView.setHeaderLabels(['MK', "备选着法", "红优分", '', '备注'])
+        self.actionsView.setColumnWidth(0, 35)
+        self.actionsView.setColumnWidth(1, 80)
+        self.actionsView.setColumnWidth(2, 60)
+        self.actionsView.setColumnWidth(3, 1)
+        self.actionsView.setColumnWidth(4, 20)
         self.actionsView.clicked.connect(self.onSelectIndex)
 
         self.importFollowMode = False
@@ -932,14 +937,18 @@ class CloudDbWidget(QDockWidget):
         
     def updateActions(self, actions):
         self.actionsView.clear()
-        for act in actions:
+        for act in actions.values():
             item = QTreeWidgetItem(self.actionsView)
-            item.setText(0, act['text'])    
-            item.setText(1, str(act['score']))
-            item.setTextAlignment(1, Qt.AlignRight)
-            if 'memo' in act:
-                item.setText(2, str(act['memo']))
-                item.setTextAlignment(2, Qt.AlignCenter)
+            
+            if 'mark' in act:
+                item.setText(0, act['mark'])
+                item.setTextAlignment(0, Qt.AlignLeft)
+            
+            item.setText(1, act['text'])
+
+            if 'score' in act:
+                item.setText(2, str(act['score']))
+            item.setTextAlignment(2, Qt.AlignRight)
             
             item.setData(0, Qt.UserRole, act)
         self.update()
@@ -1096,7 +1105,7 @@ class EndBookWidget(QDockWidget):
         remarkAllAction = menu.addAction("标记全部未完成")
         action = menu.exec_(self.mapToGlobal(event.pos()))
         if action == copyAction:
-            qApp.clipboard().setText(self.parent.board.to_fen())
+            QApplication.clipboard().setText(self.parent.board.to_fen())
         
         elif action == remarkAction:
             if self.currGame:
@@ -1257,8 +1266,11 @@ class PositionEditDialog(QDialog):
 
         initBtn = QPushButton("初始棋盘", self)
         clearBtn = QPushButton("清空棋盘", self)
+        openImgBtn = QPushButton("打开图片", self)
         initBtn.clicked.connect(self.onInitBoard)
         clearBtn.clicked.connect(self.onClearBoard)
+        openImgBtn.clicked.connect(self.onOpenImage)
+        
         okBtn = QPushButton("确定", self)
         cancelBtn = QPushButton("取消", self)
 
@@ -1272,6 +1284,7 @@ class PositionEditDialog(QDialog):
         hbox.addWidget(self.blackMoveBtn)
         hbox.addWidget(initBtn)
         hbox.addWidget(clearBtn)
+        hbox.addWidget(openImgBtn)
         hbox.addWidget(okBtn)
         hbox.addWidget(cancelBtn)
 
@@ -1284,6 +1297,9 @@ class PositionEditDialog(QDialog):
 
         okBtn.clicked.connect(self.accept)
         cancelBtn.clicked.connect(self.close)
+        
+        self.snippingWidget = SnippingWidget()
+        self.snippingWidget.onSnippingCompleted = self.onSnippingCompleted
 
     def onInitBoard(self):
         self.boardEdit.from_fen(cchess.FULL_INIT_FEN)
@@ -1296,7 +1312,13 @@ class PositionEditDialog(QDialog):
 
     def onBlackMoveBtnClicked(self):
         self.boardEdit.set_move_color(cchess.BLACK)
+    
+    def onOpenImage(self):
+        self.snippingWidget.start()
 
+    def onSnippingCompleted(self, img):
+        self.setWindowState(Qt.WindowActive)
+        
     def onBoardFenChanged(self, fen):
 
         self.fenLabel.setText(fen)
@@ -1383,107 +1405,3 @@ class EngineConfigDialog(QDialog):
 
         return False
 
-'''
-#-----------------------------------------------------#
-import pygetwindow as gw
-#import pyscreenshot as ImageGrab
-from PIL import ImageGrab
-from PIL.ImageQt import ImageQt
-
-class OnlineDialog(QDialog):
-    def __init__(self, parent):
-        super().__init__(parent)
-
-        self.setWindowTitle("窗口截图")
-        
-        self.screen = ScreenBoardView(self)
-        
-        self.redMoveBtn = QRadioButton("红方走", self)
-        self.blackMoveBtn = QRadioButton("黑方走", self)
-        self.fenLabel = QLabel()
-
-        group1 = QButtonGroup(self)
-        group1.addButton(self.redMoveBtn)
-        group1.addButton(self.blackMoveBtn)
-
-        hbox1 = QHBoxLayout()
-        hbox1.addWidget(self.redMoveBtn, 0)
-        hbox1.addWidget(self.blackMoveBtn, 0)
-        hbox1.addWidget(QLabel(''), 1)
-
-        captureBtn = QPushButton("截取窗口", self)
-        captureBtn.clicked.connect(self.onCapture)
-        detectBtn = QPushButton("检测", self)
-        detectBtn.clicked.connect(self.onDetect)
-        okBtn = QPushButton("确定", self)
-        cancelBtn = QPushButton("取消", self)
-
-        vbox = QVBoxLayout()
-        vbox.addWidget(self.screen, 2)
-        #vbox.addWidget(self.fenLabel)
-        vbox.addLayout(hbox1)
-
-        hbox = QHBoxLayout()
-        #hbox.addWidget(self.redMoveBtn)
-        #hbox.addWidget(self.blackMoveBtn)
-        hbox.addWidget(captureBtn)
-        hbox.addWidget(detectBtn)
-        
-        hbox.addWidget(okBtn)
-        hbox.addWidget(cancelBtn)
-
-        vbox.addLayout(hbox)
-        self.setLayout(vbox)
-
-        #self.boardEdit.fenChangedSignal.connect(self.onBoardFenChanged)
-        self.redMoveBtn.clicked.connect(self.onRedMoveBtnClicked)
-        self.blackMoveBtn.clicked.connect(self.onBlackMoveBtnClicked)
-
-        okBtn.clicked.connect(self.accept)
-        cancelBtn.clicked.connect(self.close)
-
-    def onCapture(self):
-        
-        #win = gw.getWindowsWithTitle("22081281AC")[0]
-        win = gw.getWindowsWithTitle("BLA-AL00")[0]
-        
-        win.activate()
-        
-        #print( win.width,  win.height)
-        
-        x1, y1, x2, y2 = win.left, win.top, win.left + win.width, win.top + win.height
-
-        img = ImageGrab.grab(bbox=(x1, y1, x2, y2))
-        
-        self.screen.update_img(img)
-        
-    def onDetect(self):
-        self.screen.detectBoard()
-        
-    def onRedMoveBtnClicked(self):
-        self.boardEdit.set_move_color(RED)
-
-    def onBlackMoveBtnClicked(self):
-        self.boardEdit.set_move_color(BLACK)
-
-    def onBoardFenChanged(self, fen):
-
-        self.fenLabel.setText(fen)
-
-        color = self.boardEdit.get_move_color()
-        if color == RED:
-            self.redMoveBtn.setChecked(True)
-        elif color == BLACK:
-            self.blackMoveBtn.setChecked(True)
-
-    def edit(self, fen_str):
-        self.boardEdit.from_fen(fen_str)
-
-        if self.exec_() == QDialog.Accepted:
-            return self.boardEdit.to_fen()
-        else:
-            return None
-            
-    def get_image(self):
-        pass
-'''
