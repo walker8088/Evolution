@@ -144,7 +144,7 @@ class EngineManager(QObject):
 
                         new_fen = m.board_done.to_fen()
   
-                        ret['actions'] = [{'iccs': iccs, 'score': score_best, 'diff': 0, 'new_fen': new_fen}]
+                        ret['actions'] = {iccs:{'iccs': iccs, 'score': score_best, 'diff': 0, 'new_fen': new_fen}}
                     #ret['raw_msg'] = eg_out['raw_msg']
 
                 self.moveBestSignal.emit(self.id, ret)

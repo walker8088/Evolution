@@ -1,0 +1,25 @@
+[UI]
+;主题颜色：Red Pink Purple DeepPurple Indigo Blue LightBlue Cyan Teal Green LightGreen Lime Yellow Amber Orange DeepOrange Brown Gray BlueGray
+palette = Teal
+
+;文字颜色，1黑色，0白色
+blacktext = 1
+
+[SYS]
+;棋盘比例
+board_scale = 0.62
+
+;棋子缩放参数
+piecescale = 2.5
+
+;棋子上下偏移量，正值向上，负值向下
+pv_offset = -6
+
+;棋子左右偏移量，正值向右，负值向左
+ph_offset = 6
+
+;打谱界面棋盘上部预留空间占屏比例
+dpboardtop_scale = 0.18
+
+;对弈界面棋盘上部预留空间占屏比例
+m2aboardtop_scale = 0.18

@@ -268,7 +268,6 @@ class MainWindow(QMainWindow):
             name = Path(skinsFolder, n)
             if name.is_dir():
                 skins[n] = { 'Folder': name }
-        
         return skins
 
     #-----------------------------------------------------------------------
@@ -695,7 +694,7 @@ class MainWindow(QMainWindow):
         fen = trim_fen(fenInfo['fen'])
         logging.debug(f'Engine[{engine_id}] BestMove {fenInfo}' )
         
-        print('onEngineMoveBest', fenInfo)
+        #print('onEngineMoveBest', fenInfo)
 
         if (self.gameMode != GameMode.EndGame) and ((self.queryMode == QueryMode.EngineFirst) or (self.reviewMode == ReviewMode.ByEngine)) :
             self.updateFenCache(fenInfo)
@@ -704,8 +703,8 @@ class MainWindow(QMainWindow):
             self.onReviewGameStep()
             return
         
-        print(fen)
-        print(self.board.to_fen())
+        #print(fen)
+        #print(self.board.to_fen())
 
         if self.isHistoryMode or self.isInMoveMode or (fen != self.board.to_fen()):
             return
@@ -1235,10 +1234,22 @@ class MainWindow(QMainWindow):
     
     def onChangedSkin(self, action):
         skin = action.text()
-        if skin != self.skin:
-            action.setChecked(True)
-            self.boardView.fromSkinFolder(self.skins[skin]['Folder'])
-            self.skin = skin
+        print("换肤", skin)
+        self.changeSkin(skin)
+        
+    def changeSkin(self, skin):
+
+        if skin == self.skin:
+            return True
+
+        if skin in self.skins:
+            skin_folder = self.skins[skin]['Folder']
+            if self.boardView.fromSkinFolder(skin_folder):
+                self.skins[skin]['action'].setChecked(True)
+                self.skin = skin
+                return True
+                    
+        return False            
 
     #------------------------------------------------------------------------------
     #Drag & Drop
@@ -1528,12 +1539,7 @@ class MainWindow(QMainWindow):
 
         skin = self.settings.value("boardSkin", DEFAULT_SKIN)
         if skin != DEFAULT_SKIN:
-            if skin in self.skins:
-                skin_folder = self.skins[skin]['Folder']
-                if Path(skin_folder).is_dir():
-                    self.boardView.fromSkinFolder(skin_folder)
-                    self.skins[skin]['action'].setChecked(True)
-                    self.skin = skin
+            self.changeSkin(skin)
                     
         self.savedGameMode = self.settings.value("gameMode", GameMode.Free)
         

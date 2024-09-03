@@ -1,0 +1,7 @@
+[UI]
+palette = Teal
+
+[SYS]
+piecescale = 2.4
+pv_offset = -2
+ph_offset = 0

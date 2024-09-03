@@ -8,6 +8,7 @@ from configparser import ConfigParser
 from PySide6.QtCore import Qt, Signal, QTimer, QPoint, QSize, QRect
 from PySide6.QtGui import QPixmap, QCursor, QPen, QColor, QPainter, QPolygon
 from PySide6.QtWidgets import QMenu, QWidget, QApplication
+from PySide6.QtSvg import QSvgRenderer
 
 from cchess import ChessBoard, RED, iccs2pos
 
@@ -29,6 +30,15 @@ def scaleImage(img, scale):
     new_img = img.scaledToHeight(new_height, mode=Qt.SmoothTransformation)
 
     return new_img
+
+def SvgToPixmap(svg, width, height):
+    pix = QPixmap(QSize(width, height))
+    pix.fill(Qt.transparent)
+    painter = QPainter(pix)
+    painter.setRenderHints(QPainter.Antialiasing)
+    svg.render(painter)
+    #pix.save('test.png')
+    return pix
 
 #-----------------------------------------------------#
 class ChessBoardBaseWidget(QWidget):
@@ -64,29 +74,33 @@ class ChessBoardBaseWidget(QWidget):
 
     def setDefaultSkin(self):
         
-        self.base_board_img = QPixmap(':ImgRes/board.png')
+        self.use_svg = False
+
+        self.base_board = QPixmap(':ImgRes/board.png')
         self.base_select_img = QPixmap(':ImgRes/select.png')
         self.base_step_img = QPixmap(':ImgRes/step.png')
         self.base_point_img = QPixmap(':ImgRes/point.png')
-        self.base_done_img = QPixmap(':ImgRes/done.png')
-        self.base_over_img = QPixmap(':ImgRes/over.png')
 
-        self.base_pieces_img = {}
+        self.base_pieces = {}
         for name in piece_names:
-            self.base_pieces_img[name] = QPixmap(':ImgRes/{}.png'.format(name))
+            self.base_pieces[name] = QPixmap(':ImgRes/{}.png'.format(name))
 
-        self.base_board_width = self.base_board_img.width()
-        self.base_board_height = self.base_board_img.height()
-        self.base_piece_size = self.base_pieces_img[piece_base].width()
+        self.base_board_width = self.base_board.width()
+        self.base_board_height = self.base_board.height()
+        self.base_piece_size = self.base_pieces[piece_base].width()
         
+        self.base_offset_x = 0
+        self.base_offset_y = 0
+
         self.base_border_x = 15
         self.base_border_y = 15
 
-        self.base_space_x = 56
-        self.base_space_y = 56
-        
-        self.base_space_x = (self.base_board_width - self.base_border_x) // 9 - 1
-        self.base_space_y = (self.base_board_height - self.base_border_y) // 10 - 1
+        self.base_board_width = self.base_board.width()
+        self.base_board_height = self.base_board.height()
+        self.base_piece_size = self.base_pieces[piece_base].width()
+    
+        self.base_space_x = (self.base_board_width - self.base_border_x*2) / 9
+        self.base_space_y = (self.base_board_height - self.base_border_y*2) / 10 
         
         self.scaleBoard(1.0)
         
@@ -94,10 +108,16 @@ class ChessBoardBaseWidget(QWidget):
         if not skinFolder:
             self.setDefaultSkin()
         else:
-            self.base_board_img = QPixmap(str(Path(skinFolder, 'board.png')))
-            for name in piece_names:
-                self.base_pieces_img[name] = QPixmap(str(Path(skinFolder, f'{name}.png')))
+            self.use_svg = False
 
+            self.base_board = QPixmap(str(Path(skinFolder, 'board.png')))
+            for name in piece_names:
+                self.base_pieces[name] = QPixmap(str(Path(skinFolder, f'{name}.png')))
+            
+            pv_offset = 0
+            ph_offset = 0
+
+            '''    
             configFile = Path(skinFolder, 'skin.txt')    
             if configFile.is_file():
                 config = ConfigParser()
@@ -107,73 +127,107 @@ class ChessBoardBaseWidget(QWidget):
                 ph_offset = config.getint('SYS', "ph_offset")
                 
                 print(piece_scale, pv_offset, ph_offset)
-            else:    
-                piece_scale = 1.0
-                pv_offset = 0
-                ph_offset = 0
-                
-            self.base_board_width = self.base_board_img.width()
-            self.base_board_height = self.base_board_img.height()
-            self.base_piece_size = self.base_pieces_img[piece_base].width()
-        
-            self.base_border_x = ph_offset
-            self.base_border_y = pv_offset
+            '''
 
-            #self.base_space_x = (self.base_board_width - self.base_border_x * 2) // 9
-            #self.base_space_y = (self.base_board_height - self.base_border_y * 2) // 10
+            self.base_board_width = self.base_board.width()
+            self.base_board_height = self.base_board.height()
+            self.base_piece_size = self.base_pieces[piece_base].width()
+        
+            self.base_offset_x = ph_offset
+            self.base_offset_y = pv_offset
             
-            self.base_space_x = (self.base_board_width - self.base_border_x * 2) // 9
-            self.base_space_y = (self.base_board_height - self.base_border_y * 2) // 10
-            
-            if self.base_piece_size > self.base_space_x:
-                scale = (self.base_space_x-1) / self.base_piece_size
-                for name in piece_names:
-                    self.base_pieces_img[name] =  scaleImage(self.base_pieces_img[name], scale)           
+            self.base_border_x = 10
+            self.base_border_y = 10
+
+            self.base_space_x = (self.base_board_width - self.base_border_x*2) / 9
+            self.base_space_y = (self.base_board_height - self.base_border_y*2) / 10 
             
         self.resizeBoard(self.size())
         self.update()
+        
+        return True
 
+    def fromSvgSkinFolder(self, skinFolder):
+        if not skinFolder:
+            self.setDefaultSkin()
+        else:
+            self.use_svg = True
+
+            self.base_board = QSvgRenderer(str(Path(skinFolder, 'board.svg')))
+            self.base_board_width =  self.base_board.defaultSize().width()
+            self.base_board_height = self.base_board.defaultSize().height()
+            
+            self.mask = QSvgRenderer(str(Path(skinFolder, 'mask.svg')))
+            
+            for name in piece_names:
+                self.base_pieces[name] = QSvgRenderer(str(Path(skinFolder, f'{name}.svg')))
+                
+            self.base_border_x = 0
+            self.base_border_y = 0
+
+            self.base_space_x = (self.base_board_width - self.base_border_x * 2) // 9
+            self.base_space_y = (self.base_board_height - self.base_border_y * 2) // 10
+            
+            self.base_piece_size = min(self.base_space_x, self.base_space_y) - 1
+         
+        self.resizeBoard(self.size())
+
+        self.update()
+    
     def scaleBoard(self, scale):
 
-        if scale < 0.5:
-            scale = 0.5
-
-        self.paint_scale = int(scale * 7) / 7.0
+        self.paint_scale = scale #int(scale * 9) / 9.0
 
         self.board_width = int(self.base_board_width * self.paint_scale)
         self.board_height = int(self.base_board_height * self.paint_scale)
-
-        self.space_x = int(self.base_space_x * self.paint_scale)
-        self.space_y = int(self.base_space_y * self.paint_scale)
+        
+        self.offset_x = int(self.base_offset_x * self.paint_scale)
+        self.offset_y = int(self.base_offset_y * self.paint_scale)   
         self.border_x = int(self.base_border_x * self.paint_scale)
         self.border_y = int(self.base_border_y * self.paint_scale)
 
-        self.piece_size = int(self.base_piece_size * self.paint_scale)
+        
+        self.space_x = self.base_space_x * self.paint_scale
+        self.space_y = self.base_space_y * self.paint_scale
 
-        self.space_x = int(self.base_space_x * self.paint_scale)
-        self.space_y = int(self.base_space_y * self.paint_scale)
         self.border_x = int(self.base_border_x * self.paint_scale)
         self.border_y = int(self.base_border_y * self.paint_scale)
 
-        self._board_img = scaleImage(self.base_board_img, self.paint_scale)
-        self.select_img = scaleImage(self.base_select_img, self.paint_scale)
-        self.step_img = scaleImage(self.base_step_img, self.paint_scale)
-        self.point_img = scaleImage(self.base_point_img, self.paint_scale)
-        self.done_img = scaleImage(self.base_done_img, self.paint_scale)
-        self.over_img = scaleImage(self.base_over_img, self.paint_scale)
+        if not self.use_svg:
 
-        self.pieces_img = {}
-        for name in piece_names:
-            self.pieces_img[name] = scaleImage(self.base_pieces_img[name],
-                                                 self.paint_scale)
+            self._board_img = scaleImage(self.base_board, self.paint_scale)
+            self.step_img = scaleImage(self.base_step_img, self.paint_scale)
+            self.point_img = scaleImage(self.base_point_img, self.paint_scale)
+            
+            select_scale = (self.space_x) / self.base_select_img.width()
+            self.select_img = scaleImage(self.base_select_img, select_scale)
+            
+            self.pieces_img = {}
+            piece_scale = (self.space_x - 1) / self.base_piece_size
+            self.piece_size = int(self.base_piece_size * piece_scale)
+            for name in piece_names:
+                self.pieces_img[name] = scaleImage(self.base_pieces[name], piece_scale)
 
+        else:    
+            self._board_img = SvgToPixmap(self.base_board, self.board_width, self.board_height)
+            
+            self.piece_size = int(self.base_piece_size * self.paint_scale)
+            self.pieces_img = {}
+            for name in piece_names:
+                svg = self.base_pieces[name]
+                self.pieces_img[name] = SvgToPixmap(svg, self.piece_size, self.piece_size)
+            
+            self.select_img = scaleImage(self.base_select_img, self.paint_scale)
+            self.step_img = scaleImage(self.base_step_img, self.paint_scale)
+            self.point_img = scaleImage(self.base_point_img, self.paint_scale)
+            
     def resizeBoard(self, size):
         
         new_width = size.width()
         new_height = size.height()
 
-        new_scale = min(new_width / self.base_board_width,
-                        new_height / self.base_board_height)
+        new_scale = min((new_width-5) / self.base_board_width,
+                        (new_height-5) / self.base_board_height)
 
         self.scaleBoard(new_scale)
 
@@ -185,7 +239,7 @@ class ChessBoardBaseWidget(QWidget):
         if self.board_start_y < 0:
             self.board_start_y = 0
         
-        print(self.board_start_y, self.board_start_y)
+        #print(self.base_board_width, self.base_board_height, self.board_start_y, self.board_start_y)
             
     def from_fen(self, fen_str, clear = False):
         self._board.from_fen(fen_str)
@@ -212,15 +266,15 @@ class ChessBoardBaseWidget(QWidget):
         if self.mirror_board:
             x = 8 - x
 
-        board_x = self.board_start_x + self.border_x + x * self.space_x 
-        board_y = self.board_start_y + self.border_y + (9 - y) * self.space_y 
+        board_x = int(self.board_start_x + self.offset_x + self.border_x + x * self.space_x) 
+        board_y = int(self.board_start_y + self.offset_y + self.border_y + (9 - y) * self.space_y) 
 
         return (board_x + bias, board_y + bias)
 
     def board_to_logic(self, bx, by):
 
-        x = (bx - self.border_x - self.board_start_x) // self.space_x
-        y = 9 - ((by - self.border_y - self.board_start_y) // self.space_y)
+        x = (bx - self.border_x - self.board_start_x) // int(self.space_x)
+        y = 9 - ((by - self.border_y - self.board_start_y) // int(self.space_y))
 
         if self.flip_board:
             x = 8 - x
@@ -257,7 +311,9 @@ class ChessBoardBaseWidget(QWidget):
         painter = QPainter(self)
         painter.drawPixmap(self.board_start_x, self.board_start_y, self._board_img)
         
-        self.paintGrid(painter)
+        #self.paintGrid(painter)
+        
+        #return
 
         for piece in self._board.get_pieces():
             board_x, board_y = self.logic_to_board(piece.x, piece.y)
@@ -371,19 +427,21 @@ class ChessBoardWidget(ChessBoardBaseWidget):
         super().paintEvent(ev)
         
         painter = QPainter(self)
-
+        '''
         for move_it in self.last_pickup_moves:
             board_x, board_y = self.logic_to_board(*move_it[1])
             painter.drawPixmap(
                 QPoint(board_x, board_y), self.point_img,
                 QRect(0, 0, self.piece_size - 1, self.piece_size - 1))
-        
+        '''
+        '''
         for pos in  self.move_pieces:
             board_x, board_y = self.logic_to_board(*pos)
             painter.drawPixmap(
                 QPoint(board_x, board_y), self.step_img,
                 QRect(0, 0, self.piece_size - 1, self.piece_size - 1))
-        
+        '''
+
         if len(self.move_steps_show) > 0:
             piece, step_point = self.move_steps_show.pop(0)
             painter.drawPixmap(

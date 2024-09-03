@@ -30,7 +30,7 @@ for file in [
     ]:
     os.remove(F'dist/Evolution/_internal/PySide6/{file}')
 
-folders = ['Game', 'Engine', 'EndBooks', 'Sound']
+folders = ['Books', 'Game', 'Engine', 'Sound', 'Skins']
 for folder in folders:
     src_folder = f".\\{folder}"
     dest_folder = f".\\dist\\Evolution\\{folder}"
