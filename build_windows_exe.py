@@ -5,7 +5,7 @@ from pathlib import Path
 from ChessUI.Version import release_version
 
 #cmd = "pyinstaller.exe -F .\\Evolution.py -i images\\app.ico --noconsole --exclude-module PyQt5"
-cmd = "pyinstaller.exe .\\Evolution.py -i images\\app.ico --clean --noconsole --exclude-module=PyQt5 \
+cmd = "pyinstaller.exe .\\Evolution.py -i ImgRes\\app.ico --clean --noconsole --exclude-module=PyQt5 \
             --exclude-module=nacl --exclude-module=psycopg2"
 
 ret = os.system(cmd)
@@ -13,12 +13,11 @@ ret = os.system(cmd)
 if ret != 0:
     sys.exit(ret)
 
-'''
+
 need_removes = Path('dist', 'Evolution', '_internal').glob(".//mkl_*.dll")
 for file in need_removes:
     os.path.unlink(file)
     print(f'Deleted:{file}')
-'''
 
 #shutil.rmtree('dist/Evolution/_internal/psycopg2')
 for file in [

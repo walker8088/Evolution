@@ -77,7 +77,8 @@ class ChessBoardBaseWidget(QWidget):
         self.use_svg = False
 
         self.base_board = QPixmap(':ImgRes/board.png')
-        self.base_select_img = QPixmap(':ImgRes/select.png')
+        #self.base_select_img = QPixmap(':ImgRes/select.png')
+        self.base_select_img = QPixmap(':ImgRes/step.png')
         self.base_step_img = QPixmap(':ImgRes/step.png')
         self.base_point_img = QPixmap(':ImgRes/point.png')
 
@@ -196,11 +197,11 @@ class ChessBoardBaseWidget(QWidget):
         if not self.use_svg:
 
             self._board_img = scaleImage(self.base_board, self.paint_scale)
-            self.step_img = scaleImage(self.base_step_img, self.paint_scale)
             self.point_img = scaleImage(self.base_point_img, self.paint_scale)
             
             select_scale = (self.space_x) / self.base_select_img.width()
             self.select_img = scaleImage(self.base_select_img, select_scale)
+            self.step_img = scaleImage(self.base_step_img, select_scale)
             
             self.pieces_img = {}
             piece_scale = (self.space_x - 1) / self.base_piece_size
@@ -427,6 +428,7 @@ class ChessBoardWidget(ChessBoardBaseWidget):
         super().paintEvent(ev)
         
         painter = QPainter(self)
+
         '''
         for move_it in self.last_pickup_moves:
             board_x, board_y = self.logic_to_board(*move_it[1])
@@ -434,13 +436,13 @@ class ChessBoardWidget(ChessBoardBaseWidget):
                 QPoint(board_x, board_y), self.point_img,
                 QRect(0, 0, self.piece_size - 1, self.piece_size - 1))
         '''
-        '''
+        
         for pos in  self.move_pieces:
             board_x, board_y = self.logic_to_board(*pos)
             painter.drawPixmap(
                 QPoint(board_x, board_y), self.step_img,
-                QRect(0, 0, self.piece_size - 1, self.piece_size - 1))
-        '''
+                QRect(0, 0, self.step_img.width() - 1, self.step_img.height() - 1))
+    
 
         if len(self.move_steps_show) > 0:
             piece, step_point = self.move_steps_show.pop(0)
