@@ -12,6 +12,7 @@ from .Utils import getTitle
 
 from . import Globl
 
+'''
 #-----------------------------------------------------#
 # Back up the reference to the exceptionhook
 sys._excepthook = sys.excepthook
@@ -24,6 +25,7 @@ def my_exception_hook(exctype, value, tb):
 
 # Set the exception hook to our wrapping function
 sys.excepthook = my_exception_hook
+'''
 
 #-----------------------------------------------------#
 class ChessApp(QApplication):

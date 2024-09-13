@@ -26,16 +26,16 @@ from .Version import release_version
 from .Resource import qt_resource_data
 from .Manager import EngineManager
 
-from .Storage import BookmarkStore, EndBookStore, LocalBookStore
+from .Storage import BookmarkStore, EndBookStore #, LocalBookStore
 from .CloudDB import CloudDB
-from .LocalDB import OpenBookYfk, MasterBook
+from .LocalDB import OpenBookYfk, MasterBook, LocalBook
 
 from .Utils import GameMode, ReviewMode, TimerMessageBox, getTitle, getStepsFromFenMoves, trim_fen
 from .BoardWidgets import ChessBoardWidget, DEFAULT_SKIN
-from .Widgets import PositionEditDialog, PositionHistDialog, ChessEngineWidget, EngineConfigDialog, BookmarkWidget, \
-                    BoardActionsWidget, EndBookWidget, DockHistoryWidget
+from .Widgets import ChessEngineWidget, BookmarkWidget, \
+                    BoardActionsWidget, EndBookWidget, DockHistoryWidget, GameLibWidget
+from .Dialogs import PositionEditDialog, PositionHistDialog, ImageToBoardDialog, EngineConfigDialog
 
-from .ImgDlg import ImageToBoardDialog
 from .SnippingWidget import SnippingWidget
 from .Ecco import getBookEcco
 
@@ -65,6 +65,11 @@ class QueryMode(Enum):
     EngineFirst = auto()
 
 #-----------------------------------------------------#
+
+GAME_FILE_TYPES = ['.xqf','.png', '.cbr']
+GAME_LIB_TYPES = ['.cbl']
+GAME_TYPES_ALL = GAME_FILE_TYPES[:].extend(GAME_LIB_TYPES)
+
 class MainWindow(QMainWindow):
     initGameSignal = Signal(str)
     newBoardSignal = Signal()
@@ -89,16 +94,19 @@ class MainWindow(QMainWindow):
         gamePath = Path('Game')
         gamePath.mkdir(exist_ok=True)
                 
-        self.masterBook = MasterBook()
-        self.masterBook.open(Path('Game', 'masterbook.db'))
+        self.openBook = MasterBook()
+        self.openBook.open(Path('Game', 'openbook.edb'))
         
-        self.openBook = OpenBookYfk()
-        self.openBook.open(Path('Game', 'openbook.yfk'))
+        #self.openBook = OpenBookYfk()
+        #self.openBook.open(Path('Game', 'openbook.yfk'))
         
         Globl.bookmarkStore = BookmarkStore(Path(gamePath, 'bookmarks.json'))
         Globl.endbookStore = EndBookStore(Path(gamePath, 'endbooks.json'))
-        Globl.localbookStore = LocalBookStore(Path(gamePath, 'localbooks.json'))
-        #Globl.masterBook = self.masterBook
+        #Globl.localbookStore = LocalBookStore(Path(gamePath, 'localbooks.json'))
+        #Globl.openBook = self.masterBook
+
+        Globl.localBook = LocalBook()
+        Globl.localBook.open(Path(gamePath, 'localbook.edb'))
         
         Globl.engineManager = EngineManager(self, id = 1)
         
@@ -124,10 +132,12 @@ class MainWindow(QMainWindow):
         #self.moveDbView.selectMoveSignal.connect(self.onTryBookMove)
         self.actionsView = BoardActionsWidget(self)
         self.actionsView.selectMoveSignal.connect(self.onTryBookMove)
-        
+
         self.bookmarkView = BookmarkWidget(self)
         self.bookmarkView.setVisible(False)
-        
+        self.gamelibView = GameLibWidget(self)
+        self.bookmarkView.setVisible(False)
+                
         self.engineView = ChessEngineWidget(self, Globl.engineManager)
         
         #self.addDockWidget(Qt.LeftDockWidgetArea, self.moveDbView)
@@ -136,7 +146,7 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.LeftDockWidgetArea, self.endBookView)
         self.addDockWidget(Qt.RightDockWidgetArea, self.historyView)
         self.addDockWidget(Qt.RightDockWidgetArea, self.bookmarkView)
-        #self.addDockWidget(Qt.LeftDockWidgetArea, self.myGameView)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.gamelibView)
         self.addDockWidget(Qt.BottomDockWidgetArea, self.engineView)
         
         self.snippingWidget = SnippingWidget()
@@ -183,7 +193,8 @@ class MainWindow(QMainWindow):
             msgbox = TimerMessageBox(f"开局库文件【{self.openBookFile}】不存在, 请重新配置开局库。")
             msgbox.exec()
         '''
-
+        self.quickBooks = self.loadQuickBook(Path('Game', 'quick_book.txt'))
+        self.bookmarkView.addQuickBooks(self.quickBooks)
         self.cloudQuery = CloudDB(self)
         self.cloudQuery.query_result_signal.connect(self.onCloudQueryResult)
         
@@ -270,6 +281,25 @@ class MainWindow(QMainWindow):
                 skins[n] = { 'Folder': name }
         return skins
 
+    def loadQuickBook(self, fileName):
+        quick_moves = OrderedDict()
+        
+        with open(fileName, 'r', encoding = 'utf-8') as f:
+            for line_it in f.readlines():
+                line = line_it.strip()
+                if not line or line.startswith('#'):
+                    continue
+                items = line.split(':')
+                #print(len(items), line)
+                if len(items) != 2:
+                    logging.warning(line)
+                    continue
+                name, moves = items
+                name = name[4:]
+                quick_moves[name] = moves
+        
+        return quick_moves
+                    
     #-----------------------------------------------------------------------
     #声音播放
     def initSound(self):
@@ -304,13 +334,13 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(title)
         
     def getGameIccsMoves(self):
-        moves = [{'iccs': it['iccs']}for it in self.positionList[1:]]
+        moves = [it['iccs'] for it in self.positionList[1:]]
         return (self.positionList[0]['fen'], moves)
 
     def saveGameToDB(self):
-        Globl.localbookStore.saveMovesToBook(self.positionList[1:])
+        Globl.localBook.saveMovesToBook(self.positionList[1:])
         self.hasNewMove = False
-
+    
     #-----------------------------------------------------------------------
     #Game 相关
     def switchGameMode(self, gameMode):
@@ -353,7 +383,7 @@ class MainWindow(QMainWindow):
             self.bookmarkAct.setEnabled(False)
             self.bookmarkView.hide()
             self.endBookView.hide()
-            #self.moveDbView.hide()
+            self.gamelibView.hide()
             self.actionsView.hide()
             
             self.showScoreBox.setChecked(False)
@@ -377,7 +407,7 @@ class MainWindow(QMainWindow):
             self.bookmarkAct.setEnabled(False)
             self.endBookView.show()
             self.bookmarkView.hide()
-            #self.myGameView.hide()
+            self.gamelibView.hide()
             self.actionsView.hide()
             
             self.showScoreBox.setChecked(False)
@@ -598,20 +628,14 @@ class MainWindow(QMainWindow):
         #actions = OrderedDict()
 
         fen = position['fen']
-        
-        query = self.masterBook.getMoves(fen)
+                
+        query = self.openBook.getMoves(fen)
         if query:
             master_actions = query['actions']
         else:
             master_actions = OrderedDict()
 
-        query = self.openBook.getMoves(fen)
-        if query:
-            book_actions = query['actions']
-        else:
-            book_actions = OrderedDict()
-
-        query = Globl.localbookStore.getMoves(fen)
+        query = Globl.localBook.getMoves(fen)
         if query:
             local_actions = query['actions']
         else:
@@ -621,8 +645,10 @@ class MainWindow(QMainWindow):
         
         for act in local_actions.values():
             act['mark'] = "L"
-          
+        
+        #合并最终的输出  
         final_actions = local_actions.copy()
+        #合并大师库
         for iccs, m_act in master_actions.items():
             if iccs not in final_actions:
                 final_actions[iccs] = m_act
@@ -632,19 +658,22 @@ class MainWindow(QMainWindow):
                 
                 if ('mark' in m_act):
                     rem_mark = m_act.pop('mark')
-            
+                    #print(iccs, rem_mark)
                 l_act = final_actions[iccs]
                 l_act.update(m_act)
-                #if rem_mark:
-                #    l_act['mark'] = l_act['mark'] + rem_mark
+                if rem_mark:
+                    l_act['mark'] = l_act['mark'] + rem_mark
         
+        '''
+        #合并开局库
         for iccs, m_act in book_actions.items():
             if iccs not in final_actions:
                 final_actions[iccs] = m_act
             else:    
                 l_act = final_actions[iccs]
                 l_act.update(m_act)
-                
+        '''        
+
         #更新分数 
         for act in final_actions.values():
             if 'new_fen' not in act:
@@ -692,10 +721,10 @@ class MainWindow(QMainWindow):
         self.isRunEngine = False
         
         fen = trim_fen(fenInfo['fen'])
-        logging.debug(f'Engine[{engine_id}] BestMove {fenInfo}' )
+        logging.info(f'Engine[{engine_id}] BestMove {fenInfo}' )
         
         #print('onEngineMoveBest', fenInfo)
-
+        
         if (self.gameMode != GameMode.EndGame) and ((self.queryMode == QueryMode.EngineFirst) or (self.reviewMode == ReviewMode.ByEngine)) :
             self.updateFenCache(fenInfo)
 
@@ -912,6 +941,10 @@ class MainWindow(QMainWindow):
         
         self.isHistoryMode = False
         self.boardView.setViewOnly(False)
+        
+        if len(self.positionList) <= 1:
+            self.hasNewMove = False
+
         self.updateEcco()
 
     def onSelectHistoryPosition(self, move_index):
@@ -1103,11 +1136,9 @@ class MainWindow(QMainWindow):
         if 'moves' in position:
             moves = position['moves']
             if moves is not None:
-                for it in moves:
-                    iccs = it['iccs']    
+                for iccs in moves:
                     self.onMoveGo(iccs, quickMode = True)
-                    #qApp.processEvents()
-            
+                    
         self.hasNewMove = False
         self.updateTitle(name)
         self.bookmarkView.setEnabled(True)
@@ -1164,18 +1195,40 @@ class MainWindow(QMainWindow):
         if new_fen:
             self.initGame(new_fen)
 
+    def onSetupEngine(self):
+        dlg = EngineConfigDialog(self)
+        dlg.exec()
+    
+    def onQuickStart(self):
+        pass
+
     def onOpenFile(self):
         options = QFileDialog.Options()
         #options |= QFileDialog.DontUseNativeDialog
 
         fileName, _ = QFileDialog.getOpenFileName(
-            self, "打开文件", self.lastOpenFolder, "象棋演播室文件(*.xqf);;象棋通用格式文件(*.pgn);;所有文件(*.*)", options=options)
+            self, "打开文件", self.lastOpenFolder, "象棋谱(库)文件(*.pgn;*.xqf;*.cbr;*.cbl);;", options=options)
 
         if not fileName:
             return
 
-        self.openFile(fileName)    
-        
+        ext = Path(fileName).suffix.lower()
+        if ext in GAME_FILE_TYPES:
+            self.openFile(fileName)
+        elif ext in GAME_LIB_TYPES:
+            self.openLibFile(fileName)
+
+    def onOpenEndGameFile(self):
+        options = QFileDialog.Options()
+        #options |= QFileDialog.DontUseNativeDialog
+
+        fileName, _ = QFileDialog.getOpenFileName(
+            self, "打开文件", self.lastOpenFolder, "残局挑战库文件(*.csv);;", options=options)
+
+        if not fileName:
+            return
+
+            
     def onSaveFile(self):
         
         if not self.positionList:
@@ -1205,9 +1258,27 @@ class MainWindow(QMainWindow):
         if not game:
             return
         
+        self.gamelibView.hide()
         self.loadBookGame(fileName.name, game)
         self.lastOpenFolder = str(fileName.parent)
-       
+        
+    def openLibFile(self, file_name):
+
+        fileName = Path(file_name)
+        try:
+            game_lib = Game.read_from_lib(fileName)
+        except Exception as e:
+            print(e)
+            return
+
+        #if not game_lib:
+        #    return
+        self.gamelibView.updateGameLib(game_lib)
+        self.gamelibView.show()
+
+        #self.loadBookGame(fileName.name, game)
+        self.lastOpenFolder = str(fileName.parent)
+    
     def saveToFile(self, file_name):
 
         board = ChessBoard(self.positionList[0]['fen'])
@@ -1234,7 +1305,6 @@ class MainWindow(QMainWindow):
     
     def onChangedSkin(self, action):
         skin = action.text()
-        print("换肤", skin)
         self.changeSkin(skin)
         
     def changeSkin(self, skin):
@@ -1256,10 +1326,12 @@ class MainWindow(QMainWindow):
     def dragEnterEvent(self, event):
         if self.gameMode != GameMode.Free:
             return
+
+        #TODO 先询问是否丢弃当前未保存的内容    
         urls = event.mimeData().urls()
         fileName = Path(urls[0].toLocalFile())
         ext = fileName.suffix.lower()
-        if ext in ['.xqf','.png', '.jpg', '.png', '.bmp', '.jpeg']:
+        if ext in GAME_TYPES_ALL: # '.jpg', '.png', '.bmp', '.jpeg']:
             event.acceptProposedAction()
 
     def dropEvent(self, event):
@@ -1268,23 +1340,35 @@ class MainWindow(QMainWindow):
         urls = event.mimeData().urls()
         fileName = Path(urls[0].toLocalFile())
         ext = fileName.suffix.lower()
-        if ext in ['.xqf','.png']:
+        if ext in GAME_FILE_TYPES:
             self.openFile(fileName)
             event.acceptProposedAction()
-        elif ext in ['.jpg', '.png', '.bmp', '.jpeg']:
-            self.loadBoardFromFile(fileName)    
+        elif ext in GAME_LIB_TYPES:
+            self.openLibFile(fileName)
             event.acceptProposedAction()
+            
+        #elif ext in ['.jpg', '.png', '.bmp', '.jpeg']:
+        #    self.loadBoardFromFile(fileName)    
+        #    event.acceptProposedAction()
 
     #------------------------------------------------------------------------------
     #UI Base
     def createActions(self):
 
         self.openFileAct = QAction(self.style().standardIcon(
-            QStyle.SP_FileDialogStart),
-                                   "打开对局",
+                                    QStyle.SP_FileDialogStart),
+                                   "打开棋谱",
                                    self,
-                                   statusTip="打开对局文件",
+                                   statusTip="打开棋谱（库）文件",
                                    triggered=self.onOpenFile)
+        
+        self.openEndGameFileAct = QAction(self.style().standardIcon(
+                                    QStyle.SP_FileDialogStart),
+                                   "打开残局挑战库",
+                                   self,
+                                   statusTip="打开残局挑战库文件（.CSV）",
+                                   triggered=self.onOpenEndGameFile)
+
         self.useOpenBookAct = QAction(self.style().standardIcon(
                                     QStyle.SP_FileDialogStart),
                                    "开局库选择",
@@ -1294,11 +1378,18 @@ class MainWindow(QMainWindow):
 
         self.saveFileAct = QAction(self.style().standardIcon(
             QStyle.SP_DialogSaveButton),
-                                   "保存对局",
+                                   "保存棋谱",
                                    self,
-                                   statusTip="保存对局文件",
+                                   statusTip="保存棋谱文件(PGN 格式)",
+        
                                    triggered=self.onSaveFile)
+        self.setupEngineAct = QAction( #QIcon(':ImgRes/openbook.png'),
+                                     "引擎设置",
+                                     self,
+                                     statusTip="设置引擎参数",
+                                     triggered=self.onSetupEngine)
 
+        
         self.doOpenBookAct = QAction(QIcon(':ImgRes/openbook.png'),
                                      "自由练习",
                                      self,
@@ -1339,6 +1430,12 @@ class MainWindow(QMainWindow):
                                       self,
                                       statusTip="从对局库中搜索局面",
                                       triggered=self.onSearchBoard)
+        
+        self.quickStartAct = QAction( #QIcon(':ImgRes/search.png'),
+                                      "快速开局",
+                                      self,
+                                      statusTip="快速走到某个开局",
+                                      triggered=self.onQuickStart)
     
         self.captureBoardAct = QAction(QIcon(':ImgRes/search.png'),
                                       "屏幕截图",
@@ -1377,8 +1474,11 @@ class MainWindow(QMainWindow):
         self.fileMenu.addAction(self.openFileAct)
         self.fileMenu.addAction(self.saveFileAct)
         self.fileMenu.addSeparator()
-        self.fileMenu.addAction(self.useOpenBookAct)
+        self.fileMenu.addAction(self.openEndGameFileAct)
         self.fileMenu.addSeparator()
+
+        #self.fileMenu.addAction(self.useOpenBookAct)
+        #self.fileMenu.addSeparator()
         self.fileMenu.addAction(self.exitAct)
 
         self.menuBar().addSeparator()
@@ -1419,9 +1519,9 @@ class MainWindow(QMainWindow):
         self.fileBar = self.addToolBar("File")
         self.fileBar.setObjectName("File")
 
+        self.fileBar.addAction(self.setupEngineAct)
         self.fileBar.addAction(self.openFileAct)
         self.fileBar.addAction(self.saveFileAct)
-        #self.fileBar.addAction(self.myGamesAct)
         self.fileBar.addAction(self.bookmarkAct)
 
         ag = QActionGroup(self)
@@ -1490,7 +1590,7 @@ class MainWindow(QMainWindow):
         self.showBar.addSeparator()
         self.showBar.addWidget(self.showBestBox)
         self.showBar.addWidget(self.showScoreBox)
-        
+        #self.showBar.addAction(self.quickStartAct)
         self.sysBar = self.addToolBar("System")
         self.sysBar.setObjectName("System")
 
@@ -1523,7 +1623,7 @@ class MainWindow(QMainWindow):
         self.openBook.close()
         Globl.bookmarkStore.close()
         Globl.endbookStore.close()
-        Globl.localbookStore.close()
+        Globl.localBook.close()
 
     def readSettingsBeforeGameInit(self):
         self.settings = QSettings('XQSoft', Globl.app.APP_NAME)

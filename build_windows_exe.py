@@ -13,7 +13,6 @@ ret = os.system(cmd)
 if ret != 0:
     sys.exit(ret)
 
-
 need_removes = Path('dist', 'Evolution', '_internal').glob(".//mkl_*.dll")
 for file in need_removes:
     os.path.unlink(file)

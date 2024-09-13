@@ -10,7 +10,7 @@ from PySide6.QtCore import Signal, QObject
 #from PySide6.QtGui import *
 
 import cchess
-from cchess import ChessBoard, UcciEngine, UciEngine, get_move_color
+from cchess import ChessBoard, UcciEngine, UciEngine
 
 from .Utils import ThreadRunner
 
@@ -29,7 +29,6 @@ class EngineManager(QObject):
 
         self.fen = None
         self.fen_engine = None
-        self.score_move = {}
         
         self.isRunning = False
         self.isReady = False
@@ -70,7 +69,6 @@ class EngineManager(QObject):
         if (cchess.EMPTY_BOARD in fen_engine) or (cchess.EMPTY_BOARD in fen):
             return False
 
-        self.score_move.clear()
         self.fen_engine = fen_engine
         self.fen = fen
         
@@ -84,7 +82,7 @@ class EngineManager(QObject):
             
         self.engine.stop_thinking()
         time.sleep(0.2)
-        self.engine.handle_msg_once()
+        self.engine.get_action()
         return True 
 
     def start(self):
@@ -106,68 +104,45 @@ class EngineManager(QObject):
     def run(self):
         self.isRunning = True
         while self.isRunning:
-            self.runOnce()
+            try:
+                self._runOnce()
+            except Exception as e:
+                logging.error(str(e))
             time.sleep(0.1)
         #self.engine.stop_thinking()
 
-    def runOnce(self):
+    def _runOnce(self):
 
         if self.fen:
-            move_color = get_move_color(self.fen) 
+            move_color = cchess.get_move_color(self.fen) 
         
-        self.engine.handle_msg_once()
+        eg_out = self.engine.get_action()
+        if eg_out is None:
+            return 
+
+        action = eg_out['action']
+        eg_out['fen'] = self.fen
+        if action == 'ready':
+            self.isReady = True
+            self.readySignal.emit(self.id, self.engine.ids['name'], self.engine.options)
+        elif action == 'bestmove':
+            ret = {}
+            ret.update(eg_out)
+            if 'move' in eg_out:
+                iccs = eg_out['move']
+                ret['iccs'] = eg_out.pop('move')
+                m = ChessBoard(self.fen).move_iccs(iccs)    
+                new_fen = m.board_done.to_fen()
+                iccs_dict = {'iccs': iccs, 'diff': 0, 'new_fen': new_fen}
+                for key in ['score', 'mate']:
+                    if key in eg_out:
+                      iccs_dict[key] = eg_out[key]    
+                    ret['actions'] = {iccs: iccs_dict}
+            self.moveBestSignal.emit(self.id, ret)
+        elif action == 'dead':  #被将死
+            self.checkmateSignal.emit(self.id, eg_out)
+        elif action == 'info_move':
+            self.moveInfoSignal.emit(self.id, eg_out)
         
-        while not self.engine.move_queue.empty():
-            eg_out = self.engine.move_queue.get()
-            #print(eg_out)
-            action = eg_out['action']
-            if action == 'ready':
-                self.isReady = True
-                self.readySignal.emit(self.id, self.engine.ids['name'], self.engine.options)
-            elif action == 'bestmove':
-                ret = {'fen': self.fen, }
-                if 'move' in eg_out:
-                    iccs = eg_out['move']
-                    
-                    ret['iccs'] = iccs
-                    ret['best_move'] = [iccs, ]
-                    
-                    if iccs in self.score_move:
-                        score_best = self.score_move[iccs] 
-                        if move_color == cchess.BLACK:
-                            score_best = -score_best
-                        ret['score'] = score_best
-                    
-                        m = ChessBoard(self.fen).move_iccs(iccs)
-                        if not m:
-                            continue
-
-                        new_fen = m.board_done.to_fen()
-  
-                        ret['actions'] = {iccs:{'iccs': iccs, 'score': score_best, 'diff': 0, 'new_fen': new_fen}}
-                    #ret['raw_msg'] = eg_out['raw_msg']
-
-                self.moveBestSignal.emit(self.id, ret)
-            elif action == 'dead':  #被将死
-                eg_out['fen'] = self.fen
-                self.checkmateSignal.emit(self.id, eg_out)
-            elif action == 'info_move':
-                eg_out['fen'] = self.fen
-                if len(eg_out['move']) == 0:
-                    continue
-                eg_out['moves'] = eg_out['move']    
-                move_iccs = eg_out['move'][0]
-                if 'score' in eg_out:
-                    self.score_move[move_iccs] = eg_out['score']
-                    eg_out['actions'] = []
-                
-                    if move_color == cchess.BLACK:
-                        eg_out['score'] = -eg_out['score']
-                            
-                self.moveInfoSignal.emit(self.id, eg_out)
-            elif action == 'info':
-                #print(eg_out)
-                pass
-
 
 #-----------------------------------------------------#

@@ -502,19 +502,6 @@ class ChessEngineWidget(QDockWidget):
         self.blackBox.setChecked(settings.value("engineBlack", False, type=bool))
         self.analysisBox.setChecked(settings.value("engineAnalysis", False, type=bool))
     
-    '''
-    def setTopGameLevel(self):
-        self.skillLevelSpin.setValue(20)
-        self.skillLevelSpin.setEnabled(False)
-
-    def restoreGameLevel(self, level):
-        self.skillLevelSpin.setValue(level)
-        self.skillLevelSpin.setEnabled(True)
-
-    def saveGameLevel(self):
-        return self.skillLevelSpin.value()
-    '''
-
     def getGoParams(self):
         depth = self.DepthSpin.value()
         moveTime = self.moveTimeSpin.value()
@@ -544,7 +531,6 @@ class ChessEngineWidget(QDockWidget):
         self.parent.onViewBranch()
 
     def onEngineMoveInfo(self, fenInfo):
-
         fen = fenInfo['fen']
         
         iccs_str = ','.join(fenInfo["moves"])
@@ -906,10 +892,10 @@ class BoardActionsWidget(QDockWidget):
          
         self.actionsView = QTreeWidget()
         self.actionsView.setColumnCount(1)
-        self.actionsView.setHeaderLabels(['MK', "备选着法", "红优分", '', '备注'])
-        self.actionsView.setColumnWidth(0, 35)
+        self.actionsView.setHeaderLabels(['MK', "备选着法", "得分", '', '备注'])
+        self.actionsView.setColumnWidth(0, 45)
         self.actionsView.setColumnWidth(1, 80)
-        self.actionsView.setColumnWidth(2, 60)
+        self.actionsView.setColumnWidth(2, 40)
         self.actionsView.setColumnWidth(3, 1)
         self.actionsView.setColumnWidth(4, 20)
         self.actionsView.clicked.connect(self.onSelectIndex)
@@ -983,10 +969,14 @@ class EndBookWidget(QDockWidget):
         self.bookCombo.currentTextChanged.connect(self.onBookChanged)
         self.importBtn = QPushButton("导入")
         self.importBtn.clicked.connect(self.onImportBtnClick)
+        self.openBtn = QPushButton("打开")
+        self.openBtn.clicked.connect(self.onOpenBtnClick)
         
         hbox = QHBoxLayout()
         hbox.addWidget(self.bookCombo, 2)
         hbox.addWidget(self.importBtn, 0)
+        hbox.addWidget(self.openBtn, 0)
+        
         vbox = QVBoxLayout()
         vbox.addLayout(hbox)
         vbox.addWidget(self.bookView)
@@ -1075,7 +1065,10 @@ class EndBookWidget(QDockWidget):
 
         self.updateBooks()
         self.bookCombo.setCurrentText(lib_name)
-
+    
+    def onOpenBtnClick(self):
+        pass
+            
     def onBookChanged(self, book_name):
 
         self.bookView.clear()
@@ -1186,7 +1179,7 @@ class BookmarkWidget(QDockWidget):
         self.updateBookmarks()
 
     def updateBookmarks(self):
-
+        
         self.bookmarkView.clear()
         self.bookmarks = sorted(Globl.bookmarkStore.getAllBookmarks(), key = lambda x: x['name'])
 
@@ -1195,7 +1188,18 @@ class BookmarkWidget(QDockWidget):
             item.setText(it['name'])
             item.setData(Qt.UserRole, it)
             self.bookmarkView.addItem(item)
-
+    
+    def addQuickBooks(self, books):    
+        for i,(name, moves_str) in enumerate(books.items()):
+            item = QListWidgetItem()
+            item.setText(name)
+            position = {}
+            position['name'] = name
+            position['fen'] = cchess.FULL_INIT_FEN
+            position['moves'] = moves_str.split(',')
+            item.setData(Qt.UserRole, position)
+            self.bookmarkView.addItem(item)
+        
     def contextMenuEvent(self, event):
 
         menu = QMenu(self)
@@ -1243,165 +1247,60 @@ class BookmarkWidget(QDockWidget):
     def sizeHint(self):
         return QSize(150, 500)
 
-#-----------------------------------------------------#
-class PositionEditDialog(QDialog):
-    def __init__(self, parent):
-        super().__init__(parent)
-
-        self.setWindowTitle("局面编辑")
-
-        self.boardEdit = ChessBoardEditWidget()
-        self.redMoveBtn = QRadioButton("红方走", self)
-        self.blackMoveBtn = QRadioButton("黑方走", self)
-        self.fenLabel = QLabel()
-
-        group1 = QButtonGroup(self)
-        group1.addButton(self.redMoveBtn)
-        group1.addButton(self.blackMoveBtn)
-
-        hbox1 = QHBoxLayout()
-        hbox1.addWidget(self.redMoveBtn, 0)
-        hbox1.addWidget(self.blackMoveBtn, 0)
-        hbox1.addWidget(QLabel(''), 1)
-
-        initBtn = QPushButton("初始棋盘", self)
-        clearBtn = QPushButton("清空棋盘", self)
-        openImgBtn = QPushButton("打开图片", self)
-        initBtn.clicked.connect(self.onInitBoard)
-        clearBtn.clicked.connect(self.onClearBoard)
-        openImgBtn.clicked.connect(self.onOpenImage)
-        
-        okBtn = QPushButton("确定", self)
-        cancelBtn = QPushButton("取消", self)
-
-        vbox = QVBoxLayout()
-        vbox.addWidget(self.boardEdit)
-        vbox.addWidget(self.fenLabel)
-        vbox.addLayout(hbox1)
-
-        hbox = QHBoxLayout()
-        hbox.addWidget(self.redMoveBtn)
-        hbox.addWidget(self.blackMoveBtn)
-        hbox.addWidget(initBtn)
-        hbox.addWidget(clearBtn)
-        hbox.addWidget(openImgBtn)
-        hbox.addWidget(okBtn)
-        hbox.addWidget(cancelBtn)
-
-        vbox.addLayout(hbox)
-        self.setLayout(vbox)
-
-        self.boardEdit.fenChangedSignal.connect(self.onBoardFenChanged)
-        self.redMoveBtn.clicked.connect(self.onRedMoveBtnClicked)
-        self.blackMoveBtn.clicked.connect(self.onBlackMoveBtnClicked)
-
-        okBtn.clicked.connect(self.accept)
-        cancelBtn.clicked.connect(self.close)
-        
-        self.snippingWidget = SnippingWidget()
-        self.snippingWidget.onSnippingCompleted = self.onSnippingCompleted
-
-    def onInitBoard(self):
-        self.boardEdit.from_fen(cchess.FULL_INIT_FEN)
-
-    def onClearBoard(self):
-        self.boardEdit.from_fen(cchess.EMPTY_FEN)
-
-    def onRedMoveBtnClicked(self):
-        self.boardEdit.set_move_color(cchess.RED)
-
-    def onBlackMoveBtnClicked(self):
-        self.boardEdit.set_move_color(cchess.BLACK)
+#------------------------------------------------------------------#
+class GameLibWidget(QDockWidget):
     
-    def onOpenImage(self):
-        self.snippingWidget.start()
-
-    def onSnippingCompleted(self, img):
-        self.setWindowState(Qt.WindowActive)
-        
-    def onBoardFenChanged(self, fen):
-
-        self.fenLabel.setText(fen)
-
-        color = self.boardEdit.get_move_color()
-        if color == cchess.RED:
-            self.redMoveBtn.setChecked(True)
-        elif color == cchess.BLACK:
-            self.blackMoveBtn.setChecked(True)
-
-    def edit(self, fen_str):
-        self.boardEdit.from_fen(fen_str)
-
-        if self.exec_() == QDialog.Accepted:
-            return self.boardEdit.to_fen()
-        else:
-            return None
-
-
-#-----------------------------------------------------#
-class PositionHistDialog(QDialog):
     def __init__(self, parent):
-        super().__init__(parent)
+        super().__init__("棋库", parent)
+        self.setObjectName("GameLibWidget")
+        self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
 
-        #self.setFixedSize(200, 120)
+        self.parent = parent        
+        self.gameLib = []
+        
+        self.dockedWidget = QWidget(self)
+        self.setWidget(self.dockedWidget)
 
-        self.setWindowTitle("局面推演")
+        self.gamesView = QListWidget()
+        self.gamesView.doubleClicked.connect(self.onDoubleClicked)
 
         vbox = QVBoxLayout()
+        #vbox.addLayout(hbox)
+        vbox.addWidget(self.gamesView)
+        self.dockedWidget.setLayout(vbox)
 
-        self.boardEdit = BoardHistoryWidget()
-        vbox.addWidget(self.boardEdit)
+        #self.gamesModel = QStandardItemModel(self.gamesView)
+        #self.gamesView.setModel(self.gamesModel)
+        self.gamesView.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        #self.gamesView.clicked.connect(self.onSelectIndex)
 
-        okBtn = QPushButton("完成", self)
-        #cancelBtn = QPushButton("取消", self)
-        #self.quit.setGeometry(62, 40, 75, 30)
-
-        hbox = QHBoxLayout()
-        hbox.addWidget(okBtn)
-        vbox.addLayout(hbox)
-        self.setLayout(vbox)
-
-        okBtn.clicked.connect(self.accept)
-        #cancelBtn.clicked.connect(self.onClose)
-
-    def onInitBoard(self):
-        self.boardEdit.from_fen(cchess.FULL_INIT_FEN)
-        self.fenLabel.setText(self.boardEdit.to_fen())
+        #self.curr_item = None
 
 
-#-----------------------------------------------------#
-class EngineConfigDialog(QDialog):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("引擎参数配置")
+    def updateGameLib(self, gamelib):
+        #self.
+        self.gamelib = gamelib
+        games = gamelib['games']   
 
-        self.depthEdit = QSpinBox()
-        self.depthEdit.setRange(5, 30)
+        self.gamesView.clear()
+        
+        for i, it in enumerate(games):
+            item = QListWidgetItem()
+            item.setText(it.info['title'])
+            item.setData(Qt.UserRole, it)
+            self.gamesView.addItem(item)
+    
+    def onDoubleClicked(self):
+        item = self.gamesView.currentItem()
+        game = item.data(Qt.UserRole)
+        name = f'{self.gamelib["name"]}-{game.info["title"]}'
+        self.parent.loadBookGame(name, game)
 
-        form_layout = QFormLayout()
-        form_layout.addRow(QLabel("分析深度:"), self.depthEdit)
+    def onSelectIndex(self, index):
+        self.curr_item = self.gamesView.itemFromIndex(index)
 
-        button_box = QDialogButtonBox(QDialogButtonBox.Ok
-                                      | QDialogButtonBox.Cancel)
-        button_box.accepted.connect(self.accept)
-        button_box.rejected.connect(self.reject)
+    def sizeHint(self):
+        return QSize(150, 500)
 
-        main_layout = QVBoxLayout()
-        #main_layout.addWidget(QLabel())
-        main_layout.addLayout(form_layout)
-        main_layout.addWidget(QLabel())
-        main_layout.addWidget(button_box)
-        self.setLayout(main_layout)
 
-    def config(self, params):
-        if 'depth' in params:
-            self.depthEdit.setValue(params['depth'])
-        else:
-            self.depthEdit.setValue(22)
-            
-        if self.exec_():
-            params['depth'] = self.depthEdit.value()
-            return True
-
-        return False
 

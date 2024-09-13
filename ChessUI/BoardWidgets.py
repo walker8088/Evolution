@@ -10,7 +10,8 @@ from PySide6.QtGui import QPixmap, QCursor, QPen, QColor, QPainter, QPolygon
 from PySide6.QtWidgets import QMenu, QWidget, QApplication
 from PySide6.QtSvg import QSvgRenderer
 
-from cchess import ChessBoard, RED, iccs2pos
+import cchess
+from cchess import ChessBoard, iccs2pos
 
 from .Utils import TimerMessageBox
 from .Resource import qt_resource_data

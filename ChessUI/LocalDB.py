@@ -42,26 +42,171 @@ class PosMove(Model):
 '''
 
 #------------------------------------------------------------------------------
-#本地库，包括古典库，大师库
+#本地古典库，大师库
 #
-#master_book_db = SqliteExtDatabase(None)
 master_book_db = Proxy()
 
 #------------------------------------------------------------------------------
-class MasterPosAction(Model):
-    fen = CharField(unique=True, index=True)
+class MasterEvBook(Model):
+    #fen = CharField(unique=True, index=True)
+    key   = BigIntegerField()
     step  = IntegerField()
     score = IntegerField(null=True)
-    actions  = JSONField()
+    iccs  = CharField()
+    mark  = CharField(null=True)
+    memo  = JSONField(null=True)
     
     class Meta:
         database = master_book_db
-        table_name = 'posaction'
+        table_name = 'evbook'
 
 #------------------------------------------------------------------------------
+#本地库
+#
+local_book_db = Proxy()
+
+#------------------------------------------------------------------------------
+class LocalEvBook(Model):
+    #fen = CharField(unique=True, index=True)
+    key   = BigIntegerField()
+    step  = IntegerField()
+    score = IntegerField(null=True)
+    iccs  = CharField()
+    mark  = CharField(null=True)
+    memo  = JSONField(null=True)
+    
+    class Meta:
+        database = local_book_db
+        table_name = 'evbook'
+
+#------------------------------------------------------------------------------
+class MoveBookMixIn():
+    #def __init__(self):
+    #    self.book_cls = book_cls
+        
+    def getMoves(self, fen):
+        
+        query = self.getRecord(fen)
+        if not query:
+            return {}
+
+        records, record_state = query    
+        actions = OrderedDict()    
+        score_best = None
+        board = ChessBoard(fen)
+        move_color = board.get_move_color()        
+        
+        for item in records:
+            ics = item.iccs
+            score = item.score
+            if record_state == 'mirror':
+                iccs = cchess.iccs_mirror(ics)
+            else:
+                iccs = ics
+
+            m = {}  
+            m['mark'] = item.mark
+            m['iccs'] = iccs
+            move_it = board.copy().move_iccs(iccs)
+            m['text'] = move_it.to_text()
+            m['new_fen'] = move_it.board_done.to_fen()
+            
+            if score is not None:
+                if score_best is  None:
+                    score_best = score
+                m['score'] = score 
+                if move_color == cchess.BLACK:
+                    m['score'] = -m['score']
+                m['diff'] = score - score_best
+            
+            #if 'mt' in act:
+            #    m['mate'] = act['mt']
+
+            actions[iccs] = m
+            
+        ret = {}
+        ret['fen'] = fen
+        ret['mirror'] = (record_state == 'mirror')
+        
+        if score_best is not None:
+            ret['score'] = score_best 
+        ret['actions'] = actions
+        
+        return ret
+    
+    def removeMoves(self, fen, iccs):
+        
+        query = self.getRecord(fen)
+        
+        #没有fen的记录
+        if query is None:
+            return False
+
+        record, record_state = query
+        if record_state == 'mirror':
+            new_iccs = cchess.iccs_mirror(iccs)
+        else:
+            ne_iccs = iccs
+
+        
+    def savePositionList(self, positionList, mark):
+        for position in positionList:
+            fen = position['fen_prev']
+            step = position['index']
+            score = None
+            return saveRecord(fen, step, score, position['iccs'])        
+    
+    def getRecord(self, fen, iccs = None):
+        board = ChessBoard(fen)
+        for b, b_state in [(board, ''), (board.mirror(), 'mirror')]:
+            if iccs :
+                query = self.book_cls.select().where(self.book_cls.key == b.zhash(), self.book_cls.iccs == iccs).order_by(-self.book_cls.score)
+            else:
+                query = self.book_cls.select().where(self.book_cls.key == b.zhash()).order_by(-self.book_cls.score)
+            
+            query.execute()
+            #print(query.count(), b_state) 
+            if query.count() > 0:
+                break
+            
+        if query.count() == 0:
+            return None
+    
+        return (query, b_state)
+    
+    def saveRecord(self, fen, step, score, iccs):
+        item = self.getRecord(fen)
+        board = ChessBoard(fen)
+        if item is None:
+            #没查到数据，直接保存
+            new_record = self.book_cls(board.zhash(), step, score, iccs)
+            new_record.save()
+        else:
+            #查到数据了，要进行合并
+            record, record_state = item
+            
+            if record_state == 'mirror':
+                #查到的数据与本次保存的相比是镜像移动，本次移动镜像化
+                new_iccs = cchess.iccs_mirror(iccs)
+                board = board.mirror()
+            else:
+                new_iccs = iccs
+
+            #存在相同数据，不重复保存
+            if new_iccs == iccs:
+                return True
+
+            保存数据
+            new_record = self.book_cls(board.zhash, step, new_score, new_iccs)
+            new_record.save()
+                    
+    
+#------------------------------------------------------------------------------
 #MasterBook #存储古典以及大师对局谱
-class MasterBook():
+class MasterBook(MoveBookMixIn):
     def __init__(self):
+        #super(self).__init__(MasterEvBook)
+        self.book_cls = MasterEvBook
         self.db_master = None
 
     def open(self, fileName):
@@ -70,19 +215,20 @@ class MasterBook():
         if not Path(fileName).is_file():
             return False
 
-        #master_book_db.init(fileName)
         self.db_master = SqliteExtDatabase(fileName)
         master_book_db.initialize(self.db_master)
-
-        #self.getRecord(cchess.FULL_INIT_FEN)
 
         return True
     
     def close(self):
         if self.db_master:
             self.db_master.close()
-        self.db_master = None
-    
+        self.db_master = None    
+
+    def removeMoves(self, fen, iccs, mark):
+        return False
+
+    '''
     def getMoves(self, fen):
         
         item = self.getRecord(fen)
@@ -131,7 +277,7 @@ class MasterBook():
         ret['actions'] = actions
         
         return ret
-
+    
     def removeMoves(self, fen, iccs, mark):
         
         item = self.getRecord(fen)
@@ -170,7 +316,7 @@ class MasterBook():
         else:
             #尚有其他数据，保存新结果
             record.save()
-
+    
     #界面的类型转化为数据库类型然后保存        
     def saveActions(self, fen, step, score, actions, mark):
         db_actions = {}
@@ -262,7 +408,33 @@ class MasterBook():
             new_record = PosAction(fen, record.step, new_score, record.actions)
             new_record.save()
                     
+    '''
+#------------------------------------------------------------------------------
+#LocalBook #存储个人保存的棋谱
+class LocalBook(MoveBookMixIn):
+    def __init__(self):
+        #super(self).__init__(MasterEvBook)
+        self.book_cls = LocalEvBook
+        self.db_local = None
+
+    def open(self, fileName):
+        global local_book_db
+
+        isInit = False
+        if not Path(fileName).is_file():
+            isInit = True
+
+        self.db_local = SqliteExtDatabase(fileName)
+        local_book_db.initialize(self.db_local)
+        if isInit:
+            local_book_db.create_tables([self.book_cls])
+        return True
     
+    def close(self):
+        if self.db_local:
+            self.db_local.close()
+        self.db_local = None
+
 #------------------------------------------------------------------------------
 #勇芳开局库
 #openBookYfk = SqliteExtDatabase(None)
