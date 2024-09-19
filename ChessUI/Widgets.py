@@ -559,8 +559,8 @@ class ChessEngineWidget(QDockWidget):
 
     def updateNode(self, it, fenInfo, is_new_text=True):
 
-        if 'depth' in fenInfo:
-            depth = int(fenInfo['depth'])
+        if 'seldepth' in fenInfo:
+            depth = int(fenInfo['seldepth'])
             it.setText(0, f'{depth:02d}')
         if 'score' in fenInfo:
             it.setText(1, str(fenInfo['score']))

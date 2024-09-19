@@ -12,7 +12,6 @@ from .Utils import getTitle
 
 from . import Globl
 
-'''
 #-----------------------------------------------------#
 # Back up the reference to the exceptionhook
 sys._excepthook = sys.excepthook
@@ -20,12 +19,11 @@ sys._excepthook = sys.excepthook
 def my_exception_hook(exctype, value, tb):
     # Print the error and traceback
     msg = ''.join(traceback.format_exception(exctype, value, tb))
-    QMessageBox.critical(None, getTitle(), msg)
+    #QMessageBox.critical(None, getTitle(), msg)
     logging.error(f'Critical Error: {msg}')
 
 # Set the exception hook to our wrapping function
 sys.excepthook = my_exception_hook
-'''
 
 #-----------------------------------------------------#
 class ChessApp(QApplication):

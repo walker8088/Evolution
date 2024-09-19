@@ -21,6 +21,7 @@ class EngineManager(QObject):
     moveBestSignal = Signal(int, dict)
     moveInfoSignal = Signal(int, dict)
     checkmateSignal = Signal(int, dict)
+    drawSignal = Signal(int, dict)
 
     def __init__(self, parent, id):
         super().__init__()
@@ -113,36 +114,63 @@ class EngineManager(QObject):
 
     def _runOnce(self):
 
-        if self.fen:
-            move_color = cchess.get_move_color(self.fen) 
-        
-        eg_out = self.engine.get_action()
-        if eg_out is None:
+        if not self.fen:
             return 
-
-        action = eg_out['action']
-        eg_out['fen'] = self.fen
+        
+        move_color = cchess.get_move_color(self.fen)
+        action = self.engine.get_action()
+        if action is None:
+            return 
+        print(action)    
+        act_id = action['action']
+        action['fen'] = self.fen
         if action == 'ready':
             self.isReady = True
             self.readySignal.emit(self.id, self.engine.ids['name'], self.engine.options)
         elif action == 'bestmove':
             ret = {}
-            ret.update(eg_out)
-            if 'move' in eg_out:
-                iccs = eg_out['move']
-                ret['iccs'] = eg_out.pop('move')
-                m = ChessBoard(self.fen).move_iccs(iccs)    
-                new_fen = m.board_done.to_fen()
-                iccs_dict = {'iccs': iccs, 'diff': 0, 'new_fen': new_fen}
-                for key in ['score', 'mate']:
-                    if key in eg_out:
-                      iccs_dict[key] = eg_out[key]    
-                    ret['actions'] = {iccs: iccs_dict}
+            ret.pop('fen_engine')
+            ret.update(action)
+            iccs = ret['iccs'] = ret.pop('move')
+            m = ChessBoard(self.fen).move_iccs(iccs) 
+            print(m)
+            #引擎有时会输出以前的局面的着法，这里预先验证一下能不能走，不能走的着法都忽略掉
+            if m is None:
+                return
+
+            #先处理本步的得分是下一步的负值
+            for key in ['score', 'mate']:
+                if key in ret:
+                    ret[key] = - ret[key]
+                    
+            #再处理出现mate时，score没分的情况
+            if 'score' not in ret:
+                mate_flag = 1 if ret['mate'] > 0 else -1
+                ret['score'] = 39999 * mate_flag
+            
+            #最后处理分数都换算到红方得分的情况
+            #move_color = board.get_move_color()
+            #if move_color == cchess.BLACK:
+            #    for key in ['score', 'mate']:
+            #        if key in action:
+            #            action[key] = -action[key]
+                
+            
+            new_fen = m.board_done.to_fen()
+            iccs_dict = {'iccs': iccs, 'diff': 0, 'new_fen': new_fen}
+            for key in ['score', 'mate']:
+                if key in ret:
+                  iccs_dict[key] = ret[key]    
+            
+            ret['actions'] = {iccs: iccs_dict}
             self.moveBestSignal.emit(self.id, ret)
-        elif action == 'dead':  #被将死
-            self.checkmateSignal.emit(self.id, eg_out)
-        elif action == 'info_move':
-            self.moveInfoSignal.emit(self.id, eg_out)
+
+        elif act_id == 'info_move':
+            self.moveInfoSignal.emit(self.id, action)
+        elif act_id == 'dead':  #引擎被将死
+            self.checkmateSignal.emit(self.id, action)
+        elif act_id == 'draw':  #引擎认输
+            self.drawSignal.emit(self.id, action)
         
 
 #-----------------------------------------------------#

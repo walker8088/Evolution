@@ -228,8 +228,8 @@ class ChessBoardBaseWidget(QWidget):
         new_width = size.width()
         new_height = size.height()
 
-        new_scale = min((new_width-5) / self.base_board_width,
-                        (new_height-5) / self.base_board_height)
+        new_scale = min((new_width-10) / self.base_board_width,
+                        (new_height-10) / self.base_board_height)
 
         self.scaleBoard(new_scale)
 

@@ -723,8 +723,6 @@ class MainWindow(QMainWindow):
         fen = trim_fen(fenInfo['fen'])
         logging.info(f'Engine[{engine_id}] BestMove {fenInfo}' )
         
-        #print('onEngineMoveBest', fenInfo)
-        
         if (self.gameMode != GameMode.EndGame) and ((self.queryMode == QueryMode.EngineFirst) or (self.reviewMode == ReviewMode.ByEngine)) :
             self.updateFenCache(fenInfo)
 
