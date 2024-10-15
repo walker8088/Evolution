@@ -6,7 +6,7 @@ from ChessUI.Version import release_version
 
 #cmd = "pyinstaller.exe -F .\\Evolution.py -i images\\app.ico --noconsole --exclude-module PyQt5"
 cmd = "pyinstaller.exe .\\Evolution.py -i ImgRes\\app.ico --clean --noconsole --exclude-module=PyQt5 \
-            --exclude-module=nacl --exclude-module=psycopg2"
+            --exclude-module=nacl --exclude-module=numpy --exclude-module=psycopg2"
 
 ret = os.system(cmd)
 
@@ -45,7 +45,8 @@ for file in [
     'ReleaseNote.txt'
     ]:
     shutil.copy(file, '.\\dist\\Evolution\\')
-final_folder = f'.\\dist\\Evolution-{release_version}'    
+    
+final_folder = f'D:\\Evolution-{release_version}'    
 shutil.move('.\\dist\\Evolution', final_folder)
 print(f'请到 {final_folder} 目录下查看exe文件。')
 print("Done.")      

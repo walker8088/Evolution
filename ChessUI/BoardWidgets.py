@@ -7,7 +7,7 @@ from configparser import ConfigParser
 #from PySide6 import qApp
 from PySide6.QtCore import Qt, Signal, QTimer, QPoint, QSize, QRect
 from PySide6.QtGui import QPixmap, QCursor, QPen, QColor, QPainter, QPolygon
-from PySide6.QtWidgets import QMenu, QWidget, QApplication
+from PySide6.QtWidgets import QDialog, QMenu, QWidget, QApplication
 from PySide6.QtSvg import QSvgRenderer
 
 import cchess
@@ -32,6 +32,7 @@ def scaleImage(img, scale):
 
     return new_img
 
+#-----------------------------------------------------#
 def SvgToPixmap(svg, width, height):
     pix = QPixmap(QSize(width, height))
     pix.fill(Qt.transparent)
@@ -40,6 +41,35 @@ def SvgToPixmap(svg, width, height):
     svg.render(painter)
     #pix.save('test.png')
     return pix
+
+#-----------------------------------------------------#
+def arrowCalc(from_x, from_y, to_x, to_y): 
+    
+    _arrow_height = 10
+    _arrow_width = 4
+    
+    dx = from_x - to_x
+    dy = from_y - to_y
+
+    leng = math.sqrt(dx ** 2 + dy ** 2)
+    
+    # normalize
+    normX = dx / leng   
+    normY = dy / leng
+    # perpendicular vector
+    perpX = -normY
+    perpY = normX
+    
+    leftX = to_x + _arrow_height * normX + _arrow_width * perpX
+    leftY = to_y + _arrow_height * normY + _arrow_width * perpY
+
+    rightX = to_x +_arrow_height * normX - _arrow_width * perpX
+    rightY = to_y + _arrow_height * normY - _arrow_width * perpY
+    
+    p_from = QPoint(from_x, from_y)
+    p_to = QPoint(to_x, to_y)
+
+    return QPolygon([p_from, p_to, QPoint(leftX, leftY), QPoint(rightX, rightY), p_to])
 
 #-----------------------------------------------------#
 class ChessBoardBaseWidget(QWidget):
@@ -65,8 +95,7 @@ class ChessBoardBaseWidget(QWidget):
         self.board_start_y = 0
         self.paint_scale = 1.0
 
-        
-        #self.setMinimumSize(self.base_board_width + 20, self.base_board_height + 10) 
+         #self.setMinimumSize(self.base_board_width + 20, self.base_board_height + 10) 
         
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.showContextMenu)
@@ -149,6 +178,7 @@ class ChessBoardBaseWidget(QWidget):
         
         return True
 
+    '''
     def fromSvgSkinFolder(self, skinFolder):
         if not skinFolder:
             self.setDefaultSkin()
@@ -175,7 +205,8 @@ class ChessBoardBaseWidget(QWidget):
         self.resizeBoard(self.size())
 
         self.update()
-    
+    '''
+
     def scaleBoard(self, scale):
 
         self.paint_scale = scale #int(scale * 9) / 9.0
@@ -240,8 +271,6 @@ class ChessBoardBaseWidget(QWidget):
         self.board_start_y =  (new_height - self.board_height) // 2
         if self.board_start_y < 0:
             self.board_start_y = 0
-        
-        #print(self.base_board_width, self.base_board_height, self.board_start_y, self.board_start_y)
             
     def from_fen(self, fen_str, clear = False):
         self._board.from_fen(fen_str)
@@ -309,14 +338,12 @@ class ChessBoardBaseWidget(QWidget):
                 painter.drawRect(board_x, board_y, self.space_x, self.space_y)        
                 
     def paintEvent(self, ev):
-        #return
+        
         painter = QPainter(self)
         painter.drawPixmap(self.board_start_x, self.board_start_y, self._board_img)
         
         #self.paintGrid(painter)
         
-        #return
-
         for piece in self._board.get_pieces():
             board_x, board_y = self.logic_to_board(piece.x, piece.y)
 
@@ -387,7 +414,7 @@ class ChessBoardWidget(ChessBoardBaseWidget):
         self.best_next_moves = []
         self._make_move_steps(p_from, p_to)
   
-    def showBestMoveNext(self, best_next_moves):
+    def showMoveHint(self, best_next_moves):
         self.best_next_moves = best_next_moves
         self.update()
 
@@ -456,21 +483,15 @@ class ChessBoardWidget(ChessBoardBaseWidget):
             for p_from, p_to in self.best_moves: 
                 
                 r = self.space_x//2
+                
                 from_x, from_y = self.logic_to_board(*p_from,r)   
                 to_x, to_y = self.logic_to_board(*p_to, r)   
     
                 color = Qt.darkGreen
                 
                 painter.setPen(QPen(color,3))#,  Qt.DotLine))    
-                painter.drawLine(from_x, from_y, to_x, to_y)
-                painter.drawEllipse(QPoint(from_x, from_y), r, r)
-                #painter.setBrush(QBrush(color, Qt.CrossPattern))
-                painter.drawEllipse(QPoint(to_x, to_y), r//4, r//4)
-                
-                #arrow = self.arrowCalc(QPoint(from_x,from_y), QPoint(to_x,to_x))
-                #if arrow:
-                #    print(arrow)
-                #    painter.drawPolyline(arrow)
+                painter.drawLine(from_x, from_y, to_x, to_y)        
+                painter.drawPolyline(arrowCalc(from_x, from_y, to_x,to_y))
         
         for p_from, p_to in self.best_next_moves: 
                 r = self.space_x//2
@@ -481,38 +502,61 @@ class ChessBoardWidget(ChessBoardBaseWidget):
                 
                 painter.setPen(QPen(color,3))#,  Qt.DotLine))    
                 painter.drawLine(from_x, from_y, to_x, to_y)
-                painter.drawEllipse(QPoint(from_x, from_y), r, r)
-                #painter.setBrush(QBrush(color, Qt.CrossPattern))
-                painter.drawEllipse(QPoint(to_x, to_y), r//4, r//4)
-                
-    def arrowCalc(self, startPoint, endPoint): 
-
-        dx, dy = startPoint.x() - endPoint.x(), startPoint.y() - endPoint.y()
-
-        leng = math.sqrt(dx ** 2 + dy ** 2)
-        normX, normY = dx / leng, dy / leng  # normalize
-
-        # perpendicular vector
-        perpX = -normY
-        perpY = normX
+                painter.drawPolyline(arrowCalc(from_x, from_y, to_x,to_y))
         
-        _arrow_height = 10
-        _arrow_width = 10
+    '''            
+    def drawLineArrow(self, fromX, fromY, toX, toY):
+
+        headlen = 0.2 * 1.41 * math.sqrt((fromX - toX) * (fromX - toX) + (fromY - toY) * (fromY - toY)) #箭头头部长度
+
+        if headlen > 160 : #40是箭头头部最大值
+            headlen = 160
+
+        theta = 30 #自定义箭头线与直线的夹角
         
-        leftX = endPoint.x() + _arrow_height * normX + _arrow_width * perpX
-        leftY = endPoint.y() + _arrow_height * normY + _arrow_width * perpY
+        #计算各角度和对应的箭头终点坐标
 
-        rightX = endPoint.x() +_arrow_height * normX - _arrow_width * perpX
-        rightY = endPoint.y() + _arrow_height * normY - _arrow_width * perpY
+        angle = math.atan2(fromY - toY, fromX - toX) * 180 / math.pi
+        angle1 = (angle + theta) * math.pi / 180
+        angle2 = (angle - theta) * math.pi / 180
 
-        point2 = QPoint(leftX, leftY)
-        point3 = QPoint(rightX, rightY)
+        topX = headlen * math.cos(angle1)
+        topY = headlen * math.sin(angle1)
+        botX = headlen * math.cos(angle2)
+        botY = headlen * math.sin(angle2)
 
-        return QPolygon([point2, endPoint, point3])
-        
+        toLeft = fromX > toX
+        toUp = fromY > toY
+
+        #箭头最上点
+        arrowX = toX + topX
+        arrowY = toY + topY
+
+        #箭头下拐点
+        arrowX1 = toX + botX
+        arrowY1 = toY + botY
+
+        #箭头上拐点
+        arrowX2 = arrowX + 0.25 * abs(arrowX1 - arrowX) if toUp else  arrowX - 0.25 * abs(arrowX1 - arrowX)
+        arrowY2 = arrowY - 0.25 * abs(arrowY1 - arrowY) if toLeft else arrowY + 0.25 * abs(arrowY1 - arrowY)
+
+        #箭头最下点
+        arrowX3 = arrowX + 0.75 * abs(arrowX1 - arrowX) if toUp else arrowX - 0.75 * abs(arrowX1 - arrowX);
+        arrowY3 = arrowY - 0.75 * abs(arrowY1 - arrowY) if toLeft else arrowY + 0.75 * abs(arrowY1 - arrowY);
+
+        return QPolygon([QPoint(fromX, fromY), 
+                        QPoint(arrowX2, arrowY2), 
+                        QPoint(arrowX, arrowY),
+                        QPoint(toX, toY),
+                        QPoint(arrowX1, arrowY1),
+                        QPoint(arrowX3, arrowY3),
+                        QPoint(fromX, fromY),
+                        ])
+
+    '''
+
     def mousePressEvent(self, mouseEvent):
         
-
         if (mouseEvent.button() == Qt.RightButton):
             self.rightMouseSignal.emit(True)
             
@@ -605,21 +649,52 @@ class ChessBoardWidget(ChessBoardBaseWidget):
 
 
 #---------------------------------------------------------#
+class PiecesDialog(QDialog):
+    def __init__(self, parent):
+        super().__init__(parent)
+
+        self.setWindowTitle("局面编辑")
+        
+        hbox1 = QHBoxLayout()
+        hbox1.addWidget(self.redMoveBtn, 0)
+        hbox1.addWidget(self.blackMoveBtn, 0)
+        hbox1.addWidget(QLabel(''), 1)
+
+        vbox = QVBoxLayout()
+        vbox.addLayout(hbox1)
+
+        hbox = QHBoxLayout()
+        
+        vbox.addLayout(hbox)
+        self.setLayout(vbox)
+
+#---------------------------------------------------------#
 class ChessBoardEditWidget(ChessBoardBaseWidget):
     fenChangedSignal = Signal(str)
 
     def __init__(self):
 
         super().__init__(ChessBoard())
-
+        
         self.last_selected = None
         self._new_pos = None
         self.fenChangedSignal.connect(self.onFenChanged)
-        
+    
+    def selectPiecesDlg(self):
+        #dlg = QPoint()
+        pass
+
+
     def showContextMenu(self, pos):
 
         x, y = self.board_to_logic(pos.x(), pos.y())
-
+        
+        if x < 0 or x > 8:
+            return
+        
+        if y < 0 or y > 9:
+            return
+            
         fench = self._board.get_fench((x, y))
 
         if fench:

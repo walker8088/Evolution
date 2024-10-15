@@ -11,7 +11,7 @@ from cchess import ChessBoard
 
 from peewee import Proxy, Model, CharField, IntegerField, BigIntegerField, TextField, BlobField
 from playhouse.sqlite_ext import SqliteExtDatabase, JSONField
-from playhouse.apsw_ext import APSWDatabase
+from playhouse.shortcuts import model_to_dict, dict_to_model
 
 from . import Globl
         
@@ -65,21 +65,32 @@ class MasterEvBook(Model):
 #
 local_book_db = Proxy()
 
+class LocalModel(Model):
+    class Meta:
+        database = local_book_db
+    
 #------------------------------------------------------------------------------
-class LocalEvBook(Model):
-    #fen = CharField(unique=True, index=True)
-    key   = BigIntegerField()
-    step  = IntegerField()
-    score = IntegerField(null=True)
+
+class Book(LocalModel):
+    fen = CharField(index=True)
     iccs  = CharField()
-    mark  = CharField(null=True)
+    score = IntegerField(null=True)
     memo  = JSONField(null=True)
     
     class Meta:
-        database = local_book_db
-        table_name = 'evbook'
+        table_name = 'book'
 
 #------------------------------------------------------------------------------
+class Bookmark(LocalModel):
+    name = CharField(unique=True, index=True)
+    fen = CharField(index=True)
+    moves  = JSONField(null=True)
+    
+    class Meta:
+        table_name = 'Bookmark'
+
+#------------------------------------------------------------------------------
+
 class MoveBookMixIn():
     #def __init__(self):
     #    self.book_cls = book_cls
@@ -149,12 +160,12 @@ class MoveBookMixIn():
             ne_iccs = iccs
 
         
-    def savePositionList(self, positionList, mark):
-        for position in positionList:
+    def savePositionList(self, positionList):
+        for position in positionList[1:]:
             fen = position['fen_prev']
             step = position['index']
             score = None
-            return saveRecord(fen, step, score, position['iccs'])        
+            self.saveRecord(fen, step, score, position['iccs'])        
     
     def getRecord(self, fen, iccs = None):
         board = ChessBoard(fen)
@@ -410,11 +421,9 @@ class MasterBook(MoveBookMixIn):
                     
     '''
 #------------------------------------------------------------------------------
-#LocalBook #存储个人保存的棋谱
-class LocalBook(MoveBookMixIn):
+#LocalBook #存储个人保存的棋谱及收藏
+class LocalBook():
     def __init__(self):
-        #super(self).__init__(MasterEvBook)
-        self.book_cls = LocalEvBook
         self.db_local = None
 
     def open(self, fileName):
@@ -427,18 +436,129 @@ class LocalBook(MoveBookMixIn):
         self.db_local = SqliteExtDatabase(fileName)
         local_book_db.initialize(self.db_local)
         if isInit:
-            local_book_db.create_tables([self.book_cls])
+            local_book_db.create_tables([Book, Bookmark])
+
         return True
     
     def close(self):
         if self.db_local:
             self.db_local.close()
         self.db_local = None
+    
+    def getAllBookmarks(self):
+        
+        q = Bookmark.select().execute()
+        return [model_to_dict(x) for x in q]
 
+    def saveBookmark(self, name, fen, moves=None):
+
+        if self.isNameInBookmark(name):
+            return False
+
+        book = Bookmark(name = name, fen = fen, moves = moves)
+        book.save()
+        return True
+
+    def isFenInBookmark(self, fen):
+        q = Bookmark.select().where(Bookmark.fen == fen).execute()
+        return len(q) > 0
+
+    def isNameInBookmark(self, name):
+        q = Bookmark.select().where(Bookmark.name == name).execute()
+        return len(q) > 0
+
+    def removeBookmark(self, name):
+        Bookmark.delete().where(Bookmark.name == name).execute()
+        return True
+
+    def changeBookmarkName(self, old_name, new_name):
+        query = Bookmark.update(name = new_name).where(Bookmark.name == old_name).execute()
+        return True
+
+    def saveBook(self, fen, moves):
+        book = Book(fen = fen, moves = moves)
+        book.save()
+        return True
+
+    def savePositionList(self, positionList):
+        #TODO: 更新分数
+        for position in positionList[1:]:
+            fen = position['fen_prev']
+            iccs = position['iccs']
+            score = None
+            self.saveRecord(fen, iccs, score)
+
+    def saveRecord(self, fen, iccs, score):
+
+        ret_len, is_mirror = self.getRecord(fen, iccs)
+        
+        if ret_len == 0:
+            new_record = Book(fen = fen, iccs = iccs, score = score)
+            new_record.save()
+        else:
+            #TODO 更新score
+            pass
+        
+        return True
+            
+    def getRecord(self, fen, iccs):
+
+        f_mirror = cchess.fen_mirror(fen)
+        i_mirror = cchess.iccs_mirror(iccs)
+
+        query = Book.select().where(  ((Book.fen == fen) & (Book.iccs == iccs)) 
+                                        | ((Book.fen == f_mirror) & (Book.iccs == i_mirror)) )
+        query.execute()
+            
+        if len(query) == 0:
+            return (0, False)
+        
+        if len(query) > 1:
+            raise Exception(f"Local Storage Multi Record Error:{fen}, {iccs}")
+        
+        is_mirror = False
+        if query[0].fen == f_mirror:
+            True
+
+        return (1, is_mirror)
+    
+    def getMoves(self, fen):
+
+        board = ChessBoard(fen)
+        f_mirror = cchess.fen_mirror(fen)
+        query = Book.select().where((Book.fen == fen) | (Book.fen == f_mirror)).execute()
+        
+        actions = OrderedDict() 
+        for it in query:
+            
+            iccs = it.iccs
+            if it.fen == f_mirror:
+                iccs = cchess.iccs_mirror(iccs)
+            
+            m = {}
+            m['iccs'] = iccs
+            if it.score:
+                m['score'] = it.score
+                #m['diff'] =  0
+            
+            move_it = board.copy().move_iccs(iccs)
+            if move_it:
+                m['text'] = move_it.to_text()
+                m['new_fen'] = move_it.board_done.to_fen()
+            else:
+                m['text'] = 'move error'
+            
+            actions[iccs] = m
+
+        ret = {}
+        ret['fen'] = fen
+        ret['score'] = None 
+        ret['actions'] = actions
+
+        return ret
+        
 #------------------------------------------------------------------------------
-#勇芳开局库
-#openBookYfk = SqliteExtDatabase(None)
-#openBookYfk = APSWDatabase(None)
+#勇芳格式开局库
 openBookYfk = Proxy()
 
 class YfkBaseModel(Model):
@@ -446,9 +566,9 @@ class YfkBaseModel(Model):
         database = openBookYfk
 
 class Bhobk(YfkBaseModel):
-    vdraw = IntegerField(null=True)
     vindex = IntegerField(null=True)
     vkey = IntegerField(null=True)
+    vdraw = IntegerField(null=True)
     vlost = IntegerField(null=True)
     vmove = IntegerField(null=True)
     vscore = IntegerField(null=True)
@@ -465,12 +585,12 @@ class Ltext(YfkBaseModel):
         table_name = 'ltext'
 
 #------------------------------------------------------------------------------
-#鹏飞开局库
-openBookPfBook = SqliteExtDatabase(None)
+#鹏飞格式开局库
+openBookPF = Proxy()
 
 class BaseModelPfBook(Model):
     class Meta:
-        database = openBookPfBook
+        database = openBookPF
 
 class BookVersion(BaseModelPfBook):
     key = TextField(index=True, null=True)
@@ -481,21 +601,23 @@ class BookVersion(BaseModelPfBook):
         primary_key = False
 
 class PfBook(BaseModelPfBook):
-    vdraw = IntegerField(null=True)
     vindex = IntegerField(null=True)
     vkey = IntegerField(index=True, null=True)
+    vdraw = IntegerField(null=True)
     vlost = IntegerField(null=True)
-    vmemo = BlobField(null=True)
+    vwin = IntegerField(null=True)
     vmove = IntegerField(null=True)
     vscore = IntegerField(null=True)
     vvalid = IntegerField(null=True)
-    vwin = IntegerField(null=True)
-
+    vmemo = BlobField(null=True)
+    
     class Meta:
         table_name = 'pfBook'
 
 #------------------------------------------------------------------------------
-c90 =   [ 
+#开局库基础类
+class OpenBookDB():    
+    c90 =   [ 
         0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b,
         0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b,
         0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b,
@@ -508,7 +630,7 @@ c90 =   [
         0xc3, 0xc4, 0xc5, 0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xcb
         ]
 
-s90 = [ 
+    s90 = [ 
         "a9", "b9", "c9", "d9", "e9", "f9", "g9", "h9", "i9",
         "a8", "b8", "c8", "d8", "e8", "f8", "g8", "h8", "i8",
         "a7", "b7", "c7", "d7", "e7", "f7", "g7", "h7", "i7",
@@ -520,100 +642,185 @@ s90 = [
         "a1", "b1", "c1", "d1", "e1", "f1", "g1", "h1", "i1",
         "a0", "b0", "c0", "d0", "e0", "f0", "g0", "h0", "i0"
         ]
-
-CoordMap = {}
-
-def buildCoordMap():
-    global c90, s90, CoordMap
-    for i in range(90):
-        CoordMap[c90[i]] = s90[i]
     
-#------------------------------------------------------------------------------
-def vmove2iccs(vmove):
-    global CoordMap
-    
-    v_from =  vmove & 0xff
-    v_to = vmove >> 8
-    
-    #print(hex(v_from), hex(v_to))
-    return CoordMap[v_from] + CoordMap[v_to]
-
-#------------------------------------------------------------------------------
-class OpenBookYfk():
-    
-    def __init__(self):
-        buildCoordMap()
-        self.isBookOpened = False
-        self.db_yfk = None
-
-    def open(self, fileName):
-        global openBookYfk
+    CoordMap = {}
         
-        #create = not Path(fileName).is_file()
-        #openBookYfk.init(fileName, pragmas={}) #'journal_mode': 'wal'})
+    def __init__(self):
+        
+        self.isBookOpened = False
+        self.db = None
+        self.name = ''
+        self.isUseScore = False
 
-        self.db_yfk = SqliteExtDatabase(fileName)
-        openBookYfk.initialize(self.db_yfk)
+        if not self.CoordMap:
+            for i in range(90):
+                self.CoordMap[self.c90[i]] = self.s90[i]
+    
+    def open(self, fileName, globDatabase, useScore):
+        
+        if self.isBookOpened:
+            return False
+
+        if not Path(fileName).is_file():
+            return False
+
+        self.db = SqliteExtDatabase(fileName)
+        globDatabase.initialize(self.db)
 
         self.isBookOpened = True
-        
+        self.isUseScore = useScore
+
         try:
             self.getMoves(cchess.FULL_INIT_FEN)
         except Exception as e:
             logging.error(str(e))
             self.isBookOpened = False
-            
+        
         return self.isBookOpened
-            
+        
     def close(self):
-        if self.db_yfk:
-            self.db_yfk.close()
-        self.db_yfk = None
+       if self.db:
+            self.db.close()     
+            self.isBookOpened = False
+            
+#------------------------------------------------------------------------------
+class OpenBookYfk(OpenBookDB):
     
+    def __init__(self):
+        super().__init__()
+        self.name = '勇芳'
+
+    def open(self, fileName, useScore = False):
+        super().open(fileName, openBookYfk, useScore)
+        
+    #鹏飞库与勇芳库的高低位是反的，其他数据一样
+    def vmove2iccs(self, vmove):
+        v_from =  vmove & 0xff
+        v_to = vmove >> 8
+        return self.CoordMap[v_from] + self.CoordMap[v_to]
+
     def getMoves(self, fen):
 
         if not self.isBookOpened:
-            return {}
+            return None
 
         board = ChessBoard(fen)
+        zhash = board.zhash()
+        zhash_mirror = board.mirror().zhash()
         
-        for b, b_state in [(board, ''), (board.mirror(), 'mirror')]:
-            query = Bhobk.select().where(Bhobk.vkey == str(b.zhash()), Bhobk.vvalid == 1).order_by(-Bhobk.vscore)
-            query.execute()
-            if len(query) > 0:
-                break
+        query = Bhobk.select().where(((Bhobk.vkey == zhash) | (Bhobk.vkey == zhash_mirror)) & (Bhobk.vvalid == 1))\
+                                    .order_by(-Bhobk.vscore).execute()
         
         if len(query) == 0:
             return None
 
         actions = OrderedDict() 
         score_best = None
+        
+        for it in query:
+            iccs = self.vmove2iccs(it.vmove)
+            
+            score = it.vscore
+            if score_best is None:
+                score_best = score
+            
+            if it.vkey == zhash_mirror:
+                iccs = cchess.iccs_mirror(iccs)
+                
+            m = {}  
+            m['iccs'] = iccs
+            m['score'] = score
+            m['diff'] =  score - score_best
+            
+            bd = board.copy()
+            move_it = bd.move_iccs(iccs)
+            if move_it is not None:
+                m['text'] = move_it.to_text()
+                m['new_fen'] = move_it.board_done.to_fen()
+            else:
+                m['text'] = f'err:{iccs}'
+                logging.error(f"{bd.to_fen()} move {iccs} error")
+            
+            actions[iccs] = m
+        
+        ret = {}
+        ret['fen'] = fen
+        ret['score'] = score_best 
+        ret['actions'] = actions
+
+        return ret
+        
+
+#------------------------------------------------------------------------------
+class OpenBookPF(OpenBookDB):
+    
+    def __init__(self):
+        super().__init__()
+        self.name = '鹏飞'
+        self.isUseScore = False
+    
+    def open(self, fileName, useScore = False):
+        super().open(fileName, openBookPF, useScore)
+        
+    #鹏飞库与勇芳库的高低位是反的，其他数据一样
+    def vmove2iccs(self, vmove):
+        v_to =  vmove & 0xff
+        v_from = vmove >> 8
+        return self.CoordMap[v_from] + self.CoordMap[v_to]
+
+    def getMoves(self, fen):
+        
+        if not self.isBookOpened:
+            return {}
+
+        board = ChessBoard(fen)
+        zhash = board.zhash()
+        zhash_mirror = board.mirror().zhash()
+        
+        query = PfBook.select().where(((PfBook.vkey == zhash) | (PfBook.vkey == zhash_mirror)) & (PfBook.vvalid == 1))\
+                                    .order_by(-PfBook.vscore).execute()
+        
+        if len(query) == 0:
+            return None
+                    
+        actions = OrderedDict() 
+        score_best = None
         #move_color = board.get_move_color()        
         
         for it in query:
-            #print(b_state, vmove2iccs(it.vmove), it.vscore, )
-
-            ics = vmove2iccs(it.vmove)
+            iccs = self.vmove2iccs(it.vmove)
+        
             score = it.vscore
-            
             if score_best is None:
                score_best = score
                     
-            if b_state == 'mirror':
-                iccs = cchess.iccs_mirror(ics)
-            else:
-                iccs = ics
+            if it.vkey == zhash_mirror:
+                iccs = cchess.iccs_mirror(iccs)
+                
+            if iccs in actions:
+                continue
 
             m = {}  
             m['iccs'] = iccs
-            move_it = board.copy().move_iccs(iccs)
-            m['text'] = move_it.to_text()
+                
+            if isinstance(it.vmemo, str):
+                m['memo'] = it.vmemo
+            elif isinstance(it.vmemo, bytes):
+                m['memo'] = it.vmemo.decode('utf-8')
+            else:
+                m['memo'] = str(it.vmemo)
+            
             m['score'] = score
             m['diff'] =  score - score_best
-            #if move_color == cchess.BLACK:
-            #    m['score'] = -m['score']
-            m['new_fen'] = move_it.board_done.to_fen()
-           
+        
+            move_it = board.copy().move_iccs(iccs)
+            if move_it is not None:
+                m['text'] = move_it.to_text()
+                m['new_fen'] = move_it.board_done.to_fen()
+            else:
+                m['text'] = f'err:{iccs}'
+                logging.error(f"{bd.to_fen()} move {iccs} error")
+            
             actions[iccs] = m
         
         ret = {}

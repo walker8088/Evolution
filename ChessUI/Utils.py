@@ -92,7 +92,8 @@ def getStepsFromFenMoves(fen, moves):
 
     return fen_steps    
 
-def getStepsTextFromFenMoves(fen, moves): 
+def getStepsTextFromFenMoves(fen, moves):
+    ok = True 
     fen_steps = []
     board = ChessBoard(fen)
     for iccs in moves:
@@ -102,7 +103,9 @@ def getStepsTextFromFenMoves(fen, moves):
             fen_steps.append(move.to_text())
         else:
             fen_steps.append(iccs)
-    return fen_steps    
+            ok = False
+
+    return (ok, fen_steps)    
 
 #-----------------------------------------------------#
 def get_mac_address():

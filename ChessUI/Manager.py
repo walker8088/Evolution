@@ -65,25 +65,26 @@ class EngineManager(QObject):
         if not fen:
             fen = fen_engine
 
-        #print(fen)
         #跳过不合理的fen,免得引擎误报
         if (cchess.EMPTY_BOARD in fen_engine) or (cchess.EMPTY_BOARD in fen):
             return False
 
         self.fen_engine = fen_engine
         self.fen = fen
+        self.stopThinking()
         
-        logging.info(f'Engine[{self.id}] goFrom: {fen} {params}')
-        
+        logging.debug(f'Engine[{self.id}] goFrom: {fen} {params}')
         return self.engine.go_from(fen_engine, params)
     
     def stopThinking(self):
         if not self.isReady:
             return True
             
+        logging.debug(f'Engine[{self.id}] stop_thinking')
         self.engine.stop_thinking()
-        time.sleep(0.2)
-        self.engine.get_action()
+        #time.sleep(0.2)
+        #self.engine.get_action()
+        
         return True 
 
     def start(self):
@@ -114,26 +115,29 @@ class EngineManager(QObject):
 
     def _runOnce(self):
 
-        if not self.fen:
-            return 
-        
-        move_color = cchess.get_move_color(self.fen)
         action = self.engine.get_action()
         if action is None:
             return 
-        print(action)    
+        
         act_id = action['action']
-        action['fen'] = self.fen
-        if action == 'ready':
+
+        if act_id == 'ready':
             self.isReady = True
             self.readySignal.emit(self.id, self.engine.ids['name'], self.engine.options)
-        elif action == 'bestmove':
+            return 
+        
+        #move_color = cchess.get_move_color(self.fen)
+        if self.fen:
+            action['fen'] = self.fen
+            board = ChessBoard(self.fen)
+            move_color = board.get_move_color()
+            
+        if act_id == 'bestmove':
             ret = {}
-            ret.pop('fen_engine')
             ret.update(action)
             iccs = ret['iccs'] = ret.pop('move')
-            m = ChessBoard(self.fen).move_iccs(iccs) 
-            print(m)
+            m = board.copy().move_iccs(iccs) 
+            
             #引擎有时会输出以前的局面的着法，这里预先验证一下能不能走，不能走的着法都忽略掉
             if m is None:
                 return
@@ -146,16 +150,14 @@ class EngineManager(QObject):
             #再处理出现mate时，score没分的情况
             if 'score' not in ret:
                 mate_flag = 1 if ret['mate'] > 0 else -1
-                ret['score'] = 39999 * mate_flag
+                ret['score'] = 29999 * mate_flag
             
             #最后处理分数都换算到红方得分的情况
-            #move_color = board.get_move_color()
-            #if move_color == cchess.BLACK:
-            #    for key in ['score', 'mate']:
-            #        if key in action:
-            #            action[key] = -action[key]
+            if move_color == cchess.RED:
+                for key in ['score', 'mate']:
+                    if key in ret:
+                        ret[key] = -ret[key]
                 
-            
             new_fen = m.board_done.to_fen()
             iccs_dict = {'iccs': iccs, 'diff': 0, 'new_fen': new_fen}
             for key in ['score', 'mate']:

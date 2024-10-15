@@ -1,5 +1,6 @@
 
 import os
+import traceback
 
 from PySide6.QtCore import Qt, Signal, QByteArray, QSize
 from PySide6.QtGui import *
@@ -358,8 +359,41 @@ class EngineConfigDialog(QDialog):
         self.moveTimeSpin.setRange(1, 100)
         self.moveTimeSpin.setValue(20)
         
-        self.levelFightCombo = QComboBox(self)
-        self.levelFightCombo.addItems(['入门', '业余', '专业', '大师', '特大'])
+        #self.levelFightCombo = QComboBox(self)
+        #self.levelFightCombo.addItems(['入门', '业余', '专业', '大师', '特大'])
+
+        self.groupBox = QGroupBox("级别设定")
+
+        radio1 = QRadioButton("入门")
+        radio1.setChecked(True)
+        radio2 = QRadioButton("业余1")
+        radio3 = QRadioButton("业余2")
+        radio4 = QRadioButton("业余3")
+        radio5 = QRadioButton("业余4")
+        radio6 = QRadioButton("业余5")
+        radio7 = QRadioButton("专业1")
+        radio8 = QRadioButton("专业2")
+        radio9 = QRadioButton("专业3")
+        radio10 = QRadioButton("大师")
+        radio11 = QRadioButton("特大")
+        radio12 = QRadioButton("无敌")
+
+        vbox = QVBoxLayout()
+        vbox.addWidget(radio1)
+        vbox.addWidget(radio2)
+        vbox.addWidget(radio3)
+        vbox.addWidget(radio4)
+        vbox.addWidget(radio5)
+        vbox.addWidget(radio6)
+        vbox.addWidget(radio7)
+        vbox.addWidget(radio8)
+        vbox.addWidget(radio9)
+        vbox.addWidget(radio10)
+        vbox.addWidget(radio11)
+        vbox.addWidget(radio12)
+        vbox.addStretch(1)
+        self.groupBox.setLayout(vbox)
+
         self.scoreFightSlider = QSlider(Qt.Horizontal)
         self.scoreFightSlider.setMinimum(1280)
         self.scoreFightSlider.setMaximum(3000)
@@ -414,7 +448,9 @@ class EngineConfigDialog(QDialog):
     def fightTabUI(self):
         tab = QWidget()
         f2 = QFormLayout()
-        f2.addRow('级别', self.levelFightCombo)
+        #f2.addRow('级别', self.levelFightCombo)
+        f2.addRow('级别', self.groupBox)
+
         f2.addRow('级别', self.scoreFightSlider)
         f2.addRow('限定深度', self.depthFightSpin)
         f2.addRow('限定步时（秒）', self.moveTimeFightSpin)

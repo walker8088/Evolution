@@ -1,4 +1,4 @@
-
+"""
 import time
 import json
 import datetime as dt
@@ -612,7 +612,7 @@ class BoardScreen():
         cv.waitKey(0)
                 
 #-----------------------------------------------------------------------------------------#      
-"""
+
 class GameMaster():
     def __init__(self, screen, img_src, engine):
         
@@ -750,7 +750,7 @@ class GameMaster():
                 
 
 
-"""
+
 #-----------------------------------------------------#
 class ScreenBoardView(QWidget):
     def __init__(self, parent = None):

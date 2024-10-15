@@ -54,7 +54,7 @@ class CloudDB(QObject):
         
         self.move_cache = {}
         
-    def startQuery(self, position, score_limit = 70):
+    def startQuery(self, position, score_limit = 90):
 
         fen = position['fen']
 
@@ -110,9 +110,8 @@ class CloudDB(QObject):
                 #    break        
                 moves.append(it_dict)
         except Exception as e:
-            print(e)
-            #print('cloud query result:', resp, "len:", len(resp))
-        
+            logging.error(f"云库查询数据解析错误：{e} {resp}")
+            
         if not moves: 
             return
 

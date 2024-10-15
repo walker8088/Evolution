@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
-
 import os
+import logging
+import traceback
 from pathlib import Path
 from collections import OrderedDict
 
@@ -58,8 +59,9 @@ class HistoryWidget(QWidget):
         self.positionView.setColumnWidth(3, 10)
         self.positionView.setColumnWidth(4, 20)
 
-        #self.positionView.itemSelectionChanged.connect(self.onSelectStep)
-        self.positionView.itemClicked.connect(self.onItemClicked)
+        self.positionView.itemSelectionChanged.connect(self.onSelectionChanged)
+        #self.positionView.itemActivated.connect(self.onItemActivated)
+        #self.positionView.itemClicked.connect(self.onItemClicked)
 
         #self.annotationView = QTextEdit()
         #self.annotationView.readOnly = True
@@ -88,10 +90,7 @@ class HistoryWidget(QWidget):
         
 
         self.reviewByCloudBtn = QPushButton("云库复盘")
-        #self.reviewByCloudBtn.clicked.connect(self.onReviewByCloudBtnClick)
         self.reviewByEngineBtn = QPushButton("引擎复盘")
-        #self.reviewByEngineBtn.clicked.connect(self.onReviewByEngineBtnClick)
-        
         
         self.addBookmarkBtn = QPushButton("收藏局面")
         self.addBookmarkBtn.clicked.connect(self.onAddBookmarkBtnClick)
@@ -110,16 +109,16 @@ class HistoryWidget(QWidget):
         hbox2.addWidget(self.reviewByCloudBtn, 0)
         hbox2.addWidget(self.reviewByEngineBtn, 0)
         
-        #hbox3 = QHBoxLayout()
+        hbox3 = QHBoxLayout()
         #hbox3.addWidget(self.addBookmarkBtn, 0)
         #hbox3.addWidget(self.addBookmarkBookBtn, 0)
-        #hbox3.addWidget(self.saveDbBtnBtn, 0)
+        hbox3.addWidget(self.saveDbBtnBtn, 0)
         
         vbox = QVBoxLayout()
         vbox.addWidget(splitter, 2)
         vbox.addLayout(hbox1)
         vbox.addLayout(hbox2)
-        #vbox.addLayout(hbox3)
+        vbox.addLayout(hbox3)
 
         self.setLayout(vbox)
 
@@ -135,7 +134,7 @@ class HistoryWidget(QWidget):
         menu.addSeparator()
         bookmarkPositionAction =  menu.addAction("收藏局面")
         bookmarkBookAction =  menu.addAction("收藏棋谱")
-        addToMyLibAction =  menu.addAction("保存到棋谱库")
+        #addToMyLibAction =  menu.addAction("保存到棋谱库")
 
         action = menu.exec_(self.mapToGlobal(event.pos()))
 
@@ -153,14 +152,12 @@ class HistoryWidget(QWidget):
             self.onAddBookmarkBtnClick()
         elif action == bookmarkBookAction:
             self.onAddBookmarkBookBtnClick()
-        elif action == addToMyLibAction:
-            self.onSaveDbBtnClick()
+        #elif action == addToMyLibAction:
+        #    self.onSaveDbBtnClick()
 
     def onClearFollowBtnClick(self):
-
         if self.selectionIndex < 0:
             return
-
         self.parent.removeHistoryFollow(self.selectionIndex)
         
     def onItemClicked(self, item, col):
@@ -168,12 +165,23 @@ class HistoryWidget(QWidget):
         self.positionSelSignal.emit(self.selectionIndex)
 
     def selectIndex(self, index, fireEvent = True):
+        if (self.selectionIndex == index) or (index < 0 ) or (index >= len(self.items)):
+            return
+        
         self.selectionIndex = index
         item = self.items[self.selectionIndex]
         self.positionView.setCurrentItem(item)
+        
         if fireEvent:
             self.positionSelSignal.emit(self.selectionIndex)
-
+    
+    def onSelectionChanged(self):
+        items = self.positionView.selectedItems()
+        if len(items) != 1:
+            return
+        index = items[0].data(0, Qt.UserRole)
+        self.selectIndex(index, True)
+                      
     def onFirstBtnClick(self):
         self.selectIndex(0)
        
@@ -202,7 +210,7 @@ class HistoryWidget(QWidget):
 
         fen = self.parent.board.to_fen()
 
-        if Globl.bookmarkStore.isFenInBookmark(fen):
+        if Globl.localBook.isFenInBookmark(fen):
             msgbox = TimerMessageBox("收藏中已经有该局面存在.", timeout = 1)
             msgbox.exec()
             return
@@ -211,12 +219,12 @@ class HistoryWidget(QWidget):
         if not ok:
             return
 
-        if Globl.bookmarkStore.isNameInBookmark(name):
+        if Globl.localBook.isNameInBookmark(name):
             msgbox = TimerMessageBox(f'收藏中已经有[{name}]存在.', timeout = 1)
             msgbox.exec()
             return
 
-        Globl.bookmarkStore.saveBookmark(name, fen)
+        Globl.localBook.saveBookmark(name, fen)
         self.parent.bookmarkView.updateBookmarks()
 
     def onAddBookmarkBookBtnClick(self):
@@ -227,11 +235,11 @@ class HistoryWidget(QWidget):
         if not ok:
             return
 
-        if Globl.bookmarkStore.isNameInBookmark(name):
+        if Globl.localBook.isNameInBookmark(name):
             QMessageBox.information(None, f'{getTitle()}, 收藏中已经有[{name}]存在.')
             return
 
-        Globl.bookmarkStore.saveBookmark(name, fen, moves)
+        Globl.localBook.saveBookmark(name, fen, moves)
         self.parent.bookmarkView.updateBookmarks()
     
     def getCurrPosition(self):
@@ -384,11 +392,11 @@ class ChessEngineWidget(QDockWidget):
         self.engineLabel.setAlignment(Qt.AlignCenter)
         
         self.DepthSpin = QSpinBox()
-        self.DepthSpin.setRange(1, 100)
+        self.DepthSpin.setRange(0, 100)
         self.DepthSpin.setValue(22)
         self.moveTimeSpin = QSpinBox()
-        self.moveTimeSpin.setRange(1, 100)
-        self.moveTimeSpin.setValue(20)
+        self.moveTimeSpin.setRange(0, 100)
+        self.moveTimeSpin.setValue(0)
         
         self.threadsSpin = QSpinBox()
         self.threadsSpin.setSingleStep(1)
@@ -454,7 +462,7 @@ class ChessEngineWidget(QDockWidget):
 
         self.positionView = QTreeWidget()
         self.positionView.setColumnCount(1)
-        self.positionView.setHeaderLabels(["深度", "红优分", "着法"])
+        self.positionView.setHeaderLabels(["深度", "得分", "着法"])
         self.positionView.setColumnWidth(0, 80)
         self.positionView.setColumnWidth(1, 100)
         self.positionView.setColumnWidth(2, 380)
@@ -531,12 +539,20 @@ class ChessEngineWidget(QDockWidget):
         self.parent.onViewBranch()
 
     def onEngineMoveInfo(self, fenInfo):
-        fen = fenInfo['fen']
         
+        if "moves" not in fenInfo:
+            return
+
         iccs_str = ','.join(fenInfo["moves"])
         fenInfo['iccs_str'] = iccs_str
 
-        moves_text = getStepsTextFromFenMoves(fen, fenInfo["moves"])
+        fen = fenInfo['fen']
+        
+        ok, moves_text = getStepsTextFromFenMoves(fen, fenInfo["moves"])
+        if not ok:
+            #logging.warning(f'{fen}, moves {fenInfo["moves"]}')
+            return
+
         fenInfo['move_text'] = ','.join(moves_text)
 
         found = False
@@ -562,8 +578,17 @@ class ChessEngineWidget(QDockWidget):
         if 'seldepth' in fenInfo:
             depth = int(fenInfo['seldepth'])
             it.setText(0, f'{depth:02d}')
-        if 'score' in fenInfo:
-            it.setText(1, str(fenInfo['score']))
+        
+        mate = fenInfo.get('mate', None)
+        if mate is not None:
+            if mate == 0:
+                it.setText(1, '杀死')
+            elif mate > 0:
+                it.setText(1, f'{mate}步杀')
+            elif mate < 0:
+                it.setText(1, f'被{mate}步杀')
+        else:  
+            it.setText(1, str(fenInfo.get('score', '')))
 
         if is_new_text and self.analysisBox.isChecked():
             it.setText(2, fenInfo['move_text'])
@@ -574,6 +599,8 @@ class ChessEngineWidget(QDockWidget):
         
         self.engineLabel.setText(name)
         
+        self.engineManager.setOption('ScoreType','PawnValueNormalized')
+            
         self.onThreadsChanged(self.threadsSpin.value())
         self.onMemoryChanged(self.memorySpin.value())
         #self.onMultiPVChanged(self.multiPVSpin.value())
@@ -1181,7 +1208,7 @@ class BookmarkWidget(QDockWidget):
     def updateBookmarks(self):
         
         self.bookmarkView.clear()
-        self.bookmarks = sorted(Globl.bookmarkStore.getAllBookmarks(), key = lambda x: x['name'])
+        self.bookmarks = sorted(Globl.localBook.getAllBookmarks(), key = lambda x: x['name'])
 
         for i, it in enumerate(self.bookmarks):
             item = QListWidgetItem()
@@ -1213,7 +1240,7 @@ class BookmarkWidget(QDockWidget):
         fen = item.data(Qt.UserRole)['fen']
 
         if action == removeAction:
-            Globl.bookmarkStore.removeBookmark(old_name)
+            Globl.LocalBookmarks.removeBookmark(old_name)
             self.updateBookmarks()
         elif action == renameAction:
             new_name, ok = QInputDialog.getText(self,
@@ -1221,11 +1248,11 @@ class BookmarkWidget(QDockWidget):
                                                 '请输入新名称:',
                                                 text=old_name)
             if ok:
-                if Globl.bookmarkStore.isNameInBookmark(new_name):
+                if Globl.localBook.isNameInBookmark(new_name):
                     msgbox = TimerMessageBox(f'收藏中已经有[{new_name}]存在.', timeout = 1)
                     msgbox.exec()
                 else:
-                    if not Globl.bookmarkStore.changeBookmarkName(fen, new_name):
+                    if not Globl.localBook.changeBookmarkName(old_name, new_name):
                         msgbox = TimerMessageBox(f'[{old_name}] -> [{new_name}] 改名失败.', timeout = 2)
                         msgbox.exec()    
                     else:

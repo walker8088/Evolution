@@ -75,6 +75,7 @@ class OpenBookJson():
 """
 #------------------------------------------------------------------------------
 #Bookmarks
+'''
 class BookmarkStore():
     def __init__(self, fileName):
        self.db = TinyDB(fileName)
@@ -118,7 +119,7 @@ class BookmarkStore():
         if len(ret) == 1:
             return True
         return False
-
+'''
 #------------------------------------------------------------------------------
 #Endbooks
 class EndBookStore():
@@ -173,6 +174,7 @@ class EndBookStore():
     
     
 #------------------------------------------------------------------------------
+'''
 #LocalBooks
 class LocalBookStore():
     def __init__(self, fileName):
@@ -276,3 +278,4 @@ class LocalBookStore():
                     print('database error', ret)
         
 #------------------------------------------------------------------------------
+'''
