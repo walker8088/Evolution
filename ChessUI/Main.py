@@ -790,7 +790,6 @@ class MainWindow(QMainWindow):
         board = ChessBoard(fen)
         currmove = fenInfo.get('currmove', None)
         if currmove:
-            print('currmove', currmove)
             self.boardView.showMoveHint([cchess.iccs2pos(currmove)])
             return
 

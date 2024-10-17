@@ -1103,8 +1103,11 @@ class EndBookWidget(QDockWidget):
         if book_name == '':
             return
 
-        #if book_name in self.books:
+        if book_name not in self.books:
+            return
+
         self.currBookName = book_name
+        self.bookCombo.setCurrentText(self.currBookName)
         self.currBook = self.books[self.currBookName]
         self.currGame = None
 
@@ -1149,7 +1152,6 @@ class EndBookWidget(QDockWidget):
 
         endBookName = settings.value("endBookName", '')
         if endBookName:
-            self.bookCombo.setCurrentText(endBookName)
             self.onBookChanged(endBookName)
 
         index = settings.value("endBookIndex", -1)
