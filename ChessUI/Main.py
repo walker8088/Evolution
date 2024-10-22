@@ -1695,7 +1695,7 @@ class MainWindow(QMainWindow):
                     
         self.savedGameMode = self.settings.value("gameMode", GameMode.Free)
         
-        self.openBookFile = Path(self.settings.value("openBookFile", str(Path('game','openbook.yfk'))))
+        #self.openBookFile = Path(self.settings.value("openBookFile", str(Path('game','openbook.yfk'))))
         self.lastOpenFolder = self.settings.value("lastOpenFolder", '')
         
 
@@ -1739,7 +1739,7 @@ class MainWindow(QMainWindow):
         self.settings.setValue("cloudMode", self.cloudModeBtn.isChecked())
         self.settings.setValue("engineMode", self.engineModeBtn.isChecked())
         
-        self.settings.setValue("openBookFile", self.openBookFile)
+        #self.settings.setValue("openBookFile", self.openBookFile)
         self.settings.setValue("lastOpenFolder", self.lastOpenFolder)
         self.settings.setValue("boardSkin", self.skin)
         

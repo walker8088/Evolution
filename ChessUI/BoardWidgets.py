@@ -493,7 +493,7 @@ class ChessBoardWidget(ChessBoardBaseWidget):
                 painter.drawLine(from_x, from_y, to_x, to_y)        
                 painter.drawPolyline(arrowCalc(from_x, from_y, to_x,to_y))
         
-        for p_from, p_to in self.best_next_moves: 
+            for p_from, p_to in self.best_next_moves: 
                 r = self.space_x//2
                 from_x, from_y = self.logic_to_board(*p_from,r)   
                 to_x, to_y = self.logic_to_board(*p_to, r)   

@@ -462,7 +462,7 @@ class ChessEngineWidget(QDockWidget):
 
         self.positionView = QTreeWidget()
         self.positionView.setColumnCount(1)
-        self.positionView.setHeaderLabels(["深度", "得分", "着法"])
+        self.positionView.setHeaderLabels(["深度", "红优", "着法"])
         self.positionView.setColumnWidth(0, 80)
         self.positionView.setColumnWidth(1, 100)
         self.positionView.setColumnWidth(2, 380)

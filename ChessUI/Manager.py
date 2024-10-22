@@ -142,22 +142,18 @@ class EngineManager(QObject):
             if m is None:
                 return
 
-            #先处理本步的得分是下一步的负值
-            for key in ['score', 'mate']:
-                if key in ret:
-                    ret[key] = - ret[key]
+            #分数换算到红方得分
+            if move_color == cchess.BLACK:
+                for key in ['score', 'mate'] :
+                    if key in ret:
+                        ret[key] = - ret[key]
                     
             #再处理出现mate时，score没分的情况
             if 'score' not in ret:
                 mate_flag = 1 if ret['mate'] > 0 else -1
                 ret['score'] = 29999 * mate_flag
             
-            #最后处理分数都换算到红方得分的情况
-            if move_color == cchess.RED:
-                for key in ['score', 'mate']:
-                    if key in ret:
-                        ret[key] = -ret[key]
-                
+            
             new_fen = m.board_done.to_fen()
             iccs_dict = {'iccs': iccs, 'diff': 0, 'new_fen': new_fen}
             for key in ['score', 'mate']:
@@ -168,6 +164,11 @@ class EngineManager(QObject):
             self.moveBestSignal.emit(self.id, ret)
 
         elif act_id == 'info_move':
+            #分数换算到红方得分
+            #if move_color == cchess.BLACK:
+            #    for key in ['score', 'mate']:
+            #        if key in action:
+            #            action[key] = -action[key]
             self.moveInfoSignal.emit(self.id, action)
         elif act_id == 'dead':  #引擎被将死
             self.checkmateSignal.emit(self.id, action)
