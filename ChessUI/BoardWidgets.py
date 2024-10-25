@@ -357,11 +357,13 @@ class ChessBoardBaseWidget(QWidget):
                     QRect(0, 0, self.select_img.width() - 1, self.select_img.height() - 1))
 
     def showContextMenu(self, pos):
-        #print('height')
         pass
 
     def sizeHint(self):
         return QSize(self.base_board_width + 20, self.base_board_height + 10)
+    
+    #def sizeHint(self):
+    #    return QSize(self.base_board_width + 20, self.base_board_height + 10)
 
 
 #-----------------------------------------------------#

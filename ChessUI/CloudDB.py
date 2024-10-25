@@ -57,6 +57,8 @@ class CloudDB(QObject):
     def startQuery(self, position, score_limit = 90):
 
         fen = position['fen']
+        
+        logging.info(f"Cloud Query: {fen}")
 
         if fen in self.move_cache:
             ret = self.move_cache[fen]
@@ -66,6 +68,7 @@ class CloudDB(QObject):
         if (self.reply is not None) and (not self.reply.isFinished()):
             self.reply.abort()
         
+        self.index = position['index']
         self.fen = fen
         self.board.from_fen(fen)
         self.score_limit = score_limit    
@@ -86,8 +89,10 @@ class CloudDB(QObject):
         
         if not self.reply:
             return
-            
+        
         resp = self.reply.readAll().data().decode().rstrip('\0')
+        #logging.info(f"Cloud Query Result: {resp}")
+    
         if resp.lower() in ['', 'unknown']:
             return {}
 
@@ -147,6 +152,8 @@ class CloudDB(QObject):
             moves_clean[it['iccs']] = it
             
         ret = {}
+        
+        ret['index'] = self.index
         ret['fen'] = self.fen
         ret['score'] = score_best
         ret['actions'] = moves_clean

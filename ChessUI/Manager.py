@@ -60,7 +60,7 @@ class EngineManager(QObject):
     def goFrom(self, fen_engine, fen = None, params = {}):
         
         if not self.isReady:
-            return True
+            return False
         
         if not fen:
             fen = fen_engine
@@ -73,14 +73,14 @@ class EngineManager(QObject):
         self.fen = fen
         self.stopThinking()
         
-        logging.debug(f'Engine[{self.id}] goFrom: {fen} {params}')
+        logging.info(f'Engine[{self.id}] goFrom: {fen} {params}')
         return self.engine.go_from(fen_engine, params)
     
     def stopThinking(self):
         if not self.isReady:
             return True
             
-        logging.debug(f'Engine[{self.id}] stop_thinking')
+        logging.info(f'Engine[{self.id}] stop_thinking')
         self.engine.stop_thinking()
         #time.sleep(0.2)
         #self.engine.get_action()

@@ -348,6 +348,7 @@ class EngineConfigDialog(QDialog):
         self.MAX_MEM = 5000
         self.MAX_THREADS = os.cpu_count()
         
+        
         #self.enginePath
         #self.engineType
 
@@ -359,41 +360,8 @@ class EngineConfigDialog(QDialog):
         self.moveTimeSpin.setRange(1, 100)
         self.moveTimeSpin.setValue(20)
         
-        #self.levelFightCombo = QComboBox(self)
-        #self.levelFightCombo.addItems(['入门', '业余', '专业', '大师', '特大'])
-
-        self.groupBox = QGroupBox("级别设定")
-
-        radio1 = QRadioButton("入门")
-        radio1.setChecked(True)
-        radio2 = QRadioButton("业余1")
-        radio3 = QRadioButton("业余2")
-        radio4 = QRadioButton("业余3")
-        radio5 = QRadioButton("业余4")
-        radio6 = QRadioButton("业余5")
-        radio7 = QRadioButton("专业1")
-        radio8 = QRadioButton("专业2")
-        radio9 = QRadioButton("专业3")
-        radio10 = QRadioButton("大师")
-        radio11 = QRadioButton("特大")
-        radio12 = QRadioButton("无敌")
-
         vbox = QVBoxLayout()
-        vbox.addWidget(radio1)
-        vbox.addWidget(radio2)
-        vbox.addWidget(radio3)
-        vbox.addWidget(radio4)
-        vbox.addWidget(radio5)
-        vbox.addWidget(radio6)
-        vbox.addWidget(radio7)
-        vbox.addWidget(radio8)
-        vbox.addWidget(radio9)
-        vbox.addWidget(radio10)
-        vbox.addWidget(radio11)
-        vbox.addWidget(radio12)
-        vbox.addStretch(1)
-        self.groupBox.setLayout(vbox)
-
+        
         self.scoreFightSlider = QSlider(Qt.Horizontal)
         self.scoreFightSlider.setMinimum(1280)
         self.scoreFightSlider.setMaximum(3000)
@@ -420,42 +388,37 @@ class EngineConfigDialog(QDialog):
         #self.multiPVSpin.setSingleStep(1)
         #self.multiPVSpin.setRange(1, 10)
         #self.multiPVSpin.setValue(1)
+
+        engineBox = QGroupBox("引擎默认设置")
+        
+        f1 = QFormLayout()    
+        #f1.addRow('引擎路径:', self.enginePath)
+        #f1.addRow('引擎类别:', self.engineType)
+        f1.addRow('线程数:', self.threadsSpin)
+        f1.addRow('内存(MB)::', self.memorySpin)
+        f1.addRow('深度:', self.depthSpin)
+        f1.addRow('步时(秒):', self.moveTimeSpin)
+        engineBox.setLayout(f1)
+        layout.addWidget(engineBox)
+        
+        fightBox = QGroupBox("人机挑战设置")
+        f2 = QFormLayout()
+        #f2.addRow('级别', self.levelFightCombo)
+        f2.addRow('级别', self.scoreFightSlider)
+        f2.addRow('限定深度', self.depthFightSpin)
+        f2.addRow('限定步时（秒）', self.moveTimeFightSpin)
+        fightBox.setLayout(f2)
+        layout.addWidget(fightBox)
         
         btnBox = QDialogButtonBox()
         btnBox.setStandardButtons(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel
         )
 
-        tabs = QTabWidget()
-        tabs.addTab(self.engineTabUI(), "引擎默认设置")
-        tabs.addTab(self.fightTabUI(), "人机挑战设置")
-        layout.addWidget(tabs)
         layout.addWidget(btnBox)
 
-    def engineTabUI(self):
-        tab = QWidget()
-        f1 = QFormLayout()    
-        #f1.addRow('引擎路径:', self.enginePath)
-        #f1.addRow('引擎类别:', self.engineType)
-        f1.addRow('深度:', self.depthSpin)
-        f1.addRow('步时(秒):', self.moveTimeSpin)
-        f1.addRow('线程数:', self.threadsSpin)
-        f1.addRow('内存(MB)::', self.memorySpin)
-        tab.setLayout(f1)
-        
-        return tab
-
-    def fightTabUI(self):
-        tab = QWidget()
-        f2 = QFormLayout()
-        #f2.addRow('级别', self.levelFightCombo)
-        f2.addRow('级别', self.groupBox)
-
-        f2.addRow('级别', self.scoreFightSlider)
-        f2.addRow('限定深度', self.depthFightSpin)
-        f2.addRow('限定步时（秒）', self.moveTimeFightSpin)
-        tab.setLayout(f2)
-        return tab
+    def config(self, params):
+        self.exec()
 
 #--------------------------------------------------------------#
 class QuickBookDialog(QDialog):

@@ -18,9 +18,10 @@ from cchess import ChessBoard
 from .Utils import GameMode, ReviewMode, getTitle, TimerMessageBox, getFreeMem, getStepsTextFromFenMoves, loadEglib
 from .BoardWidgets import ChessBoardWidget, ChessBoardEditWidget
 from .SnippingWidget import SnippingWidget
+from .Dialogs import EngineConfigDialog
 
 from . import Globl
- 
+
 #-----------------------------------------------------#
 class DockWidget(QDockWidget):
     def __init__(self, parent, dock_areas):
@@ -368,7 +369,7 @@ class DockHistoryWidget(QDockWidget):
         self.setWindowTitle(self.inner.title)
 
 #-----------------------------------------------------#
-class ChessEngineWidget(QDockWidget):
+class EngineWidget(QDockWidget):
 
     def __init__(self, parent, engineMgr):
 
@@ -391,13 +392,15 @@ class ChessEngineWidget(QDockWidget):
         self.engineLabel = QLabel()
         self.engineLabel.setAlignment(Qt.AlignCenter)
         
+        '''
         self.DepthSpin = QSpinBox()
         self.DepthSpin.setRange(0, 100)
         self.DepthSpin.setValue(22)
         self.moveTimeSpin = QSpinBox()
         self.moveTimeSpin.setRange(0, 100)
         self.moveTimeSpin.setValue(0)
-        
+        '''
+        '''
         self.threadsSpin = QSpinBox()
         self.threadsSpin.setSingleStep(1)
         self.threadsSpin.setRange(1, self.MAX_THREADS)
@@ -415,41 +418,43 @@ class ChessEngineWidget(QDockWidget):
         self.multiPVSpin.setRange(1, 10)
         self.multiPVSpin.setValue(1)
         self.multiPVSpin.valueChanged.connect(self.onMultiPVChanged)
-        
+
         self.skillLevelSpin = QSpinBox()
         self.skillLevelSpin.setSingleStep(1)
         self.skillLevelSpin.setRange(1, 20)
         self.skillLevelSpin.setValue(20)
         self.skillLevelSpin.valueChanged.connect(self.onSkillLevelChanged)
+        '''
         
         self.redBox = QCheckBox("执红")
         self.blackBox = QCheckBox("执黑")
         self.analysisBox = QCheckBox("局面分析")
-        self.configBtn = QPushButton("参数")
-        self.reviewBtn = QPushButton("复盘分析")
+        self.configBtn = QPushButton("设置")
+        #self.reviewBtn = QPushButton("复盘分析")
         
         self.configBtn.clicked.connect(self.onConfigEngine)
         self.redBox.stateChanged.connect(self.onRedBoxChanged)
         self.blackBox.stateChanged.connect(self.onBlackBoxChanged)
         self.analysisBox.stateChanged.connect(self.onAnalysisBoxChanged)
 
-        #hbox.addWidget(self.configBtn, 0)
-        
+        hbox.addWidget(self.configBtn, 0)
+
+        '''
         hbox.addWidget(QLabel('深度:'), 0)
         hbox.addWidget(self.DepthSpin, 0)
         hbox.addWidget(QLabel(' 步时(秒):'), 0)
         hbox.addWidget(self.moveTimeSpin, 0)
         hbox.addWidget(QLabel(' 级别:'), 0)
         hbox.addWidget(self.skillLevelSpin, 0)
-        
-        hbox.addWidget(QLabel(' 线程:'), 0)
-        hbox.addWidget(self.threadsSpin, 0)
-        hbox.addWidget(QLabel(' 存储(MB):'), 0)
-        hbox.addWidget(self.memorySpin, 0)
+        '''
+        #hbox.addWidget(QLabel(' 线程:'), 0)
+        #hbox.addWidget(self.threadsSpin, 0)
+        #hbox.addWidget(QLabel(' 存储(MB):'), 0)
+        #hbox.addWidget(self.memorySpin, 0)
         #hbox.addWidget(QLabel('MB  分支:'), 0)
         #hbox.addWidget(self.multiPVSpin, 0)
         
-        hbox.addWidget(QLabel('    '), 0)
+        hbox.addWidget(QLabel('   '), 0)
         hbox.addWidget(self.redBox, 0)
         hbox.addWidget(self.blackBox, 0)
         hbox.addWidget(self.engineLabel, 2)
@@ -462,14 +467,13 @@ class ChessEngineWidget(QDockWidget):
 
         self.positionView = QTreeWidget()
         self.positionView.setColumnCount(1)
-        self.positionView.setHeaderLabels(["深度", "红优", "着法"])
+        self.positionView.setHeaderLabels(["深度", "得分", "着法"])
         self.positionView.setColumnWidth(0, 80)
         self.positionView.setColumnWidth(1, 100)
         self.positionView.setColumnWidth(2, 380)
 
         vbox.addWidget(self.positionView)
 
-        #self.engineManager.readySignal.connect(self.onEngineReady)
         self.branchs = []
     
     def getDefaultMem(self):
@@ -484,12 +488,12 @@ class ChessEngineWidget(QDockWidget):
         return self.MAX_THREADS // 2
 
     def writeSettings(self, settings):
-        settings.setValue("engineDepth", self.DepthSpin.value())
-        settings.setValue("engineMoveTime", self.moveTimeSpin.value())
-        settings.setValue("engineThreads", self.threadsSpin.value())
-        settings.setValue("engineMemory", self.memorySpin.value())
-        #settings.setValue("engineMultiPV", self.multiPVSpin.value())
-        settings.setValue("engineSkillLevel", self.skillLevelSpin.value())
+        
+        settings.setValue("goDepth", self.goDepth)
+        settings.setValue("goMoveTime", self.goMoveTime)
+        settings.setValue("engineThreads", self.engineThreads)
+        settings.setValue("engineMemory", self.engineMemory)
+        settings.setValue("engineMultiPV", self.engineMultiPV)
         settings.setValue("engineFightLevel", self.engineFightLevel)
 
         settings.setValue("engineRed", self.redBox.isChecked()) 
@@ -498,12 +502,11 @@ class ChessEngineWidget(QDockWidget):
 
     def readSettings(self, settings):
         
-        self.DepthSpin.setValue(settings.value("engineDepth", 22))
-        self.moveTimeSpin.setValue(settings.value("engineMoveTime", 10))
-        self.threadsSpin.setValue(settings.value("engineThreads", self.getDefaultThreads()))
-        self.memorySpin.setValue(settings.value("engineMemory", self.getDefaultMem()))
-        #self.multiPVSpin.setValue(settings.value("engineMultiPV", )
-        self.skillLevelSpin.setValue(settings.value("engineSkillLevel", 20))
+        self.goDepth = settings.value("goDepth", 22)
+        self.goMoveTime = settings.value("goMoveTime", 0)
+        self.engineThreads = settings.value("engineThreads", self.getDefaultThreads())
+        self.engineMemory = settings.value("engineMemory", self.getDefaultMem())
+        self.engineMultiPV = settings.value("engineMultiPV", 1)
         self.engineFightLevel = settings.value("engineFightLevel", 20)
 
         self.redBox.setChecked(settings.value("engineRed", False, type=bool))
@@ -511,9 +514,14 @@ class ChessEngineWidget(QDockWidget):
         self.analysisBox.setChecked(settings.value("engineAnalysis", False, type=bool))
     
     def getGoParams(self):
-        depth = self.DepthSpin.value()
-        moveTime = self.moveTimeSpin.value()
-        return {'depth': depth, 'movetime': moveTime * 1000 }
+        params = {}
+        
+        if self.goDepth > 0:
+            params['depth'] = self.goDepth
+        if self.goMoveTime > 0: 
+            params['movetime'] = self.goMoveTime * 1000
+        
+        return params 
 
     def contextMenuEvent(self, event):
         return
@@ -523,18 +531,6 @@ class ChessEngineWidget(QDockWidget):
         if action == viewBranchAction:
             self.onViewBranch()
     
-    def onThreadsChanged(self, num):
-        self.engineManager.setOption('Threads', num)
-        
-    def onMemoryChanged(self, num):
-        self.engineManager.setOption('Hash', num)
-        
-    def onMultiPVChanged(self, num):
-        self.engineManager.setOption('MultiPV', num)
-    
-    def onSkillLevelChanged(self, num):
-        self.engineManager.setOption('Skill Level', num)
-        
     def onViewBranch(self):
         self.parent.onViewBranch()
 
@@ -600,38 +596,37 @@ class ChessEngineWidget(QDockWidget):
         self.engineLabel.setText(name)
         
         self.engineManager.setOption('ScoreType','PawnValueNormalized')
-            
-        self.onThreadsChanged(self.threadsSpin.value())
-        self.onMemoryChanged(self.memorySpin.value())
-        #self.onMultiPVChanged(self.multiPVSpin.value())
-        self.onSkillLevelChanged(self.skillLevelSpin.value())
+        self.engineManager.setOption('Threads', self.engineThreads)
+        self.engineManager.setOption('Hash', self.engineMemory)
+        self.engineManager.setOption('MultiPV', self.engineMultiPV)
+
+        #self.onSkillLevelChanged(self.skillLevelSpin.value())
     
     def onSwitchGameMode(self, gameMode):
         
         #保存在人机模式下的engineSkillLevel
-        if self.gameMode == GameMode.Fight:
-            self.engineFightLevel = self.skillLevelSpin.value()
+        #if self.gameMode == GameMode.Fight:
+            #self.engineFightLevel = self.skillLevelSpin.value()
         
         lastGameMode = self.gameMode   
         self.gameMode = gameMode
 
         if self.gameMode == GameMode.Free:
-            self.skillLevelSpin.setValue(20)
-            if lastGameMode == GameMode.EndGame:
-                self.redBox.setChecked(False)
-                self.blackBox.setChecked(False)
+            #self.skillLevelSpin.setValue(20)
+            self.redBox.setChecked(False)
+            self.blackBox.setChecked(False)
             
         elif self.gameMode == gameMode.Fight:
             self.redBox.setChecked(False)
             self.blackBox.setChecked(True)
             self.analysisBox.setChecked(False)
-            self.skillLevelSpin.setValue(self.engineFightLevel)
+            #self.skillLevelSpin.setValue(self.engineFightLevel)
 
         elif self.gameMode == GameMode.EndGame:
             self.redBox.setChecked(False)
             self.blackBox.setChecked(True)
             self.analysisBox.setChecked(False)
-            self.skillLevelSpin.setValue(20)
+            #self.skillLevelSpin.setValue(20)
             #self.skillLevelSpin.setEnabled(False)
         
     def onReviewBegin(self, mode):
@@ -642,9 +637,9 @@ class ChessEngineWidget(QDockWidget):
         self.analysisBox.setEnabled(False)
         
         if mode == ReviewMode.ByEngine:
-            self.savedSkillLevel = self.skillLevelSpin.value()    
+            #self.savedSkillLevel = self.skillLevelSpin.value()    
             self.analysisBox.setChecked(True)
-            self.skillLevelSpin.setValue(20)
+            #self.skillLevelSpin.setValue(20)
         elif mode == ReviewMode.ByCloud:
             self.analysisBox.setChecked(False)
                 
@@ -655,7 +650,8 @@ class ChessEngineWidget(QDockWidget):
         self.analysisBox.setEnabled(True)
         
         if mode == ReviewMode.ByEngine:
-            self.skillLevelSpin.setValue(self.savedSkillLevel)
+            #self.skillLevelSpin.setValue(self.savedSkillLevel)
+            pass
         elif mode == ReviewMode.ByCloud:
             pass
 
@@ -664,7 +660,7 @@ class ChessEngineWidget(QDockWidget):
     def onConfigEngine(self):
         params = {} # self.engineManager.get_config()
 
-        dlg = EngineConfigDialog()
+        dlg = EngineConfigDialog(self.parent)
         if dlg.config(params):
             #self.engineManager.update_config(params)
             pass
@@ -696,7 +692,7 @@ class ChessEngineWidget(QDockWidget):
         self.positionView.clear()
 
     def sizeHint(self):
-        return QSize(500, 100)
+        return QSize(400, 100)
 
 #------------------------------------------------------------------#
 """
@@ -915,20 +911,19 @@ class BoardActionsWidget(QDockWidget):
         self.setObjectName("棋谱库")
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
 
-        self.parent = parent
-         
+        self.importFollowMode = False
+        self.parent = parent         
         self.actionsView = QTreeWidget()
+
         self.actionsView.setColumnCount(1)
-        self.actionsView.setHeaderLabels(['MK', "备选着法", "得分", '', '备注'])
-        self.actionsView.setColumnWidth(0, 45)
+        self.actionsView.setHeaderLabels(['MK', "备选着法", "得分", ''])
+        self.actionsView.setColumnWidth(0, 20)
         self.actionsView.setColumnWidth(1, 80)
         self.actionsView.setColumnWidth(2, 40)
         self.actionsView.setColumnWidth(3, 1)
-        self.actionsView.setColumnWidth(4, 20)
+        
         self.actionsView.clicked.connect(self.onSelectIndex)
-
-        self.importFollowMode = False
-
+        
         self.setWidget( self.actionsView)
 
     def clear(self):
@@ -972,7 +967,7 @@ class BoardActionsWidget(QDockWidget):
         self.selectMoveSignal.emit(act)
 
     def sizeHint(self):
-        return QSize(150, 500)
+        return QSize(110, 500)
 
 #------------------------------------------------------------------#
 class EndBookWidget(QDockWidget):

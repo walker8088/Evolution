@@ -26,13 +26,13 @@ from .Version import release_version
 from .Resource import qt_resource_data
 from .Manager import EngineManager
 
-from .Storage import EndBookStore #, LocalBookStore
+from .Storage import EndBookStore
 from .CloudDB import CloudDB
 from .LocalDB import OpenBookYfk, OpenBookPF, MasterBook, LocalBook
 
 from .Utils import GameMode, ReviewMode, TimerMessageBox, getTitle, getStepsFromFenMoves, trim_fen
 from .BoardWidgets import ChessBoardWidget, DEFAULT_SKIN
-from .Widgets import ChessEngineWidget, BookmarkWidget, \
+from .Widgets import EngineWidget, BookmarkWidget, \
                     BoardActionsWidget, EndBookWidget, DockHistoryWidget, GameLibWidget
 from .Dialogs import PositionEditDialog, PositionHistDialog, ImageToBoardDialog, EngineConfigDialog
 
@@ -150,7 +150,7 @@ class MainWindow(QMainWindow):
         self.gamelibView = GameLibWidget(self)
         self.gamelibView.setVisible(False)
                 
-        self.engineView = ChessEngineWidget(self, Globl.engineManager)
+        self.engineView = EngineWidget(self, Globl.engineManager)
         
         #self.addDockWidget(Qt.LeftDockWidgetArea, self.moveDbView)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.actionsView)
@@ -220,7 +220,6 @@ class MainWindow(QMainWindow):
     #-----------------------------------------------------------------------
     #初始化
     def clearAll(self):
-        self.fenPosDict = OrderedDict()
         self.positionList = []
         self.currPosition = None
         self.reviewMode = None
@@ -538,7 +537,6 @@ class MainWindow(QMainWindow):
         if not quickMode:
             self.isNeedSave = True
 
-        self.fenPosDict[new_fen] = position
         #在fenCach中把招法连起来
         if new_fen not in Globl.fenCache:
             Globl.fenCache[new_fen] = {}
@@ -551,7 +549,7 @@ class MainWindow(QMainWindow):
         position = self.currPosition
         fen = position['fen']
         move_index = position['index']
-            
+        
         #提示最优其他走法
         best_show = []     
         if fen in Globl.fenCache:
@@ -583,7 +581,7 @@ class MainWindow(QMainWindow):
         self.boardActions = OrderedDict()
 
         #确定是否进行云搜索
-        if self.gameMode == GameMode.EndGame:        
+        if self.gameMode == GameMode.EndGame:  
             pass
         else:
             if not quickMode:
@@ -623,191 +621,6 @@ class MainWindow(QMainWindow):
                 msg = ""
 
             self.statusBar().showMessage(msg)
-
-    #------------------------------------------------------------------------------
-    #None UI Events
-    def clearAllScore(self):
-
-        #清理分数但是保持fen链的完整性
-        for fen in self.fenPosDict:
-            if fen not in Globl.fenCache:
-                continue 
-            fenInfo = Globl.fenCache[fen]
-            newInfo = {}
-            if 'fen_prev' in fenInfo :
-                newInfo['fen_prev'] = fenInfo['fen_prev']
-            Globl.fenCache[fen] = newInfo
-
-        for posi in self.positionList:
-            self.historyView.inner.onUpdatePosition(posi)
-
-    def localSearch(self, position):
-        
-        fen = position['fen']
-        
-        #开局库        
-        query = self.openBook.getMoves(fen)    
-        if query:
-            openbook_actions = query['actions']
-        else:
-            openbook_actions = OrderedDict()
-
-        #本地库库        
-        query = Globl.localBook.getMoves(fen)
-        if query:
-            local_actions = query['actions']
-        else:
-            local_actions = OrderedDict()
-
-        for iccs, act in local_actions.items():
-            if iccs in openbook_actions:
-                act['score'] = openbook_actions[iccs]['score']
-            act['mark'] = "*"
-            
-        #合并最终的输出  
-        final_actions = openbook_actions.copy()
-        #合并本地库与开局库
-        for iccs, l_act in local_actions.items():
-            if iccs in final_actions:
-                f_act = final_actions[iccs]
-                f_act.update(l_act)
-            else:
-                final_actions[iccs] = l_act
-            
-        '''        
-        #更新分数 
-        for act in final_actions.values():
-            if 'new_fen' not in act:
-                continue
-            new_fen = act['new_fen']
-            if new_fen not in Globl.fenCache:
-                continue
-            info= Globl.fenCache[new_fen]
-            if 'score' not in info:
-                continue
-            act['score'] = info['score']
-        '''
-
-        self.boardActions = final_actions
-        self.actionsView.updateActions(self.boardActions)
-        
-
-    def onCloudQueryResult(self, query):
-        
-        def sort_key(item):
-            if 'score' in item[1]:
-                return item[1]['score']
-            else:
-                return 0
-
-        if not query or not self.positionList:
-            return
-        
-        fen = query['fen']
-        if fen not in self.fenPosDict:
-            return
-
-        move_color = cchess.get_move_color(fen)
-            
-        if (self.queryMode == QueryMode.CloudFirst) or (self.reviewMode == ReviewMode.ByCloud):
-            self.updateFenCache(query)
-            new_actions = {}
-            posi = self.fenPosDict[fen]
-            if posi == self.currPosition: #查询返回的结果与当前局面一致
-                actions = query['actions']
-                for iccs, act in actions.items():
-                    #print(iccs, act)
-                    if iccs in self.boardActions:
-                        old_act = self.boardActions.pop(iccs)
-                        old_act.update(act)
-                        new_actions[iccs] = old_act 
-                    else:    
-                        new_actions[iccs] = act
-                        
-            x = OrderedDict(sorted(new_actions.items(), key = sort_key, reverse = (move_color == cchess.RED)))
-            for iccs, act in self.boardActions.items():
-                 x[iccs] = act
-            
-            self.boardActions = x     
-            self.actionsView.updateActions(self.boardActions)
-
-            if self.reviewMode == ReviewMode.ByCloud:
-                self.onReviewGameStep()
-    
-    def showBestHint(self, fenInfo):
-        best = []
-        
-        move = fenInfo.get('iccs', None)
-        if not move:
-            return
-        best.append(cchess.iccs2pos(move))    
-        
-        ponder = fenInfo.get('ponder', None)
-        if ponder:
-            best.append(cchess.iccs2pos(ponder))
-        
-        self.boardView.showMoveHint(best)
-
-    #-----------------------------------------------------------
-    #Engine 输出
-    def onTryEngineMove(self, engine_id, fenInfo):
-        
-        self.isRunEngine = False
-        
-        fen = trim_fen(fenInfo['fen'])
-        logging.debug(f'Engine[{engine_id}] BestMove {fenInfo}' )
-        
-        if (self.gameMode != GameMode.EndGame) and ((self.queryMode == QueryMode.EngineFirst) or (self.reviewMode == ReviewMode.ByEngine)) :
-            self.updateFenCache(fenInfo)
-
-        if self.reviewMode == ReviewMode.ByEngine :
-            self.onReviewGameStep()
-            return
-        
-        move_color = self.board.get_move_color()
-        
-        #只有在最后一行时，引擎才会触发走子
-        if self.isEndPosition() and (self.engineRunColor[move_color] == engine_id):
-            self.onMoveGo(fenInfo['iccs'])
-        else:
-            if (self.queryMode == QueryMode.EngineFirst):
-                self.showBestHint(fenInfo)
-            
-    def onEngineMoveInfo(self, engine_id, fenInfo):
-        
-        #if (self.queryMode == QueryMode.EngineFirst) or (self.reviewMode == ReviewMode.ByEngine):
-        #    self.updateFenCache(fenInfo)
-
-        if not self.currPosition:
-            return
-
-        fen = fenInfo['fen']
-
-        #引擎输出的历史数据,不处理
-        if fen != self.currPosition['fen']:
-            return
-
-        board = ChessBoard(fen)
-        currmove = fenInfo.get('currmove', None)
-        if currmove:
-            self.boardView.showMoveHint([cchess.iccs2pos(currmove)])
-            return
-
-        moves = fenInfo.get('moves', None)
-        if not moves:
-            return
-        
-        iccs = moves[0]
-        #引擎输出的历史数据,不处理
-        if not board.is_valid_iccs_move(iccs):
-            return
-
-        self.engineView.onEngineMoveInfo(fenInfo)
-
-    def onEngineReady(self, engine_id, name, engine_options):
-        logging.info(f'Engine[{engine_id}] {name} Ready.' )
-        self.engineView.readSettings(self.settings)
-        self.engineView.onEngineReady(engine_id, name, engine_options)
 
     #-----------------------------------------------------------
     #fenCache 核心逻辑
@@ -864,9 +677,215 @@ class MainWindow(QMainWindow):
                     if (diff < -40) and ('best_next' in prevInfo):
                         fenInfo['alter_best'] = prevInfo['best_next']
         
-        if fen in self.fenPosDict:
-            self.historyView.inner.onUpdatePosition(self.fenPosDict[fen])
+        for pos in self.positionList:
+            if pos['fen'] == fen:
+                self.historyView.inner.onUpdatePosition(pos)
+        
+    #------------------------------------------------------------------------------
+    #None UI Events
+    def clearAllScore(self):
+
+        #清理分数但是保持fen链的完整性
+        for pos in self.positionList:
+            fen = pos['fen']
+            if fen not in Globl.fenCache:
+                continue 
+            fenInfo = Globl.fenCache[fen]
+            newInfo = {}
+            if 'fen_prev' in fenInfo :
+                newInfo['fen_prev'] = fenInfo['fen_prev']
+            Globl.fenCache[fen] = newInfo
+
+            self.historyView.inner.onUpdatePosition(pos)
+
+    def localSearch(self, position):
+        
+        fen = position['fen']
+        
+        #开局库        
+        query = self.openBook.getMoves(fen)    
+        if query:
+            openbook_actions = query['actions']
+        else:
+            openbook_actions = OrderedDict()
+
+        #本地库库        
+        query = Globl.localBook.getMoves(fen)
+        if query:
+            local_actions = query['actions']
+        else:
+            local_actions = OrderedDict()
+
+        for iccs, act in local_actions.items():
+            if iccs in openbook_actions:
+                act['score'] = openbook_actions[iccs]['score']
+            act['mark'] = "*"
+            
+        #合并最终的输出  
+        final_actions = openbook_actions.copy()
+        #合并本地库与开局库
+        for iccs, l_act in local_actions.items():
+            if iccs in final_actions:
+                f_act = final_actions[iccs]
+                f_act.update(l_act)
+            else:
+                final_actions[iccs] = l_act
+            
+        '''        
+        #更新分数 
+        for act in final_actions.values():
+            if 'new_fen' not in act:
+                continue
+            new_fen = act['new_fen']
+            if new_fen not in Globl.fenCache:
+                continue
+            info= Globl.fenCache[new_fen]
+            if 'score' not in info:
+                continue
+            act['score'] = info['score']
+        '''
+
+        #boardActions 存储当前局面下的最优走法
+        self.boardActions = final_actions
+        self.actionsView.updateActions(self.boardActions)
+        
+
+    def onCloudQueryResult(self, query):
+        
+        def sort_key(item):
+            if 'score' in item[1]:
+                return item[1]['score']
+            else:
+                return 0
+        
+        #logging.info(str(query))
+                
+        if not query or not self.positionList:
+            return
+        
+        index = query['index']
+        
+        #着法列表变短了
+        if index >= len(self.positionList):
+            return
+
+        fen = query['fen']
+        pos = self.positionList[index]
+        #同样索引下的局面变了
+        if fen != pos['fen']:
+            return
+            
+        if (self.queryMode == QueryMode.CloudFirst) or (self.reviewMode == ReviewMode.ByCloud):
+            self.updateFenCache(query)
+            
+        new_actions = {}
+        if pos == self.currPosition: #查询返回的结果与当前局面一致
+            actions = query['actions']
+            for iccs, act in actions.items():
+                #print(iccs, act)
+                if iccs in self.boardActions:
+                    old_act = self.boardActions.pop(iccs)
+                    old_act.update(act)
+                    new_actions[iccs] = old_act 
+                else:    
+                    new_actions[iccs] = act
                     
+        move_color = cchess.get_move_color(fen)
+        x = OrderedDict(sorted(new_actions.items(), key = sort_key, reverse = (move_color == cchess.RED)))
+        for iccs, act in self.boardActions.items():
+             x[iccs] = act
+       
+        self.boardActions = x     
+        self.actionsView.updateActions(self.boardActions)
+
+        if self.reviewMode == ReviewMode.ByCloud:
+            self.onReviewGameStep()
+
+    def showBestHint(self, fenInfo):
+        best = []
+        
+        move = fenInfo.get('iccs', None)
+        if not move:
+            return
+        best.append(cchess.iccs2pos(move))    
+        
+        ponder = fenInfo.get('ponder', None)
+        if ponder:
+            best.append(cchess.iccs2pos(ponder))
+        
+        self.boardView.showMoveHint(best)
+
+    #-----------------------------------------------------------
+    #Engine 输出
+    def onTryEngineMove(self, engine_id, fenInfo):
+        
+        self.isRunEngine = False
+        
+        fen = trim_fen(fenInfo['fen'])
+        logging.debug(f'Engine[{engine_id}] BestMove {fenInfo}' )
+        
+        if (self.gameMode != GameMode.EndGame) \
+            and ((self.queryMode == QueryMode.EngineFirst) \
+                 or (self.reviewMode == ReviewMode.ByEngine)):
+            self.updateFenCache(fenInfo)
+
+        if self.reviewMode == ReviewMode.ByEngine:
+            self.onReviewGameStep()
+            return
+        
+        move_color = self.board.get_move_color()
+        
+        #只有在最后一行时，引擎才会触发走子
+        if self.isEndPosition() and (self.engineRunColor[move_color] == engine_id):
+            self.onMoveGo(fenInfo['iccs'])
+        else:
+            if (self.queryMode == QueryMode.EngineFirst):
+                self.showBestHint(fenInfo)
+            
+    def onEngineMoveInfo(self, engine_id, fenInfo):
+        
+        #if (self.queryMode == QueryMode.EngineFirst) or (self.reviewMode == ReviewMode.ByEngine):
+        #    self.updateFenCache(fenInfo)
+
+        if not self.currPosition:
+            return
+
+        fen = fenInfo['fen']
+
+        #引擎输出的历史数据,不处理
+        if fen != self.currPosition['fen']:
+            return
+
+        board = ChessBoard(fen)
+        currmove = fenInfo.get('currmove', None)
+        if (self.queryMode == QueryMode.EngineFirst) and currmove:
+            self.boardView.showMoveHint([cchess.iccs2pos(currmove)])
+            return
+
+        moves = fenInfo.get('moves', None)
+        if not moves:
+            return
+        
+        iccs = moves[0]
+        #引擎输出的历史数据,不处理
+        if not board.is_valid_iccs_move(iccs):
+            return
+        
+        moveShow = [cchess.iccs2pos(x) for x in moves[:2]]
+            
+        if self.queryMode == QueryMode.EngineFirst:
+            self.boardView.showMoveHint(moveShow)
+           
+        self.engineView.onEngineMoveInfo(fenInfo)
+
+    def onEngineReady(self, engine_id, name, engine_options):
+
+        logging.info(f'Engine[{engine_id}] {name} Ready.' )
+        self.engineView.readSettings(self.settings)
+        self.engineView.onEngineReady(engine_id, name, engine_options)
+        
+        self.detectRunEngine()
+
     #--------------------------------------------------------------------
     #引擎相关
     def enginePlayColor(self, engine_id, color, yes):
@@ -876,33 +895,37 @@ class MainWindow(QMainWindow):
         else:
             self.engineRunColor[color] = 0
         
+        self.detectRunEngine()
+    
+    def detectRunEngine(self):
+        if not self.currPosition:
+            return
+
         needRun = (sum(self.engineRunColor) > 0)
-        
         if needRun and (not self.isRunEngine) and (not self.reviewMode):
-            if self.currPosition:
-                self.runEngine(self.currPosition)
+            self.runEngine(self.currPosition)
         
     def runEngine(self, position):
 
-        fen_engine = fen = position['fen']
+        if not Globl.engineManager.isReady:
+            return
         
+        fen_engine = fen = position['fen']      
         if cchess.EMPTY_BOARD in fen:
             return 
-                
-        move_color = cchess.get_move_color(fen)
         
+        move_color = cchess.get_move_color(fen)
         if (self.engineRunColor[0] > 0) or (self.engineRunColor[move_color] > 0):
             #首行会没有move项
             if 'move' in position:
-                fen_engine = position['move'].to_engine_fen()
-            
+                fen_engine = position['move'].to_engine_fen()         
             params = self.engineView.getGoParams()
             
             ok = Globl.engineManager.goFrom(fen_engine, fen, params)
             if ok:
                 self.isRunEngine = True
             else:
-                QMessageBox.critical(self, f'{getTitle()}', '象棋引擎命令出错，请确认该程序能正常运行。')
+                QMessageBox.critical(self, f'{getTitle()}', '象棋引擎发送命令出错，请确认该程序能正常运行。')
         
  
     #------------------------------------------------------------------------------
@@ -967,8 +990,8 @@ class MainWindow(QMainWindow):
             index = position['index']
             if index <= step_index:
                 break
-            if fen in self.fenPosDict:    
-                del self.fenPosDict[fen]
+            #if fen in self.fenPosDict:    
+            #    del self.fenPosDict[fen]
             self.historyView.inner.onRemovePosition(position)
                 
         self.positionList = self.positionList[:step_index + 1]
@@ -1006,7 +1029,7 @@ class MainWindow(QMainWindow):
         
             self.clearAllScore()
             self.showScoreBox.setChecked(True)
-            self.reviewList = list(self.fenPosDict.keys())
+            self.reviewList = self.positionList[:]
             self.historyView.inner.reviewByCloudBtn.setText('停止复盘')
             self.engineView.onReviewBegin(self.reviewMode)
             self.onReviewGameStep()
@@ -1023,7 +1046,7 @@ class MainWindow(QMainWindow):
             
             self.clearAllScore()
             self.showScoreBox.setChecked(True)
-            self.reviewList = list(self.fenPosDict.keys())
+            self.reviewList = self.positionList[:]
             
             self.engineView.onReviewBegin(self.reviewMode)
             self.historyView.inner.reviewByEngineBtn.setText('停止复盘')
@@ -1033,8 +1056,7 @@ class MainWindow(QMainWindow):
             
     def onReviewGameStep(self):
         if len(self.reviewList) > 0:
-            fen_step = self.reviewList.pop(0)
-            position = self.fenPosDict[fen_step]
+            position = self.reviewList.pop(0)
             
             #print("OnReview", position['index'])
             self.currPosition = position
@@ -1077,14 +1099,16 @@ class MainWindow(QMainWindow):
         if self.queryMode == QueryMode.EngineFirst:
             self.historyView.inner.reviewByEngineBtn.setEnabled(True)
             self.historyView.inner.reviewByCloudBtn.setEnabled(False)
-        
+            self.engineView.analysisBox.setChecked(True)
+
         elif self.queryMode == QueryMode.CloudFirst:
             self.historyView.inner.reviewByEngineBtn.setEnabled(False)
             self.historyView.inner.reviewByCloudBtn.setEnabled(True)
             #极少数情况下棋盘是未初始化的
             if self.currPosition:
                 self.cloudQuery.startQuery(self.currPosition)
-        
+            self.engineView.analysisBox.setChecked(False)
+            
     #------------------------------------------------------------------------------
     #UI Event Handler
     def getConfirm(self, msg):
@@ -1170,8 +1194,9 @@ class MainWindow(QMainWindow):
         self.initGame(fen)
         
         moves = position.get('moves', [])
-        for iccs in moves:
-            self.onMoveGo(iccs, quickMode = True)
+        if moves:
+            for iccs in moves:
+                self.onMoveGo(iccs, quickMode = True)
                     
         self.isNeedSave = False
         self.updateTitle(name)
@@ -1571,7 +1596,7 @@ class MainWindow(QMainWindow):
         self.fileBar = self.addToolBar("File")
         self.fileBar.setObjectName("File")
 
-        self.fileBar.addAction(self.setupEngineAct)
+        #self.fileBar.addAction(self.setupEngineAct)
         self.fileBar.addAction(self.openFileAct)
         self.fileBar.addAction(self.saveFileAct)
         self.fileBar.addAction(self.bookmarkAct)
@@ -1591,7 +1616,7 @@ class MainWindow(QMainWindow):
         
         self.gameBar.addAction(self.restartAct)
         self.gameBar.addAction(self.editBoardAct)
-        self.gameBar.addAction(self.captureBoardAct)
+        #self.gameBar.addAction(self.captureBoardAct)
         #self.gameBar.addAction(self.searchBoardAct)
 
         self.flipBox = QCheckBox()  #"翻转")
