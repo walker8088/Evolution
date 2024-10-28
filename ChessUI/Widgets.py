@@ -15,7 +15,7 @@ from PySide6.QtWidgets import QStyle, QApplication, QMenu, QHBoxLayout, QVBoxLay
 import cchess
 from cchess import ChessBoard
 
-from .Utils import GameMode, ReviewMode, getTitle, TimerMessageBox, getFreeMem, getStepsTextFromFenMoves, loadEglib
+from .Utils import GameMode, ReviewMode, getTitle, TimerMessageBox, getFreeMem, getStepsTextFromFenMoves, loadEglib, loadCsvlib
 from .BoardWidgets import ChessBoardWidget, ChessBoardEditWidget
 from .SnippingWidget import SnippingWidget
 from .Dialogs import EngineConfigDialog
@@ -69,8 +69,8 @@ class HistoryWidget(QWidget):
 
         splitter = QSplitter(self)
         splitter.setOrientation(Qt.Vertical)
-
         splitter.addWidget(self.positionView)
+        
         #splitter.addWidget(self.annotationView)
         #splitter.setStretchFactor(0, 90)
         #splitter.setStretchFactor(1, 10)
@@ -1069,7 +1069,7 @@ class EndBookWidget(QDockWidget):
             self,
             "打开杀局谱文件",
             "",
-            "杀局谱文件(*.eglib);;All Files (*)",
+            "杀局谱文件(*.eglib);;CSV格式文件(*.csv);;All Files (*)",
             options=options)
 
         if not fileName:
@@ -1081,10 +1081,14 @@ class EndBookWidget(QDockWidget):
                                      timeout=2)
             msgbox.exec()
             return
-
-        games = loadEglib(fileName)
-        Globl.endbookStore.saveEndBook(lib_name, games)
-
+        ext = Path(fileName).suffix.lower()
+        if ext =='.eglib': 
+            games = loadEglib(fileName)
+            Globl.endbookStore.saveEndBook(lib_name, games)
+        if ext =='.csv':  
+            games = loadCsvlib(fileName)
+            Globl.endbookStore.saveEndBook(lib_name, games)
+                
         self.updateBooks()
         self.bookCombo.setCurrentText(lib_name)
     

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import sys
+import csv
 import uuid
 import traceback
 from enum import Enum, auto
@@ -150,6 +151,13 @@ def loadEglib(lib_file):
 
     return games.values()
 
+#-----------------------------------------------------#
+def loadCsvlib(lib_file):
+    with open(lib_file, 'r') as file:
+        csv_reader = csv.DictReader(file)
+        data = [row for row in csv_reader]
+        
+    return data
 
 #-----------------------------------------------------#
 class TimerMessageBox(QMessageBox):

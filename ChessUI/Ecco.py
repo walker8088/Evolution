@@ -7,9 +7,9 @@ import cchess
 #-----------------------------------------------------------------
 try:
     if platform.system() == 'Windows':
-        _ecco_dll = cdll.LoadLibrary('.\\Engine\\EccoDLL\\ECCO64.DLL')
+        _ecco_dll = cdll.LoadLibrary('./Engine/EccoDLL/ECCO64.DLL')
     #else:
-    #    _ecco_dll = cdll.LoadLibrary('./EccoDLL/libecco64.so')
+    #    _ecco_dll = cdll.LoadLibrary('./Engine/EccoDLL/libecco64.so')
         
     _ecco_dll.EccoVersion.restype = c_char_p
     _ecco_dll.EccoOpening.restype = c_char_p
