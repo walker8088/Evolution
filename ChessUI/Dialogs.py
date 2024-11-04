@@ -1,5 +1,6 @@
 
 import os
+import logging
 import traceback
 
 from PySide6.QtCore import Qt, Signal, QByteArray, QSize
@@ -348,78 +349,119 @@ class EngineConfigDialog(QDialog):
         self.MAX_MEM = 5000
         self.MAX_THREADS = os.cpu_count()
         
+        self.enginePath = QLabel()
+        self.engineType = QLabel()
         
-        #self.enginePath
-        #self.engineType
-
-        self.depthSpin = QSpinBox(self)
-        self.depthSpin.setRange(1, 100)
-        self.depthSpin.setValue(22)
-
-        self.moveTimeSpin = QSpinBox(self)
-        self.moveTimeSpin.setRange(1, 100)
-        self.moveTimeSpin.setValue(20)
-        
-        vbox = QVBoxLayout()
-        
-        self.scoreFightSlider = QSlider(Qt.Horizontal)
-        self.scoreFightSlider.setMinimum(1280)
-        self.scoreFightSlider.setMaximum(3000)
-        self.scoreFightSlider.setValue(1280)
-
-        self.depthFightSpin = QSpinBox(self)
-        self.depthFightSpin.setRange(1, 100)
-        self.depthFightSpin.setValue(22)
-        self.moveTimeFightSpin = QSpinBox(self)
-        self.moveTimeFightSpin.setRange(1, 100)
-        self.moveTimeFightSpin.setValue(20)
+        #vbox = QVBoxLayout()
+        hbox = QHBoxLayout()
         
         self.threadsSpin = QSpinBox(self)
         self.threadsSpin.setSingleStep(1)
         self.threadsSpin.setRange(1, self.MAX_THREADS)
-        self.threadsSpin.setValue(self.MAX_THREADS // 2)
+        #self.threadsSpin.setValue(self.MAX_THREADS // 2)
         
         self.memorySpin = QSpinBox(self)
         self.memorySpin.setSingleStep(100)
         self.memorySpin.setRange(500, self.MAX_MEM)
-        self.memorySpin.setValue(1000) #self.getDefaultMem())
+        #self.memorySpin.setValue(1000) #self.getDefaultMem())
         
-        #self.multiPVSpin = QSpinBox(self)
-        #self.multiPVSpin.setSingleStep(1)
-        #self.multiPVSpin.setRange(1, 10)
+        self.multiPVSpin = QSpinBox(self)
+        self.multiPVSpin.setSingleStep(1)
+        self.multiPVSpin.setRange(1, 10)
         #self.multiPVSpin.setValue(1)
 
-        engineBox = QGroupBox("引擎默认设置")
+        self.depthSpin = QSpinBox(self)
+        self.depthSpin.setRange(1, 100)
+        #self.depthSpin.setValue(22)
+
+        self.moveTimeSpin = QSpinBox(self)
+        self.moveTimeSpin.setRange(0, 50)
+        #self.moveTimeSpin.setValue(20)
+
+        self.scoreFightSlider = QSlider(Qt.Horizontal)
+        self.scoreFightSlider.setMinimum(1350)
+        self.scoreFightSlider.setSingleStep(100)
+        self.scoreFightSlider.setMaximum(2850)
+        
+        self.depthFightSpin = QSpinBox(self)
+        self.depthFightSpin.setRange(0, 50)
+        #self.depthFightSpin.setValue(22)
+        self.moveTimeFightSpin = QSpinBox(self)
+        self.moveTimeFightSpin.setRange(0, 50)
+        #self.moveTimeFightSpin.setValue(20)
+        
+        engineBox = QGroupBox("引擎路径")
+        fbox = QFormLayout()    
+        fbox.addRow('引擎路径:', self.enginePath)
+        fbox.addRow('引擎类别:', self.engineType)
+        fbox.addRow('线程数:', self.threadsSpin)
+        fbox.addRow('内存(MB):', self.memorySpin)
+        fbox.addRow('分支:', self.multiPVSpin)
+        engineBox.setLayout(fbox)
+        
+        defaultBox = QGroupBox("引擎分析设置")
         
         f1 = QFormLayout()    
-        #f1.addRow('引擎路径:', self.enginePath)
-        #f1.addRow('引擎类别:', self.engineType)
-        f1.addRow('线程数:', self.threadsSpin)
-        f1.addRow('内存(MB)::', self.memorySpin)
-        f1.addRow('深度:', self.depthSpin)
-        f1.addRow('步时(秒):', self.moveTimeSpin)
-        engineBox.setLayout(f1)
-        layout.addWidget(engineBox)
+        f1.addRow('限定深度:', self.depthSpin)
+        f1.addRow('限定步时(秒):', self.moveTimeSpin)
+        defaultBox.setLayout(f1)
+        hbox.addWidget(defaultBox)
         
         fightBox = QGroupBox("人机挑战设置")
         f2 = QFormLayout()
-        #f2.addRow('级别', self.levelFightCombo)
-        f2.addRow('级别', self.scoreFightSlider)
+        f2.addRow('限定级别', self.scoreFightSlider)
         f2.addRow('限定深度', self.depthFightSpin)
         f2.addRow('限定步时（秒）', self.moveTimeFightSpin)
         fightBox.setLayout(f2)
-        layout.addWidget(fightBox)
+        hbox.addWidget(fightBox)
         
-        btnBox = QDialogButtonBox()
-        btnBox.setStandardButtons(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = (
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
 
-        layout.addWidget(btnBox)
+        buttonBox = QDialogButtonBox(QBtn)
+        buttonBox.accepted.connect(self.accept)
+        buttonBox.rejected.connect(self.reject)
 
+        layout.addWidget(engineBox)
+        layout.addLayout(hbox)
+        layout.addWidget(buttonBox)
+
+        self.params = {}
+        
+        self.params['EngineThreads'] = self.threadsSpin
+        self.params['EngineMemory'] = self.memorySpin
+        self.params['EngineMultiPV'] = self.multiPVSpin
+        
+        self.params["EngineGoDepth"] = self.depthSpin
+        self.params["EngineGoMoveTime"] = self.moveTimeSpin
+
+        self.params['EngineEloFight'] = self.scoreFightSlider
+        self.params["EngineGoDepthFight"] = self.depthFightSpin
+        self.params['EngineGoMoveTimeFight'] = self.moveTimeFightSpin
+        
+        
     def config(self, params):
-        self.exec()
+        
+        self.enginePath.setText(params['EnginePath'])
+        self.engineType.setText(params['EngineType'])
 
+        changes = {}
+            
+        for p_name, widget in self.params.items():
+            widget.setValue(params[p_name])
+        
+        if self.exec() == QDialog.Accepted:
+            for p_name, widget in self.params.items():
+                if params[p_name] != widget.value():
+                    params[p_name] = widget.value()
+                    changes[p_name] = widget.value()
+                    
+            if len(changes) > 0:
+                logging.info(f'params changed:{changes}')
+        
+        return changes
+        
 #--------------------------------------------------------------#
 class QuickBookDialog(QDialog):
     def __init__(self, parent):

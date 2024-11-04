@@ -271,7 +271,22 @@ class ChessBoardBaseWidget(QWidget):
         self.board_start_y =  (new_height - self.board_height) // 2
         if self.board_start_y < 0:
             self.board_start_y = 0
-            
+    
+    def copyFenToClipboard(self):
+        fen = self._board.to_fen()        
+        clipboard = QApplication.clipboard()
+        clipboard.clear()
+        clipboard.setText(fen)
+
+    def copyImageToClipboard(self):
+        pixmap = self.grab(self.getBoardRect())
+        clipboard = QApplication.clipboard()
+        clipboard.clear()
+        clipboard.setPixmap(pixmap)
+
+    def getBoardRect(self):
+        return QRect(self.board_start_x, self.board_start_y, self.board_width, self.board_height)
+
     def from_fen(self, fen_str, clear = False):
         self._board.from_fen(fen_str)
         if clear:

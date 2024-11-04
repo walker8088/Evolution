@@ -48,8 +48,16 @@ class ChessApp(QApplication):
         clean_option = QCommandLineOption( ["c", "clean"], "Clean app setttings.")
         parser.addOption(clean_option)
         
+        parser.addPositionalArgument("file", "File to open.", "[file]")
+        
         parser.process(self)
         
+        files = parser.positionalArguments()
+        if len(files) > 0:
+            self.openFile = files[0]
+        else:
+            self.openFile = None
+
         self.isDebug = parser.isSet(debug_option)
         self.isClean = parser.isSet(clean_option)
 
@@ -58,10 +66,15 @@ class ChessApp(QApplication):
         else:
             logging.basicConfig(filename = f'{self.APP_NAME}.log', filemode = 'w', level = logging.INFO) 
         
+        logging.info('应用启动')
 
     def showWin(self):
         self.mainWin = MainWindow()
         self.mainWin.show()
+        
+        if self.openFile:
+            self.mainWin.onDoFreeGame()
+            self.mainWin.openFile(self.openFile)
 
         '''
         splash = QSplashScreen( QPixmap(":images/splash.png"))

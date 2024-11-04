@@ -132,6 +132,7 @@ class HistoryWidget(QWidget):
         clearFollowAction = menu.addAction("删除后续着法")
         menu.addSeparator()
         copyFenAction =  menu.addAction("复制(Fen)")
+        copyImageAction =  menu.addAction("复制(图片)")
         menu.addSeparator()
         bookmarkPositionAction =  menu.addAction("收藏局面")
         bookmarkBookAction =  menu.addAction("收藏棋谱")
@@ -142,13 +143,9 @@ class HistoryWidget(QWidget):
         if action == clearFollowAction:
             self.onClearFollowBtnClick()
         elif action == copyFenAction:
-            pos = self.getCurrPosition()
-            #print(pos)
-            if pos:
-                cb = QApplication.clipboard()
-                cb.clear()
-                cb.setText(pos['fen'])
-        
+            Globl.boardView.copyFenToClipboard()
+        elif action == copyImageAction:
+            Globl.boardView.copyImageToClipboard()
         elif action == bookmarkPositionAction:
             self.onAddBookmarkBtnClick()
         elif action == bookmarkBookAction:
@@ -216,7 +213,7 @@ class HistoryWidget(QWidget):
             msgbox.exec()
             return
 
-        name, ok = QInputDialog.getText(self, getTitle(), '请输入收藏名称:')
+        name, ok = QInputDialog.getText(self, getTitle(), '请输入收藏名称:', text = self.parent.getDefaultGameName())
         if not ok:
             return
 
@@ -232,7 +229,7 @@ class HistoryWidget(QWidget):
 
         fen, moves = self.parent.getGameIccsMoves()
 
-        name, ok = QInputDialog.getText(self, getTitle(), '请输入收藏名称:')
+        name, ok = QInputDialog.getText(self, getTitle(), '请输入收藏名称:', text = self.parent.getDefaultGameName())
         if not ok:
             return
 
@@ -386,6 +383,26 @@ class EngineWidget(QDockWidget):
         
         self.dockedWidget = QWidget(self)
         self.setWidget(self.dockedWidget)
+        
+        self.params = {}
+        
+        self.params['EnginePath'] = self.parent.config['MainEngine']['engine_exec']
+        self.params['EngineType'] = self.parent.config['MainEngine']['engine_type'].lower()
+        
+        self.params["EngineThreads"] = self.getDefaultThreads()
+        self.params["EngineMemory"] = self.getDefaultMem()
+        self.params["EngineMultiPV"] = 1
+        
+        self.params["EngineElo"] = 2850
+        self.params["EngineGoDepth"] = 25
+        self.params["EngineGoMoveTime"] = 0
+        
+        self.params["EngineEloFight"] = 1350
+        self.params["EngineGoDepthFight"] = 25
+        self.params["EngineGoMoveTimeFight"] = 0
+        
+        self.engineGoDepth = self.params["EngineGoDepth"]
+        self.engineGoMoveTime = self.params["EngineGoMoveTime"]
 
         hbox = QHBoxLayout()
 
@@ -488,38 +505,30 @@ class EngineWidget(QDockWidget):
         return self.MAX_THREADS // 2
 
     def writeSettings(self, settings):
+        for key, value in self.params.items():
+            settings.setValue(key, value)
         
-        settings.setValue("goDepth", self.goDepth)
-        settings.setValue("goMoveTime", self.goMoveTime)
-        settings.setValue("engineThreads", self.engineThreads)
-        settings.setValue("engineMemory", self.engineMemory)
-        settings.setValue("engineMultiPV", self.engineMultiPV)
-        settings.setValue("engineFightLevel", self.engineFightLevel)
-
         settings.setValue("engineRed", self.redBox.isChecked()) 
         settings.setValue("engineBlack", self.blackBox.isChecked()) 
         settings.setValue("engineAnalysis", self.analysisBox.isChecked()) 
 
     def readSettings(self, settings):
-        
-        self.goDepth = settings.value("goDepth", 22)
-        self.goMoveTime = settings.value("goMoveTime", 0)
-        self.engineThreads = settings.value("engineThreads", self.getDefaultThreads())
-        self.engineMemory = settings.value("engineMemory", self.getDefaultMem())
-        self.engineMultiPV = settings.value("engineMultiPV", 1)
-        self.engineFightLevel = settings.value("engineFightLevel", 20)
+        for key, old_value in self.params.items():
+            new_value = settings.value(key, old_value)
+            self.params[key] = new_value
 
         self.redBox.setChecked(settings.value("engineRed", False, type=bool))
         self.blackBox.setChecked(settings.value("engineBlack", False, type=bool))
         self.analysisBox.setChecked(settings.value("engineAnalysis", False, type=bool))
     
     def getGoParams(self):
+
         params = {}
         
-        if self.goDepth > 0:
-            params['depth'] = self.goDepth
-        if self.goMoveTime > 0: 
-            params['movetime'] = self.goMoveTime * 1000
+        if self.engineGoDepth > 0:
+            params['depth'] = self.engineGoDepth
+        if self.engineGoMoveTime > 0: 
+            params['movetime'] = self.engineGoMoveTime * 1000
         
         return params 
 
@@ -593,15 +602,14 @@ class EngineWidget(QDockWidget):
 
     def onEngineReady(self, engine_id, name, engine_options):
         
-        self.engineLabel.setText(name)
-        
+        self.engineLabel.setText(name)        
         self.engineManager.setOption('ScoreType','PawnValueNormalized')
-        self.engineManager.setOption('Threads', self.engineThreads)
-        self.engineManager.setOption('Hash', self.engineMemory)
-        self.engineManager.setOption('MultiPV', self.engineMultiPV)
 
-        #self.onSkillLevelChanged(self.skillLevelSpin.value())
-    
+        self.engineManager.setOption('Threads', self.params['EngineThreads'])
+        self.engineManager.setOption('Hash', self.params['EngineMemory'])
+        
+        #self.onSwitchGameMode(self.gameMode)
+
     def onSwitchGameMode(self, gameMode):
         
         #保存在人机模式下的engineSkillLevel
@@ -610,25 +618,44 @@ class EngineWidget(QDockWidget):
         
         lastGameMode = self.gameMode   
         self.gameMode = gameMode
+        
+        #引擎尚未就绪则不发送命令
+        if not self.engineManager.isReady:
+            return
 
         if self.gameMode == GameMode.Free:
-            #self.skillLevelSpin.setValue(20)
             self.redBox.setChecked(False)
             self.blackBox.setChecked(False)
+            
+            self.engineElo = self.params['EngineElo']
+            self.engineGoDepth = self.params['EngineGoDepth']
+            self.engineGoMoveTime = self.params['EngineGoMoveTime']
+            self.engineManager.setOption('UCI_LimitStrength', False)
+            self.engineManager.setOption('MultiPV', self.params['EngineMultiPV'])
             
         elif self.gameMode == gameMode.Fight:
             self.redBox.setChecked(False)
             self.blackBox.setChecked(True)
             self.analysisBox.setChecked(False)
-            #self.skillLevelSpin.setValue(self.engineFightLevel)
-
+            
+            self.engineElo = self.params['EngineEloFight']
+            self.engineGoDepth = self.params['EngineGoDepthFight']
+            self.engineGoMoveTime = self.params['EngineGoMoveTimeFight']
+            self.engineManager.setOption('UCI_LimitStrength', True)
+            self.engineManager.setOption('UCI_Elo', self.engineElo)
+            self.engineManager.setOption('MultiPV', 1)
+            
         elif self.gameMode == GameMode.EndGame:
             self.redBox.setChecked(False)
             self.blackBox.setChecked(True)
             self.analysisBox.setChecked(False)
-            #self.skillLevelSpin.setValue(20)
-            #self.skillLevelSpin.setEnabled(False)
-        
+            
+            self.engineElo = self.params['EngineElo']
+            self.engineGoDepth = self.params['EngineGoDepth']
+            self.engineGoMoveTime = self.params['EngineGoMoveTime']
+            self.engineManager.setOption('UCI_LimitStrength', False)
+            self.engineManager.setOption('MultiPV', 1)
+            
     def onReviewBegin(self, mode):
         
         self.savedCheckState = self.analysisBox.isChecked()
@@ -637,9 +664,9 @@ class EngineWidget(QDockWidget):
         self.analysisBox.setEnabled(False)
         
         if mode == ReviewMode.ByEngine:
-            #self.savedSkillLevel = self.skillLevelSpin.value()    
             self.analysisBox.setChecked(True)
-            #self.skillLevelSpin.setValue(20)
+            self.engineManager.setOption('UCI_LimitStrength', False)
+            
         elif mode == ReviewMode.ByCloud:
             self.analysisBox.setChecked(False)
                 
@@ -650,21 +677,26 @@ class EngineWidget(QDockWidget):
         self.analysisBox.setEnabled(True)
         
         if mode == ReviewMode.ByEngine:
-            #self.skillLevelSpin.setValue(self.savedSkillLevel)
-            pass
+            if self.gameMode == GameMode.Fight:
+                self.engineManager.setOption('UCI_LimitStrength', True)
+                self.engineManager.setOption('UCI_Elo', self.engineElo)
         elif mode == ReviewMode.ByCloud:
             pass
 
         self.analysisBox.setChecked(self.savedCheckState)
         
     def onConfigEngine(self):
-        params = {} # self.engineManager.get_config()
+        #params = {} # self.engineManager.get_config()
 
         dlg = EngineConfigDialog(self.parent)
-        if dlg.config(params):
-            #self.engineManager.update_config(params)
-            pass
-
+        change_params = dlg.config(self.params)
+        if len(change_params) > 0:
+            if 'EngineThreads' in change_params:
+                self.engineManager.setOption('Threads', self.params['EngineThreads'])
+            if 'EngineMemory' in change_params:
+                self.engineManager.setOption('Hash', self.params['EngineMemory'])
+            self.onSwitchGameMode(self.gameMode)
+            
     def onRedBoxChanged(self, state):
         
         red_checked = self.redBox.isChecked()

@@ -22,6 +22,7 @@ from cchess import ChessBoard, Move, BLACK
 
 #-----------------------------------------------------#
 class GameMode(Enum):
+    NoEngine = auto()
     Free = auto()
     Fight = auto()
     EndGame = auto()

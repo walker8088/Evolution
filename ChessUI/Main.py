@@ -45,11 +45,11 @@ from . import Globl
 
 #-----------------------------------------------------#
 GameTitle = {
-    None : '',
-    GameMode.Free: '自由练棋', 
-    GameMode.Fight: '人机对战', 
-    GameMode.EndGame: '杀法挑战', 
-    GameMode.Online: '连线分析',          
+    GameMode.NoEngine: '无引擎练棋',
+    GameMode.Free:     '自由练棋', 
+    GameMode.Fight:    '人机对战', 
+    GameMode.EndGame:  '杀法挑战', 
+    GameMode.Online:   '连线分析',          
 }
 
 #-----------------------------------------------------#
@@ -91,6 +91,8 @@ class MainWindow(QMainWindow):
             myappid = 'mycompany.myproduct.subproduct.version'
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
                 myappid)
+
+        self.readConfig()
         
         gamePath = Path('Game')
         gamePath.mkdir(exist_ok=True)
@@ -128,6 +130,8 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.boardView)
         self.boardView.tryMoveSignal.connect(self.onTryBoardMove)
         self.boardView.rightMouseSignal.connect(self.onBoardRightMouse)
+        #全局可访问
+        Globl.boardView = self.boardView
 
         self.historyView = DockHistoryWidget(self)
         self.historyView.inner.positionSelSignal.connect(
@@ -211,7 +215,7 @@ class MainWindow(QMainWindow):
         self.cloudQuery = CloudDB(self)
         self.cloudQuery.query_result_signal.connect(self.onCloudQueryResult)
         
-        self.switchGameMode(self.savedGameMode)
+        self.switchGameMode(GameMode.NoEngine)
         
         self.readSettingsAfterGameInit()
 
@@ -229,7 +233,7 @@ class MainWindow(QMainWindow):
         self.boardView.setViewOnly(False)
         self.boardActions = OrderedDict()
 
-    def initEngine(self):
+    def readConfig(self): 
         self.config_file = Path('Evolution.ini')
         
         if not self.config_file.is_file():
@@ -243,6 +247,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, f'{getTitle()}', f'打开配置文件[{self.config_file}]出错：{e}')
             return False
         
+    def initEngine(self):
         try:
             engine_type = self.config['MainEngine']['engine_type'].lower()
             engine_exec = Path(self.config['MainEngine']['engine_exec'])
@@ -332,6 +337,17 @@ class MainWindow(QMainWindow):
 
     #-----------------------------------------------------------------------
     #基础信息
+    def getConfirm(self, msg):
+        ok = QMessageBox.question(self, getTitle(), msg, QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if (ok == QMessageBox.Yes):
+            return True 
+        return False
+
+    def getDefaultGameName(self):
+        if len(self.positionList) == 0:
+            return '未命名'
+        return f"{self.positionList[0].get('ecco', '未命名')}"
+    
     def updateTitle(self, subText = ''):
        
         title = f'{Globl.app.APP_NAME_TEXT} - {GameTitle[self.gameMode]}'
@@ -356,16 +372,39 @@ class MainWindow(QMainWindow):
         if self.gameMode == gameMode:
             if (self.gameMode == GameMode.Free) and self.isNeedSave:
                 steps = len(self.positionList) - 1
-                if self.getConfirm(f"当前棋谱已经走了 {steps} 步, 您确定要从新开始吗?"):
+                if self.getConfirm(f"当前棋谱已经走了 {steps} 步, 您确定要重新开始并清空棋谱吗?"):
                     self.initGame(cchess.FULL_INIT_FEN)
             return
         
+        logging.info(f"Switching to [{gameMode}]")
+
         self.lastGameMode = self.gameMode    
         self.gameMode = gameMode
         self.updateTitle()
+        
         self.engineView.onSwitchGameMode(gameMode)
-
-        if self.gameMode == GameMode.Free:
+        
+        if self.gameMode == GameMode.NoEngine:
+            self.myGamesAct.setEnabled(True)
+            self.bookmarkAct.setEnabled(True)
+            self.endBookView.hide()
+            self.actionsView.show()
+            self.showScoreBox.setChecked(True)
+            
+            self.cloudModeBtn.setEnabled(True)
+            self.engineModeBtn.setEnabled(False)
+            
+            self.showBestBox.setEnabled(True)
+            self.showBestBox.setChecked(True)
+            self.showScoreBox.setChecked(True)
+            
+            self.openFileAct.setEnabled(True)
+            self.editBoardAct.setEnabled(True)
+    
+            if self.lastGameMode not in [GameMode.Fight, ]:        
+                self.initGame(cchess.FULL_INIT_FEN)
+        
+        elif self.gameMode == GameMode.Free:
             self.myGamesAct.setEnabled(True)
             self.bookmarkAct.setEnabled(True)
             self.endBookView.hide()
@@ -590,7 +629,7 @@ class MainWindow(QMainWindow):
                     self.cloudQuery.startQuery(position)
                 
         #引擎搜索
-        if not quickMode:
+        if not quickMode and self.gameMode != GameMode.NoEngine:
             self.runEngine(position)
     
     def isEndPosition(self):
@@ -883,6 +922,7 @@ class MainWindow(QMainWindow):
         logging.info(f'Engine[{engine_id}] {name} Ready.' )
         self.engineView.readSettings(self.settings)
         self.engineView.onEngineReady(engine_id, name, engine_options)
+        self.switchGameMode(self.savedGameMode)
         
         self.detectRunEngine()
 
@@ -1091,10 +1131,12 @@ class MainWindow(QMainWindow):
             return
 
         self.queryMode = mode
+        
+        #self.clearAllScore()
 
         #极少数情况下棋盘是未初始化的
         if self.currPosition:
-                self.localSearch(self.currPosition)
+            self.localSearch(self.currPosition)
 
         if self.queryMode == QueryMode.EngineFirst:
             self.historyView.inner.reviewByEngineBtn.setEnabled(True)
@@ -1104,19 +1146,10 @@ class MainWindow(QMainWindow):
         elif self.queryMode == QueryMode.CloudFirst:
             self.historyView.inner.reviewByEngineBtn.setEnabled(False)
             self.historyView.inner.reviewByCloudBtn.setEnabled(True)
-            #极少数情况下棋盘是未初始化的
-            if self.currPosition:
-                self.cloudQuery.startQuery(self.currPosition)
             self.engineView.analysisBox.setChecked(False)
             
     #------------------------------------------------------------------------------
-    #UI Event Handler
-    def getConfirm(self, msg):
-        ok = QMessageBox.question(self, getTitle(), msg, QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if (ok == QMessageBox.Yes):
-            return True 
-        return False
-
+    #UI Event Handler    
     def onDoFreeGame(self):
         self.switchGameMode(GameMode.Free)
 
@@ -1270,16 +1303,9 @@ class MainWindow(QMainWindow):
 
         if not fileName:
             return
-
-        ext = Path(fileName).suffix.lower()
         
-        if ext in GAME_FILE_TYPES:
-            self.openFile(fileName)
-        elif ext in GAME_LIB_TYPES:
-            self.openLibFile(fileName)
-        else:
-            raise Exception(f'Can not open file {fileName}') 
-
+        self.openFile(fileName)
+        
     def onOpenEndGameFile(self):
         options = QFileDialog.Options()
         #options |= QFileDialog.DontUseNativeDialog
@@ -1296,7 +1322,7 @@ class MainWindow(QMainWindow):
         if not self.positionList:
             return
 
-        fileNameDefault = f"{self.positionList[0].get('ecco', 'Unknown')}.pgn"
+        fileNameDefault = f"{self.getDefaultGameName()}.pgn"
        
         options = QFileDialog.Options()
         #options |= QFileDialog.DontUseNativeDialog
@@ -1315,36 +1341,48 @@ class MainWindow(QMainWindow):
         self.lastOpenFolder = str(Path(fileName).parent)
         
     def openFile(self, file_name):
-
-        fileName = Path(file_name)
-        game = Game.read_from(fileName)
-        if not game:
-            msg = f"读取棋谱库文件【{fileName}】错误：{fileName}"
-            logging.error(msg)
-            msgbox = TimerMessageBox(msg)
-            msgbox.exec()
-            return
-        self.gamelibView.hide()
-        self.loadBookGame(fileName.name, game)
-        self.lastOpenFolder = str(fileName.parent)
         
-    def openLibFile(self, file_name):
-
         fileName = Path(file_name)
-        try:
-            game_lib = Game.read_from_lib(fileName)
-        except Exception as e:
-            msg = f"读取棋谱库文件【{fileName}】错误：{e}"
+        if not fileName.is_file():
+            msg = f"文件不存在：{fileName}"
             logging.error(msg)
             msgbox = TimerMessageBox(msg)
             msgbox.exec()
             return
 
-        self.gamelibView.updateGameLib(game_lib)
-        self.gamelibView.show()
+        ext = fileName.suffix.lower()
+        if ext in GAME_FILE_TYPES:
+            game = Game.read_from(fileName)
+            if not game:
+                msg = f"读取棋谱文件错误：{fileName}"
+                logging.error(msg)
+                msgbox = TimerMessageBox(msg)
+                msgbox.exec()
+                return
+            self.gamelibView.hide()
+            self.loadBookGame(fileName.name, game)
+            self.lastOpenFolder = str(fileName.parent)
+        
+        elif ext in GAME_LIB_TYPES:
+            try:
+                game_lib = Game.read_from_lib(fileName)
+            except Exception as e:
+                msg = f"读取棋谱库文件【{fileName}】错误：{e}"
+                logging.error(msg)
+                msgbox = TimerMessageBox(msg)
+                msgbox.exec()
+                return
 
-        self.lastOpenFolder = str(fileName.parent)
-    
+            self.gamelibView.updateGameLib(game_lib)
+            self.gamelibView.show()
+
+            self.lastOpenFolder = str(fileName.parent)
+        else:
+            msg = f"不支持的文件类型【{fileName}】"
+            logging.error(msg)
+            msgbox = TimerMessageBox(msg)
+            msgbox.exec()
+        
     def saveToFile(self, file_name):
 
         try:
@@ -1420,13 +1458,8 @@ class MainWindow(QMainWindow):
         
         fileName = Path(event.mimeData().urls()[0].toLocalFile())
         ext = fileName.suffix.lower()
-        if ext in GAME_FILE_TYPES:
+        if ext in GAME_TYPES_ALL:
             self.openFile(fileName)
-            event.acceptProposedAction()
-
-        elif ext in GAME_LIB_TYPES:
-            self.openLibFile(fileName)
-            event.acceptProposedAction()
     
     #------------------------------------------------------------------------------
     #UI Base
@@ -1694,6 +1727,7 @@ class MainWindow(QMainWindow):
                 event.ignore()
 
         self.writeSettings()
+        Globl.engineManager.stopThinking()
         Globl.engineManager.quit()
         time.sleep(0.6)
         
@@ -1701,6 +1735,8 @@ class MainWindow(QMainWindow):
         #Globl.bookmarkStore.close()
         Globl.endbookStore.close()
         Globl.localBook.close()
+        
+        logging.info('应用关闭.')
 
     def readSettingsBeforeGameInit(self):
         self.settings = QSettings('XQSoft', Globl.app.APP_NAME)
@@ -1729,26 +1765,19 @@ class MainWindow(QMainWindow):
     def readSettingsAfterGameInit(self):
         flip = self.settings.value("flip", False, type=bool)
         self.flipBox.setChecked(flip)
-        
         mirror = self.settings.value("mirror", False, type=bool)
         self.mirrorBox.setChecked(mirror)
-        
         showBest = self.settings.value("showBest", True, type=bool)
         self.showBestBox.setChecked(showBest)
-        
         showScore = self.settings.value("showScore", True, type=bool)
         self.showScoreBox.setChecked(showScore)
-
         cloudMode = self.settings.value("cloudMode", True, type=bool)
         if cloudMode:
             self.cloudModeBtn.setChecked(True)
-        
         engineMode = self.settings.value("engineMode", False, type=bool)
         if engineMode:
             self.engineModeBtn.setChecked(True)
         
-    #    self.engineView.readSettings(self.settings)
-
     def writeSettings(self):
         self.settings.setValue("geometry", self.saveGeometry())
         self.settings.setValue("windowState", self.saveState())
