@@ -2,11 +2,11 @@
 # Refer to https://github.com/harupy/snipping-tool
 
 from PIL import Image, ImageGrab
-from PIL.ImageQt import ImageQt
+#from PIL.ImageQt import ImageQt
 
-from PySide6.QtCore import Qt,QSize, QPoint, QRect, QRectF 
-from PySide6.QtGui import QCursor, QPixmap, QPainter,QPen,QColor
-from PySide6.QtWidgets import QApplication,QWidget
+from PyQt5.QtCore import Qt,QSize, QPoint, QRect, QRectF 
+from PyQt5.QtGui import QCursor, QPixmap, QPainter,QPen,QColor
+from PyQt5.QtWidgets import QApplication,QWidget
 
 #--------------------------------------------------------------------------------
 class QScreenGrab():

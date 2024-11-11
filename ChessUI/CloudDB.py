@@ -9,8 +9,8 @@ from collections import OrderedDict
 import cchess
 from cchess import ChessBoard
 
-from PySide6.QtCore import QObject, Signal, QUrl, QUrlQuery
-from PySide6.QtNetwork import QNetworkRequest, QNetworkAccessManager
+from PyQt5.QtCore import QObject, pyqtSignal, QUrl, QUrlQuery
+from PyQt5.QtNetwork import QNetworkRequest, QNetworkAccessManager
 
 from . import Globl
 
@@ -40,7 +40,7 @@ def updateCache(qResult):
 
 #------------------------------------------------------------------------------
 class CloudDB(QObject):
-    query_result_signal = Signal(dict)
+    query_result_signal = pyqtSignal(dict)
     
     def __init__(self, parent):
         super().__init__(parent)

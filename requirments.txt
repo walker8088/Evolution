@@ -10,3 +10,5 @@ requests
 peewee
 tinydb
 pygetwindow
+pyinstaller
+pytest-qt

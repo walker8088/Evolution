@@ -3,12 +3,12 @@ import os
 import logging
 import traceback
 
-from PySide6.QtCore import Qt, Signal, QByteArray, QSize
-from PySide6.QtGui import *
-from PySide6.QtWidgets import *
+from PyQt5.QtCore import Qt, QByteArray, QSize
+from PyQt5.QtGui import *
+from PyQt5.QtWidgets import *
 
-from PySide6.QtWidgets import QStyle, QApplication, QMenu, QHBoxLayout, QVBoxLayout, QFormLayout, QDialog, QFileDialog,\
-                    QLabel, QSpinBox, QCheckBox, QPushButton, QRadioButton, \
+from PyQt5.QtWidgets import QStyle, QApplication, QMenu, QHBoxLayout, QVBoxLayout, QFormLayout, QDialog, QFileDialog,\
+                    QLabel, QSpinBox, QCheckBox, QPushButton, QRadioButton, QLineEdit,\
                     QWidget, QDockWidget, QDialogButtonBox, QButtonGroup, QListWidget, QListWidgetItem, QInputDialog, \
                     QAbstractItemView, QComboBox, QTreeWidgetItem, QTreeWidget, QSplitter, QMessageBox
 
@@ -18,6 +18,38 @@ from cchess import ChessBoard
 from .BoardWidgets import ChessBoardEditWidget
 from .SnippingWidget import SnippingWidget
 
+#-----------------------------------------------------#
+class NumSlider(QWidget):
+    def __init__(self, parent, v_min, v_max, v_step):
+        super().__init__(parent)
+
+        self.VLabel = QLabel(self)
+        self.Slider = QSlider(Qt.Horizontal)
+        self.Slider.setMinimum(v_min)
+        self.Slider.setMaximum(v_max)
+        self.Slider.setSingleStep(v_step)
+        #self.Slider.setValue(value)
+        #self.Slider.setTickInterval(400)
+        #self.Slider.setTickPosition(QSlider.TicksBothSides)
+        #self.Slider.setTickPosition(QSlider.TicksAbove)
+        self.Slider.valueChanged.connect(self.onSlideValueChanged)
+
+        hbox = QHBoxLayout()        
+        hbox.addWidget(self.Slider)
+        hbox.addWidget(self.VLabel)
+        
+        self.setLayout(hbox)
+    
+    def value(self):
+        return self.Slider.value()
+
+    def setValue(self, value):
+        self.VLabel.setText(str(value))
+        self.Slider.setValue(value)
+    
+    def onSlideValueChanged(self, value):
+        self.VLabel.setText(str(value))
+            
 #-----------------------------------------------------#
 class PositionEditDialog(QDialog):
     def __init__(self, parent):
@@ -41,10 +73,10 @@ class PositionEditDialog(QDialog):
 
         initBtn = QPushButton("初始棋盘", self)
         clearBtn = QPushButton("清空棋盘", self)
-        openImgBtn = QPushButton("打开图片", self)
+        #openImgBtn = QPushButton("打开图片", self)
         initBtn.clicked.connect(self.onInitBoard)
         clearBtn.clicked.connect(self.onClearBoard)
-        openImgBtn.clicked.connect(self.onOpenImage)
+        #openImgBtn.clicked.connect(self.onOpenImage)
         
         okBtn = QPushButton("确定", self)
         cancelBtn = QPushButton("取消", self)
@@ -59,7 +91,7 @@ class PositionEditDialog(QDialog):
         hbox.addWidget(self.blackMoveBtn)
         hbox.addWidget(initBtn)
         hbox.addWidget(clearBtn)
-        hbox.addWidget(openImgBtn)
+        #hbox.addWidget(openImgBtn)
         hbox.addWidget(okBtn)
         hbox.addWidget(cancelBtn)
 
@@ -354,49 +386,44 @@ class EngineConfigDialog(QDialog):
         
         #vbox = QVBoxLayout()
         hbox = QHBoxLayout()
-        
-        self.threadsSpin = QSpinBox(self)
-        self.threadsSpin.setSingleStep(1)
-        self.threadsSpin.setRange(1, self.MAX_THREADS)
-        #self.threadsSpin.setValue(self.MAX_THREADS // 2)
-        
-        self.memorySpin = QSpinBox(self)
-        self.memorySpin.setSingleStep(100)
-        self.memorySpin.setRange(500, self.MAX_MEM)
-        #self.memorySpin.setValue(1000) #self.getDefaultMem())
-        
-        self.multiPVSpin = QSpinBox(self)
-        self.multiPVSpin.setSingleStep(1)
-        self.multiPVSpin.setRange(1, 10)
-        #self.multiPVSpin.setValue(1)
 
-        self.depthSpin = QSpinBox(self)
-        self.depthSpin.setRange(1, 100)
-        #self.depthSpin.setValue(22)
-
-        self.moveTimeSpin = QSpinBox(self)
-        self.moveTimeSpin.setRange(0, 50)
-        #self.moveTimeSpin.setValue(20)
-
-        self.scoreFightSlider = QSlider(Qt.Horizontal)
-        self.scoreFightSlider.setMinimum(1350)
-        self.scoreFightSlider.setSingleStep(100)
-        self.scoreFightSlider.setMaximum(2850)
+        '''
+        self.ruleGroup = QButtonGroup(self)
         
-        self.depthFightSpin = QSpinBox(self)
-        self.depthFightSpin.setRange(0, 50)
-        #self.depthFightSpin.setValue(22)
-        self.moveTimeFightSpin = QSpinBox(self)
-        self.moveTimeFightSpin.setRange(0, 50)
-        #self.moveTimeFightSpin.setValue(20)
+        self.asiaBox = QCheckBox('亚洲规则')
+        self.chineseBox = QCheckBox('中国规则')
+        self.skyBox = QCheckBox('天天象棋规则')
+
+        self.ruleGroup.addButton(self.asiaBox)
+        self.ruleGroup.addButton(self.chineseBox)
+        self.ruleGroup.addButton(self.skyBox)
+        '''
+        self.rules = ['AsianRule', 'ChineseRule', 'SkyRule']
+        self.ruleCombo = QComboBox(self)
+        self.ruleCombo.addItems(self.rules)
+        self.ponderMode = QCheckBox('后台思考')
+
+        self.threadsSpin = NumSlider(self, 1, self.MAX_THREADS, 1)
+        self.memorySpin  = NumSlider(self, 500, self.MAX_MEM, 100)
+        self.multiPVSpin = NumSlider(self, 1, 10, 1)
+    
+        self.depthSpin = NumSlider(self, 0, 50, 1)
+        self.moveTimeSpin = NumSlider(self, 0, 360, 1)
+           
+        self.scoreFightSlider = NumSlider(self, 1280, 3150, 50)
+        self.depthFightSpin = NumSlider(self, 0, 50, 1)
+        self.moveTimeFightSpin = NumSlider(self, 0, 360, 1)
         
-        engineBox = QGroupBox("引擎路径")
+        engineBox = QGroupBox("引擎配置")
         fbox = QFormLayout()    
         fbox.addRow('引擎路径:', self.enginePath)
         fbox.addRow('引擎类别:', self.engineType)
+        fbox.addRow('引擎棋规:', self.ruleCombo)
+        fbox.addRow('思考方式:', self.ponderMode)
         fbox.addRow('线程数:', self.threadsSpin)
         fbox.addRow('内存(MB):', self.memorySpin)
-        fbox.addRow('分支:', self.multiPVSpin)
+        fbox.addRow('分支数:', self.multiPVSpin)
+        
         engineBox.setLayout(fbox)
         
         defaultBox = QGroupBox("引擎分析设置")
@@ -405,7 +432,7 @@ class EngineConfigDialog(QDialog):
         f1.addRow('限定深度:', self.depthSpin)
         f1.addRow('限定步时(秒):', self.moveTimeSpin)
         defaultBox.setLayout(f1)
-        hbox.addWidget(defaultBox)
+        hbox.addWidget(defaultBox, 1)
         
         fightBox = QGroupBox("人机挑战设置")
         f2 = QFormLayout()
@@ -413,7 +440,7 @@ class EngineConfigDialog(QDialog):
         f2.addRow('限定深度', self.depthFightSpin)
         f2.addRow('限定步时（秒）', self.moveTimeFightSpin)
         fightBox.setLayout(f2)
-        hbox.addWidget(fightBox)
+        hbox.addWidget(fightBox, 1)
         
         QBtn = (
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -451,12 +478,27 @@ class EngineConfigDialog(QDialog):
         for p_name, widget in self.params.items():
             widget.setValue(params[p_name])
         
+        self.ponderMode.setChecked(params['EnginePonder'] == 'true')
+
+        rule_index = self.rules.index(params['EngineRule'])
+        self.ruleCombo.setCurrentIndex(rule_index)
+        
         if self.exec() == QDialog.Accepted:
             for p_name, widget in self.params.items():
                 if params[p_name] != widget.value():
                     params[p_name] = widget.value()
                     changes[p_name] = widget.value()
-                    
+            
+            ponderMode = 'true' if self.ponderMode.isChecked() else 'false'
+            if params['EnginePonder'] != ponderMode:
+                params['EnginePonder'] = ponderMode
+                changes['EnginePonder'] = ponderMode
+
+            ruleName = self.ruleCombo.currentText()        
+            if params['EngineRule'] != ruleName:
+                params['EngineRule'] = ruleName
+                changes['EngineRule'] = ruleName
+
             if len(changes) > 0:
                 logging.info(f'params changed:{changes}')
         

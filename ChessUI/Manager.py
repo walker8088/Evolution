@@ -5,9 +5,9 @@ import logging
 
 #import threading
 
-#from PySide6 import *
-from PySide6.QtCore import Signal, QObject
-#from PySide6.QtGui import *
+#from PyQt5 import *
+from PyQt5.QtCore import pyqtSignal, QObject
+#from PyQt5.QtGui import *
 
 import cchess
 from cchess import ChessBoard, UcciEngine, UciEngine
@@ -17,11 +17,11 @@ from .Utils import ThreadRunner
 #-----------------------------------------------------#
 class EngineManager(QObject):
 
-    readySignal = Signal(int, str, list)
-    moveBestSignal = Signal(int, dict)
-    moveInfoSignal = Signal(int, dict)
-    checkmateSignal = Signal(int, dict)
-    drawSignal = Signal(int, dict)
+    readySignal = pyqtSignal(int, str, list)
+    moveBestSignal = pyqtSignal(int, dict)
+    moveInfoSignal = pyqtSignal(int, dict)
+    checkmateSignal = pyqtSignal(int, dict)
+    drawSignal = pyqtSignal(int, dict)
 
     def __init__(self, parent, id):
         super().__init__()

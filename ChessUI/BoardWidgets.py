@@ -4,17 +4,19 @@ import math
 from pathlib import Path
 from configparser import ConfigParser
 
-#from PySide6 import qApp
-from PySide6.QtCore import Qt, Signal, QTimer, QPoint, QSize, QRect
-from PySide6.QtGui import QPixmap, QCursor, QPen, QColor, QPainter, QPolygon
-from PySide6.QtWidgets import QDialog, QMenu, QWidget, QApplication
-from PySide6.QtSvg import QSvgRenderer
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QPoint, QSize, QRect
+from PyQt5.QtGui import QPixmap, QCursor, QPen, QColor, QPainter, QPolygon
+from PyQt5.QtWidgets import QDialog, QMenu, QWidget, QApplication
+from PyQt5.QtWidgets import qApp
+from PyQt5.QtSvg import QSvgRenderer
 
 import cchess
 from cchess import ChessBoard, iccs2pos
 
 from .Utils import TimerMessageBox
 from .Resource import qt_resource_data
+
+from .Globl import *
 
 DEFAULT_SKIN = '默认'
 #piece_names = ['wk', 'wa', 'wb', 'wr', 'wn', 'wc', 'wp', 'bk', 'ba', 'bb', 'br', 'bn', 'bc', 'bp']
@@ -383,8 +385,8 @@ class ChessBoardBaseWidget(QWidget):
 
 #-----------------------------------------------------#
 class ChessBoardWidget(ChessBoardBaseWidget):
-    rightMouseSignal = Signal(bool)
-    tryMoveSignal = Signal(tuple, tuple)
+    rightMouseSignal = pyqtSignal(bool)
+    tryMoveSignal = pyqtSignal(tuple, tuple)
 
     def __init__(self, board):
 
@@ -687,7 +689,7 @@ class PiecesDialog(QDialog):
 
 #---------------------------------------------------------#
 class ChessBoardEditWidget(ChessBoardBaseWidget):
-    fenChangedSignal = Signal(str)
+    fenChangedSignal = pyqtSignal(str)
 
     def __init__(self):
 

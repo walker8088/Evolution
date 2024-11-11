@@ -5,7 +5,7 @@ from pathlib import Path
 from ChessUI.Version import release_version
 
 #cmd = "pyinstaller.exe -F .\\Evolution.py -i images\\app.ico --noconsole --exclude-module PyQt5"
-cmd = "pyinstaller.exe .\\Evolution.py -i ImgRes\\app.ico --clean --noconsole --exclude-module=PyQt5 \
+cmd = "pyinstaller.exe .\\Evolution.py -i ImgRes\\app.ico --clean --noconsole --exclude-module=PySide6 \
             --exclude-module=nacl --exclude-module=numpy --exclude-module=psycopg2"
 
 ret = os.system(cmd)
@@ -26,8 +26,9 @@ for file in [
     'Qt6Qml.dll',
     'Qt6OpenGL.dll',
     ]:
-    os.remove(F'dist/Evolution/_internal/PySide6/{file}')
-
+    #os.remove(F'dist/Evolution/_internal/PySide6/{file}')
+    pass
+    
 folders = ['Books', 'Game', 'Engine', 'Sound', 'Skins']
 for folder in folders:
     src_folder = f".\\{folder}"

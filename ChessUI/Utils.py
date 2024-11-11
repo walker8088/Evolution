@@ -11,8 +11,8 @@ from collections import OrderedDict
 import psutil
 import requests
 
-from PySide6.QtCore import QTimer, QThread
-from PySide6.QtWidgets import QMessageBox, QApplication
+from PyQt5.QtCore import QTimer, QThread
+from PyQt5.QtWidgets import QMessageBox, QApplication
 
 #import numpy as np
 #import cv2 as cv

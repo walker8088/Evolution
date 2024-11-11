@@ -3,8 +3,8 @@ import sys
 import logging
 import traceback
 
-from PySide6.QtCore import QCommandLineOption, QCommandLineParser
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PyQt5.QtCore import QCommandLineOption, QCommandLineParser
+from PyQt5.QtWidgets import QApplication, QMessageBox
 
 from .Version import release_version
 from .Main import MainWindow

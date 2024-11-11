@@ -5,12 +5,12 @@ import traceback
 from pathlib import Path
 from collections import OrderedDict
 
-from PySide6.QtCore import QSize, Signal, Qt, QTimer
-from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QStyle, QApplication, QMenu, QHBoxLayout, QVBoxLayout, QFormLayout, QDialog, QFileDialog,\
+from PyQt5.QtCore import QSize, pyqtSignal, Qt, QTimer
+from PyQt5.QtGui import QIcon
+from PyQt5.QtWidgets import QStyle, QApplication, QMenu, QHBoxLayout, QVBoxLayout, QFormLayout, QDialog, QFileDialog,\
                     QLabel, QSpinBox, QCheckBox, QPushButton, QRadioButton, \
                     QWidget, QDockWidget, QDialogButtonBox, QButtonGroup, QListWidget, QListWidgetItem, QInputDialog, \
-                    QAbstractItemView, QComboBox, QTreeWidgetItem, QTreeWidget, QSplitter, QMessageBox
+                    QAbstractItemView, QComboBox, QTreeWidgetItem, QTreeWidget, QTextEdit, QSplitter, QMessageBox
 
 import cchess
 from cchess import ChessBoard
@@ -40,8 +40,8 @@ class DocksWidget(QDockWidget):
         
 #-----------------------------------------------------#
 class HistoryWidget(QWidget):
-    positionSelSignal = Signal(int)
-    save_book_signal = Signal()
+    positionSelSignal = pyqtSignal(int)
+    save_book_signal = pyqtSignal()
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -64,16 +64,16 @@ class HistoryWidget(QWidget):
         #self.positionView.itemActivated.connect(self.onItemActivated)
         #self.positionView.itemClicked.connect(self.onItemClicked)
 
-        #self.annotationView = QTextEdit()
-        #self.annotationView.readOnly = True
+        self.annotationView = QTextEdit()
+        self.annotationView.readOnly = True
 
         splitter = QSplitter(self)
         splitter.setOrientation(Qt.Vertical)
         splitter.addWidget(self.positionView)
         
-        #splitter.addWidget(self.annotationView)
-        #splitter.setStretchFactor(0, 90)
-        #splitter.setStretchFactor(1, 10)
+        splitter.addWidget(self.annotationView)
+        splitter.setStretchFactor(0, 90)
+        splitter.setStretchFactor(1, 10)
 
         self.firstBtn = QPushButton(
             self.style().standardIcon(QStyle.SP_ArrowUp), '')
@@ -388,7 +388,9 @@ class EngineWidget(QDockWidget):
         
         self.params['EnginePath'] = self.parent.config['MainEngine']['engine_exec']
         self.params['EngineType'] = self.parent.config['MainEngine']['engine_type'].lower()
-        
+        self.params['EngineRule'] = 'ChineseRule'
+        self.params['EnginePonder'] = 'false'
+
         self.params["EngineThreads"] = self.getDefaultThreads()
         self.params["EngineMemory"] = self.getDefaultMem()
         self.params["EngineMultiPV"] = 1
@@ -603,13 +605,13 @@ class EngineWidget(QDockWidget):
     def onEngineReady(self, engine_id, name, engine_options):
         
         self.engineLabel.setText(name)        
-        self.engineManager.setOption('ScoreType','PawnValueNormalized')
 
+        self.engineManager.setOption('ScoreType','PawnValueNormalized')
         self.engineManager.setOption('Threads', self.params['EngineThreads'])
         self.engineManager.setOption('Hash', self.params['EngineMemory'])
-        
-        #self.onSwitchGameMode(self.gameMode)
-
+        self.engineManager.setOption('Repetition Rule', self.params['EngineRule'])
+        self.engineManager.setOption('Ponder', self.params['EnginePonder'])
+     
     def onSwitchGameMode(self, gameMode):
         
         #保存在人机模式下的engineSkillLevel
@@ -643,7 +645,7 @@ class EngineWidget(QDockWidget):
             self.engineGoMoveTime = self.params['EngineGoMoveTimeFight']
             self.engineManager.setOption('UCI_LimitStrength', True)
             self.engineManager.setOption('UCI_Elo', self.engineElo)
-            self.engineManager.setOption('MultiPV', 1)
+            self.engineManager.setOption('MultiPV', self.params['EngineMultiPV'])
             
         elif self.gameMode == GameMode.EndGame:
             self.redBox.setChecked(False)
@@ -695,6 +697,11 @@ class EngineWidget(QDockWidget):
                 self.engineManager.setOption('Threads', self.params['EngineThreads'])
             if 'EngineMemory' in change_params:
                 self.engineManager.setOption('Hash', self.params['EngineMemory'])
+            if 'EngineRule' in change_params:
+               self.engineManager.setOption('Repetition Rule', self.params['EngineRule'])
+            if 'EnginePonder' in change_params:
+                self.engineManager.setOption('Ponder', self.params['EnginePonder'])
+     
             self.onSwitchGameMode(self.gameMode)
             
     def onRedBoxChanged(self, state):
@@ -729,7 +736,7 @@ class EngineWidget(QDockWidget):
 #------------------------------------------------------------------#
 """
 class MoveDbWidget(QDockWidget):
-    selectMoveSignal = Signal(dict)
+    selectMoveSignal = pyqtSignal(dict)
 
     def __init__(self, parent):
         super().__init__("我的棋谱库", parent)
@@ -936,7 +943,7 @@ class MoveDbWidget(QDockWidget):
 
 #------------------------------------------------------------------#
 class BoardActionsWidget(QDockWidget):
-    selectMoveSignal = Signal(dict)
+    selectMoveSignal = pyqtSignal(dict)
 
     def __init__(self, parent):
         super().__init__("棋谱库", parent)
@@ -1003,7 +1010,7 @@ class BoardActionsWidget(QDockWidget):
 
 #------------------------------------------------------------------#
 class EndBookWidget(QDockWidget):
-    selectEndGameSignal = Signal(dict)
+    selectEndGameSignal = pyqtSignal(dict)
 
     def __init__(self, parent):
         super().__init__("残局库", parent)

@@ -12,12 +12,12 @@ from pathlib import Path
 from collections import OrderedDict
 from configparser import ConfigParser
 
-#from PySide6 import 
-from PySide6.QtCore import Qt, Signal, QByteArray, QSettings, QUrl
-from PySide6.QtGui import QActionGroup, QIcon, QAction
-from PySide6.QtWidgets import QApplication,QMainWindow, QStyle, QSizePolicy, QMessageBox, QWidget, QCheckBox, QRadioButton, \
-                            QFileDialog, QButtonGroup
-from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
+#from PyQt5 import 
+from PyQt5.QtCore import Qt, pyqtSignal, QByteArray, QSettings, QUrl
+from PyQt5.QtGui import QIcon
+from PyQt5.QtWidgets import QApplication,QMainWindow, QStyle, QSizePolicy, QMessageBox, QWidget, QCheckBox, QRadioButton, \
+                            QFileDialog, QButtonGroup, QActionGroup, QAction
+from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent,QAudioOutput
 
 import cchess
 from cchess import ChessBoard, Game
@@ -71,12 +71,12 @@ GAME_LIB_TYPES = ['.cbl']
 GAME_TYPES_ALL = GAME_FILE_TYPES + GAME_LIB_TYPES
 
 class MainWindow(QMainWindow):
-    initGameSignal = Signal(str)
-    newBoardSignal = Signal()
-    moveBeginSignal = Signal()
-    moveEndSignal = Signal()
-    #newPositionSignal = Signal()
-    changePositionSignal = Signal(bool, bool)
+    initGameSignal = pyqtSignal(str)
+    newBoardSignal = pyqtSignal()
+    moveBeginSignal = pyqtSignal()
+    moveEndSignal = pyqtSignal()
+    #newPositionSignal = pyqtSignal()
+    changePositionSignal = pyqtSignal(bool, bool)
 
     def __init__(self):
         super().__init__()
@@ -113,7 +113,7 @@ class MainWindow(QMainWindow):
                 logging.info(f'加载开局库：{book_file}')
             else:
                 self.openBook = OpenBookPF()
-                logging.info('没有开局库被加载')
+                logging.info('无开局库')
 
         Globl.endbookStore = EndBookStore(Path(gamePath, 'endbooks.json'))
         #Globl.localbookStore = LocalBookStore(Path(gamePath, 'localbooks.json'))
@@ -316,10 +316,10 @@ class MainWindow(QMainWindow):
     #声音播放
     def initSound(self):
         self.soundVolume = 0
-        self.audioOutput = QAudioOutput()
+        #self.audioOutput = QAudioOutput()
         self.player = QMediaPlayer()
-        self.player.setAudioOutput(self.audioOutput)
-        self.player.errorOccurred.connect(self.onPlayError)
+        #self.player.setAudioOutput(self.audioOutput)
+        #self.player.errorOccurred.connect(self.onPlayError)
 
     def playSound(self, s_type, quickMode = False):
         
@@ -327,8 +327,9 @@ class MainWindow(QMainWindow):
             return
 
         if self.soundVolume > 0:
-            self.player.setSource(QUrl.fromLocalFile(Path('Sound', f'{s_type}.wav')))
-            self.audioOutput.setVolume(100) #self.soundVolume)
+            #self.player.setSource(QUrl.fromLocalFile(Path('Sound', f'{s_type}.wav')))
+            self.player.setMedia(QMediaContent(QUrl.fromLocalFile(os.path.join('Sound', f'{s_type}.wav'))))
+            self.player.setVolume(self.soundVolume)
             self.player.setPosition(0)
             self.player.play()
 
