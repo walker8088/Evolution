@@ -19,6 +19,77 @@ from .BoardWidgets import ChessBoardEditWidget
 from .SnippingWidget import SnippingWidget
 
 #-----------------------------------------------------#
+class SliderWithValue(QSlider):
+
+    def __init__(self, parent=None):
+        super(SliderWithValue, self).__init__(parent)
+
+        self.stylesheet = """
+        QSlider::groove:vertical {
+                background-color: #222;
+                width: 30px;
+        }
+        QSlider::handle:vertical {
+            border: 1px #438f99;
+            border-style: outset;
+            margin: -2px 0;
+            width: 30px;
+            height: 3px;
+            background-color: #438f99;
+        }
+        QSlider::sub-page:vertical {
+            background: #4B4B4B;
+        }
+        QSlider::groove:horizontal {
+                background-color: #222;
+                height: 30px;
+        }
+        QSlider::handle:horizontal {
+            border: 1px #438f99;
+            border-style: outset;
+            margin: -2px 0;
+            width: 3px;
+            height: 30px;
+            background-color: #438f99;
+        }
+        QSlider::sub-page:horizontal {
+            background: #4B4B4B;
+        }
+        """
+
+        # self.setStyleSheet(self.stylesheet)
+
+    def paintEvent(self, event):
+        QSlider.paintEvent(self, event)
+
+        curr_value = str(self.value() / 1000.00)
+        round_value = round(float(curr_value), 2)
+
+        painter = QPainter(self)
+        painter.setPen(QPen(Qt.white))
+
+        font_metrics = QFontMetrics(self.font())
+        font_width = font_metrics.boundingRect(str(round_value)).width()
+        font_height = font_metrics.boundingRect(str(round_value)).height()
+
+        rect = self.geometry()
+        if self.orientation() == Qt.Horizontal:
+            horizontal_x_pos = rect.width() - font_width - 5
+            horizontal_y_pos = rect.height() * 0.75
+
+            painter.drawText(QtCore.QPoint(horizontal_x_pos, horizontal_y_pos), str(round_value))
+
+        elif self.orientation() == Qt.Vertical:
+            vertical_x_pos = rect.width() - font_width - 5
+            vertical_y_pos = rect.height() * 0.75
+
+            painter.drawText(QPoint(rect.width() / 2.0 - font_width / 2.0, rect.height() - 5), str(round_value))
+        else:
+            pass
+
+        painter.drawRect(rect)
+
+#-----------------------------------------------------#
 class PositionEditDialog(QDialog):
     def __init__(self, parent):
         super().__init__(parent)
@@ -358,37 +429,32 @@ class EngineConfigDialog(QDialog):
         self.threadsSpin = QSpinBox(self)
         self.threadsSpin.setSingleStep(1)
         self.threadsSpin.setRange(1, self.MAX_THREADS)
-        #self.threadsSpin.setValue(self.MAX_THREADS // 2)
         
         self.memorySpin = QSpinBox(self)
         self.memorySpin.setSingleStep(100)
         self.memorySpin.setRange(500, self.MAX_MEM)
-        #self.memorySpin.setValue(1000) #self.getDefaultMem())
         
         self.multiPVSpin = QSpinBox(self)
         self.multiPVSpin.setSingleStep(1)
         self.multiPVSpin.setRange(1, 10)
-        #self.multiPVSpin.setValue(1)
-
+        
         self.depthSpin = QSpinBox(self)
         self.depthSpin.setRange(1, 100)
-        #self.depthSpin.setValue(22)
-
+        
         self.moveTimeSpin = QSpinBox(self)
         self.moveTimeSpin.setRange(0, 50)
-        #self.moveTimeSpin.setValue(20)
-
+        
         self.scoreFightSlider = QSlider(Qt.Horizontal)
+        self.scoreFightSlider.setTickPosition(QSlider.TicksBelow)
         self.scoreFightSlider.setMinimum(1350)
         self.scoreFightSlider.setSingleStep(100)
+        self.scoreFightSlider.setPageStep(300)
         self.scoreFightSlider.setMaximum(2850)
         
         self.depthFightSpin = QSpinBox(self)
         self.depthFightSpin.setRange(0, 50)
-        #self.depthFightSpin.setValue(22)
         self.moveTimeFightSpin = QSpinBox(self)
         self.moveTimeFightSpin.setRange(0, 50)
-        #self.moveTimeFightSpin.setValue(20)
         
         engineBox = QGroupBox("引擎路径")
         fbox = QFormLayout()    
@@ -405,7 +471,7 @@ class EngineConfigDialog(QDialog):
         f1.addRow('限定深度:', self.depthSpin)
         f1.addRow('限定步时(秒):', self.moveTimeSpin)
         defaultBox.setLayout(f1)
-        hbox.addWidget(defaultBox)
+        hbox.addWidget(defaultBox, 1)
         
         fightBox = QGroupBox("人机挑战设置")
         f2 = QFormLayout()
@@ -413,7 +479,7 @@ class EngineConfigDialog(QDialog):
         f2.addRow('限定深度', self.depthFightSpin)
         f2.addRow('限定步时（秒）', self.moveTimeFightSpin)
         fightBox.setLayout(f2)
-        hbox.addWidget(fightBox)
+        hbox.addWidget(fightBox, 1)
         
         QBtn = (
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -436,9 +502,9 @@ class EngineConfigDialog(QDialog):
         self.params["EngineGoDepth"] = self.depthSpin
         self.params["EngineGoMoveTime"] = self.moveTimeSpin
 
-        self.params['EngineEloFight'] = self.scoreFightSlider
         self.params["EngineGoDepthFight"] = self.depthFightSpin
         self.params['EngineGoMoveTimeFight'] = self.moveTimeFightSpin
+        self.params['EngineEloFight'] = self.scoreFightSlider
         
         
     def config(self, params):
