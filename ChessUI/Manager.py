@@ -169,6 +169,7 @@ class EngineManager(QObject):
             #    for key in ['score', 'mate']:
             #        if key in action:
             #            action[key] = -action[key]
+            action['color'] = move_color
             self.moveInfoSignal.emit(self.id, action)
         elif act_id == 'dead':  #引擎被将死
             self.checkmateSignal.emit(self.id, action)

@@ -385,7 +385,7 @@ class EngineConfigDialog(QDialog):
         self.engineType = QLabel()
         
         #vbox = QVBoxLayout()
-        hbox = QHBoxLayout()
+        #hbox = QHBoxLayout()
 
         '''
         self.ruleGroup = QButtonGroup(self)
@@ -432,7 +432,7 @@ class EngineConfigDialog(QDialog):
         f1.addRow('限定深度:', self.depthSpin)
         f1.addRow('限定步时(秒):', self.moveTimeSpin)
         defaultBox.setLayout(f1)
-        hbox.addWidget(defaultBox, 1)
+        #hbox.addWidget(defaultBox, 1)
         
         fightBox = QGroupBox("人机挑战设置")
         f2 = QFormLayout()
@@ -440,7 +440,7 @@ class EngineConfigDialog(QDialog):
         f2.addRow('限定深度', self.depthFightSpin)
         f2.addRow('限定步时（秒）', self.moveTimeFightSpin)
         fightBox.setLayout(f2)
-        hbox.addWidget(fightBox, 1)
+        #hbox.addWidget(fightBox, 1)
         
         QBtn = (
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -451,7 +451,9 @@ class EngineConfigDialog(QDialog):
         buttonBox.rejected.connect(self.reject)
 
         layout.addWidget(engineBox)
-        layout.addLayout(hbox)
+        layout.addWidget(defaultBox)
+        layout.addWidget(fightBox)
+        #layout.addLayout(hbox)
         layout.addWidget(buttonBox)
 
         self.params = {}

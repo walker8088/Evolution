@@ -486,7 +486,7 @@ class EngineWidget(QDockWidget):
 
         self.positionView = QTreeWidget()
         self.positionView.setColumnCount(1)
-        self.positionView.setHeaderLabels(["深度", "得分", "着法"])
+        self.positionView.setHeaderLabels(["深度", "红优分", "着法"])
         self.positionView.setColumnWidth(0, 80)
         self.positionView.setColumnWidth(1, 100)
         self.positionView.setColumnWidth(2, 380)
@@ -586,16 +586,25 @@ class EngineWidget(QDockWidget):
             depth = int(fenInfo['seldepth'])
             it.setText(0, f'{depth:02d}')
         
+        move_color = fenInfo['color']
         mate = fenInfo.get('mate', None)
         if mate is not None:
             if mate == 0:
                 it.setText(1, '杀死')
-            elif mate > 0:
-                it.setText(1, f'{mate}步杀')
-            elif mate < 0:
-                it.setText(1, f'被{mate}步杀')
-        else:  
-            it.setText(1, str(fenInfo.get('score', '')))
+            else:
+                red_killer = True if move_color == cchess.RED else False
+                if mate < 0:
+                    red_killer = not red_killer
+                killer = '红优' if red_killer else '黑优'
+                    
+                it.setText(1, f'{killer}{mate}步杀')
+            
+        elif 'score' in fenInfo: 
+            score = fenInfo['score']
+            #换算到红方分
+            if move_color == cchess.BLACK:     
+                score = -score
+            it.setText(1, str(score))
 
         if is_new_text and self.analysisBox.isChecked():
             it.setText(2, fenInfo['move_text'])
@@ -710,10 +719,10 @@ class EngineWidget(QDockWidget):
         self.parent.enginePlayColor(self.engineManager.id, cchess.RED, red_checked)
         
         if self.gameMode in [GameMode.Fight,]:
-            black_checked = self.blackBox.isChecked()
-            if red_checked == black_checked:
-                self.blackBox.setChecked(not red_checked)
-            
+            self.blackBox.setChecked(not red_checked)
+        elif self.gameMode in [GameMode.Free,]:
+            self.analysisBox.setChecked(True)
+
     def onBlackBoxChanged(self, state):
 
         black_checked = self.blackBox.isChecked()
