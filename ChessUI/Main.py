@@ -422,7 +422,7 @@ class MainWindow(QMainWindow):
             self.openFileAct.setEnabled(True)
             self.editBoardAct.setEnabled(True)
     
-            if self.lastGameMode not in [GameMode.Fight, ]:        
+            if self.lastGameMode in [GameMode.EndGame, None]:      
                 self.initGame(cchess.FULL_INIT_FEN)
         
         elif self.gameMode == GameMode.Fight:

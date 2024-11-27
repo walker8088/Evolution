@@ -53,11 +53,11 @@ class HistoryWidget(QWidget):
         self.positionView = QTreeWidget()
         self.positionView.setColumnCount(1)
         self.positionView.setHeaderLabels(["序号", "着法", "红优分", '', "备注"])
-        self.positionView.setColumnWidth(0, 50)
+        self.positionView.setColumnWidth(0, 90)
         #self.positionView.setTextAlignment(0, Qt.AlignLeft)
-        self.positionView.setColumnWidth(1, 80)
-        self.positionView.setColumnWidth(2, 50)
-        self.positionView.setColumnWidth(3, 10)
+        self.positionView.setColumnWidth(1, 120)
+        self.positionView.setColumnWidth(2, 80)
+        self.positionView.setColumnWidth(3, 20)
         self.positionView.setColumnWidth(4, 20)
 
         self.positionView.itemSelectionChanged.connect(self.onSelectionChanged)
@@ -956,10 +956,10 @@ class BoardActionsWidget(QDockWidget):
 
         self.actionsView.setColumnCount(1)
         self.actionsView.setHeaderLabels(['MK', "备选着法", "得分", ''])
-        self.actionsView.setColumnWidth(0, 20)
-        self.actionsView.setColumnWidth(1, 80)
-        self.actionsView.setColumnWidth(2, 40)
-        self.actionsView.setColumnWidth(3, 1)
+        self.actionsView.setColumnWidth(0, 40)
+        self.actionsView.setColumnWidth(1, 120)
+        self.actionsView.setColumnWidth(2, 80)
+        self.actionsView.setColumnWidth(3, 10)
         
         self.actionsView.clicked.connect(self.onSelectIndex)
         

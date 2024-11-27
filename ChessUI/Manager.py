@@ -149,7 +149,7 @@ class EngineManager(QObject):
                         ret[key] = - ret[key]
                     
             #再处理出现mate时，score没分的情况
-            if 'score' not in ret:
+            if 'mate' in ret:
                 mate_flag = 1 if ret['mate'] > 0 else -1
                 ret['score'] = 29999 * mate_flag
             
