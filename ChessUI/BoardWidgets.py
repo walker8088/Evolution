@@ -71,7 +71,7 @@ def arrowCalc(from_x, from_y, to_x, to_y):
     p_from = QPoint(from_x, from_y)
     p_to = QPoint(to_x, to_y)
 
-    return QPolygon([p_from, p_to, QPoint(leftX, leftY), QPoint(rightX, rightY), p_to])
+    return QPolygon([p_from, p_to, QPoint(int(leftX), int(leftY)), QPoint(int(rightX), int(rightY)), p_to])
 
 #-----------------------------------------------------#
 class ChessBoardBaseWidget(QWidget):
@@ -314,10 +314,10 @@ class ChessBoardBaseWidget(QWidget):
         if self.mirror_board:
             x = 8 - x
 
-        board_x = int(self.board_start_x + self.offset_x + self.border_x + x * self.space_x) 
-        board_y = int(self.board_start_y + self.offset_y + self.border_y + (9 - y) * self.space_y) 
+        board_x = self.board_start_x + self.offset_x + self.border_x + x * self.space_x
+        board_y = self.board_start_y + self.offset_y + self.border_y + (9 - y) * self.space_y
 
-        return (board_x + bias, board_y + bias)
+        return (int(board_x + bias), int(board_y + bias))
 
     def board_to_logic(self, bx, by):
 
@@ -513,7 +513,7 @@ class ChessBoardWidget(ChessBoardBaseWidget):
                 painter.drawPolyline(arrowCalc(from_x, from_y, to_x,to_y))
         
             for p_from, p_to in self.best_next_moves: 
-                r = self.space_x//2
+                r = int(self.space_x//2)
                 from_x, from_y = self.logic_to_board(*p_from,r)   
                 to_x, to_y = self.logic_to_board(*p_to, r)   
                 
