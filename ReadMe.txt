@@ -12,7 +12,7 @@ Evolution(神机象棋) 是一款PC上用来打谱，和残局练习的免费中
 * 支持UCI和UCCI引擎，目前以开源免费皮卡鱼(pikafish)为主要测试引擎。 
 * 支持读棋谱格式: 象棋演播室（XQF），象棋桥（CBR, CBL）和通用格式（PGN）
 * 支持写入PGN格式棋谱文件。
-* 支持勇芳(.yfk)和鹏飞(.pfbook) 格式开局库
+* 支持.yfk和.pfbook格式开局库，优先使用opebbook.yfk格式
 * 支持复制棋局文本（fen）和图片格式复制到剪贴板
-* 支持Windows8 及以后的系统
+* 支持Windows7 及以后的系统
 * 系统用python编程语言开发，可以支持Linux及Mac系统，但是目前还没有制作二进制发行包。

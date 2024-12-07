@@ -20,7 +20,7 @@ from PyQt5.QtWidgets import QApplication,QMainWindow, QStyle, QSizePolicy, QMess
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent,QAudioOutput
 
 import cchess
-from cchess import ChessBoard, Game
+from cchess import ChessBoard, Game, EngineErrorException
 
 from .Version import release_version
 from .Resource import qt_resource_data
@@ -39,13 +39,13 @@ from .Dialogs import PositionEditDialog, PositionHistDialog, ImageToBoardDialog,
 from .SnippingWidget import SnippingWidget
 from .Ecco import getBookEcco
 
-#from .Online import OnlineDialog
+from .Online import * #OnlineDialog
 
 from . import Globl
 
 #-----------------------------------------------------#
 GameTitle = {
-    GameMode.NoEngine: '无引擎练棋',
+    GameMode.NoEngine: '无引擎模式',
     GameMode.Free:     '自由练棋', 
     GameMode.Fight:    '人机对战', 
     GameMode.EndGame:  '杀法挑战', 
@@ -60,9 +60,9 @@ class ActionType(Enum):
     MATE = auto()
         
 #-----------------------------------------------------#
-class QueryMode(Enum):
-    CloudFirst = auto()
-    EngineFirst = auto()
+#class QueryMode(Enum):
+#    CloudFirst = auto()
+#    EngineFirst = auto()
 
 #-----------------------------------------------------#
 
@@ -76,7 +76,7 @@ class MainWindow(QMainWindow):
     moveBeginSignal = pyqtSignal()
     moveEndSignal = pyqtSignal()
     #newPositionSignal = pyqtSignal()
-    changePositionSignal = pyqtSignal(bool, bool)
+    changePositionSignal = pyqtSignal(bool)
 
     def __init__(self):
         super().__init__()
@@ -89,8 +89,7 @@ class MainWindow(QMainWindow):
         if platform.system() == "Windows":
             #在Windows状态栏上正确显示图标
             myappid = 'mycompany.myproduct.subproduct.version'
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-                myappid)
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
         self.readConfig()
         
@@ -180,8 +179,8 @@ class MainWindow(QMainWindow):
         self.createToolBars()
 
         self.gameMode = None
-        self.queryMode = None
         self.reviewMode = None
+        self.isQueryCloud = False
         self.lastOpenFolder = ''
         self.isNeedSave = False
         self.isRunEngine = False
@@ -386,16 +385,13 @@ class MainWindow(QMainWindow):
         self.engineView.onSwitchGameMode(gameMode)
         
         if self.gameMode == GameMode.NoEngine:
+            self.doCaptureAct.setEnabled(False)
             self.myGamesAct.setEnabled(True)
             self.bookmarkAct.setEnabled(True)
             self.endBookView.hide()
             self.actionsView.show()
-            self.showScoreBox.setChecked(True)
             
-            self.cloudModeBtn.setEnabled(True)
-            self.engineModeBtn.setEnabled(False)
-            
-            self.showBestBox.setEnabled(True)
+            self.queryCloudBox.setChecked(True)
             self.showBestBox.setChecked(True)
             self.showScoreBox.setChecked(True)
             
@@ -406,18 +402,15 @@ class MainWindow(QMainWindow):
                 self.initGame(cchess.FULL_INIT_FEN)
         
         elif self.gameMode == GameMode.Free:
+            self.doCaptureAct.setEnabled(False)
             self.myGamesAct.setEnabled(True)
             self.bookmarkAct.setEnabled(True)
             self.endBookView.hide()
             self.actionsView.show()
+            
+            #self.queryCloudBox.setChecked(True)
             self.showScoreBox.setChecked(True)
-            
-            self.cloudModeBtn.setEnabled(True)
-            self.engineModeBtn.setEnabled(True)
-            
-            self.showBestBox.setEnabled(True)
             self.showBestBox.setChecked(True)
-            self.showScoreBox.setChecked(True)
             
             self.openFileAct.setEnabled(True)
             self.editBoardAct.setEnabled(True)
@@ -426,6 +419,7 @@ class MainWindow(QMainWindow):
                 self.initGame(cchess.FULL_INIT_FEN)
         
         elif self.gameMode == GameMode.Fight:
+            self.doCaptureAct.setEnabled(False)
             self.myGamesAct.setEnabled(True)
             self.bookmarkAct.setEnabled(False)
             self.bookmarkView.hide()
@@ -433,14 +427,8 @@ class MainWindow(QMainWindow):
             self.gamelibView.hide()
             self.actionsView.hide()
             
-            self.showScoreBox.setChecked(False)
-
-            self.cloudModeBtn.setEnabled(True)
-            #self.cloudModeBtn.setChecked(False)
-            self.engineModeBtn.setEnabled(True)
-            #self.engineModeBtn.setChecked(True)
-            
-            self.showBestBox.setEnabled(True)
+            #self.queryCloudBox.setChecked(False)
+            self.showScoreBox.setChecked(False)            
             self.showBestBox.setChecked(False)
         
             self.openFileAct.setEnabled(True)
@@ -449,6 +437,24 @@ class MainWindow(QMainWindow):
             if self.lastGameMode in [None, GameMode.EndGame]:
                 self.initGame(cchess.FULL_INIT_FEN)
         
+        elif self.gameMode == GameMode.Online:
+            self.doCaptureAct.setEnabled(True)
+            self.myGamesAct.setEnabled(False)
+            self.bookmarkAct.setEnabled(False)
+            self.bookmarkView.hide()
+            self.endBookView.hide()
+            self.gamelibView.hide()
+            self.actionsView.hide()
+            
+            #self.queryCloudBox.setChecked(False)
+            self.showScoreBox.setChecked(True)            
+            self.showBestBox.setChecked(True)
+        
+            self.openFileAct.setEnabled(False)
+            self.editBoardAct.setEnabled(False)
+            
+            self.initGame(cchess.FULL_INIT_FEN)
+
         elif self.gameMode == GameMode.EndGame:
             self.myGamesAct.setEnabled(False)
             self.bookmarkAct.setEnabled(False)
@@ -457,19 +463,13 @@ class MainWindow(QMainWindow):
             self.gamelibView.hide()
             self.actionsView.hide()
             
+            self.queryCloudBox.setChecked(False)
             self.showScoreBox.setChecked(False)
+            self.showBestBox.setChecked(False)
 
             self.openFileAct.setEnabled(False)
             self.editBoardAct.setEnabled(False)
             
-            self.cloudModeBtn.setEnabled(False)
-            #self.cloudModeBtn.setChecked(False)
-            self.engineModeBtn.setEnabled(False)
-            self.engineModeBtn.setChecked(True)
-            
-            self.showBestBox.setEnabled(False)
-            self.showBestBox.setChecked(False)
-
             self.endBookView.nextGame()
         
         
@@ -498,24 +498,30 @@ class MainWindow(QMainWindow):
         self.isNeedSave = False
         self.init_fen = fen
 
-        self.moveLock = threading.RLock()
-        with self.moveLock:
-            Globl.engineManager.stopThinking()
-            self.clearAll()
-            self.boardView.from_fen(self.init_fen, clear = True)
-            position = {
-                'fen': self.init_fen,
-                'index': 0,
-                'move_color': self.boardView.get_move_color()
-                }
-
-            if cchess.FULL_INIT_BOARD in self.init_fen:
-               position['ecco'] = ''
-            
-            self.positionList.append(position)
-            self.currPosition = position   
+        self.moveEvent = threading.Event()
+        self.moveEvent.set()
         
-        self.changePositionSignal.emit(True, False)
+        Globl.engineManager.stopThinking()
+        self.clearAll()
+        self.boardView.from_fen(self.init_fen, clear = True)
+        position = {
+            'fen': self.init_fen,
+            'index': 0,
+            'move_color': self.boardView.get_move_color()
+            }
+
+        if cchess.FULL_INIT_BOARD in self.init_fen:
+           position['ecco'] = ''
+        
+        self.positionList.append(position)
+        self.currPosition = position   
+        self.historyView.inner.onNewPostion(self.currPosition)
+        self.updateStatus(quickMode = False)
+        self.updateEcco()
+
+        self.moveEvent.clear()
+    
+        self.changePositionSignal.emit(False)
         
     def updateEcco(self):
         
@@ -538,41 +544,39 @@ class MainWindow(QMainWindow):
                 self.updateTitle(eccos)  
             
     def onMoveGo(self, move_iccs, quickMode = False): #, score = None):
-
-        with self.moveLock:
-
-            if not self.board.is_valid_iccs_move(move_iccs):
-                return False
-           
-            #--------------------------------
-            #尝试走棋
-            move = self.board.move_iccs(move_iccs)
-            if move is None:
-                #不能走就返回
-                return False
-           
-            #self.board在做了这个move动作后，棋子已经更新到新位置了
-            #board是下个走子的position了
-            self.board.next_turn()
-            #--------------------------------
-          
-            #这一行必须有,否则引擎不能正常处理历史走子数据，会走出循环着法
-            move_history = [x['move'] for x in self.positionList[1:]]
-            move.prepare_for_engine(self.board.move_player, move_history)
-
-            new_fen = self.board.to_fen()
-
-            position = {
-                'fen': new_fen,
-                'fen_prev': move.board.to_fen(),
-                'iccs':  move_iccs,
-                'move': move,
-                'index': len(self.positionList),
-                'move_color': move.board.move_player.color
-            }
         
-            self.positionList.append(position)      
-            self.currPosition = position
+        if not self.board.is_valid_iccs_move(move_iccs):
+            return False
+       
+        #--------------------------------
+        #尝试走棋
+        move = self.board.move_iccs(move_iccs)
+        if move is None:
+            #不能走就返回
+            return False
+       
+        #self.board在做了这个move动作后，棋子已经更新到新位置了
+        #board是下个走子的position了
+        self.board.next_turn()
+        #--------------------------------
+      
+        #这一行必须有,否则引擎不能正常处理历史走子数据，会走出循环着法
+        move_history = [x['move'] for x in self.positionList[1:]]
+        move.prepare_for_engine(self.board.move_player, move_history)
+
+        new_fen = self.board.to_fen()
+
+        position = {
+            'fen': new_fen,
+            'fen_prev': move.board.to_fen(),
+            'iccs':  move_iccs,
+            'move': move,
+            'index': len(self.positionList),
+            'move_color': move.board.move_player.color
+        }
+    
+        self.positionList.append(position)      
+        self.currPosition = position
 
         if not quickMode:
             self.isNeedSave = True
@@ -581,10 +585,14 @@ class MainWindow(QMainWindow):
         if new_fen not in Globl.fenCache:
             Globl.fenCache[new_fen] = {}
         Globl.fenCache[new_fen].update({ 'fen_prev': position['fen_prev'] })
+            
+        self.historyView.inner.onNewPostion(self.currPosition)
+        self.updateStatus(quickMode)
+        self.updateEcco()
 
-        self.changePositionSignal.emit(True, quickMode)
+        self.changePositionSignal.emit(quickMode)
         
-    def onChangePosition(self, isNew = True, quickMode = False):   
+    def onChangePosition(self, quickMode = False):   
         
         position = self.currPosition
         fen = position['fen']
@@ -604,34 +612,25 @@ class MainWindow(QMainWindow):
             self.boardView.showMove(move.p_from, move.p_to, best_show)
         else:
              self.boardView.clearPickup()
-        self.boardView.from_fen(fen)
-        
-        self.isRunEngine = False
-        
-        if isNew:
-            self.historyView.inner.onNewPostion(self.currPosition)
-            self.updateStatus(quickMode)
-            self.updateEcco()         
-        else:
-            self.historyView.inner.selectIndex(move_index, fireEvent = False)
 
         #清空显示，同步棋盘状态    
         self.engineView.clear()
         self.actionsView.clear()
+        self.boardView.from_fen(fen)
+        self.historyView.inner.selectIndex(move_index, fireEvent = False)
+        
+        self.isRunEngine = False
         self.boardActions = OrderedDict()
 
-        #确定是否进行云搜索
-        if self.gameMode == GameMode.EndGame:  
-            pass
-        else:
-            if not quickMode:
-                self.localSearch(position)
-                if (self.queryMode == QueryMode.CloudFirst) or (self.reviewMode == ReviewMode.ByCloud):
-                    self.cloudQuery.startQuery(position)
-                
-        #引擎搜索
-        if not quickMode and self.gameMode != GameMode.NoEngine:
-            self.runEngine(position)
+        if not quickMode:
+            self.localSearch(position)
+            
+            if self.isQueryCloud:
+                self.cloudQuery.startQuery(position)
+            
+            #引擎搜索 #TODO 根据checkbox状态搜索
+            if self.gameMode != GameMode.NoEngine:
+                self.runEngine(position)
     
     def isEndPosition(self):
         index = self.currPosition['index']
@@ -815,7 +814,7 @@ class MainWindow(QMainWindow):
         if fen != pos['fen']:
             return
             
-        if (self.queryMode == QueryMode.CloudFirst) or (self.reviewMode == ReviewMode.ByCloud):
+        if self.isQueryCloud or (self.reviewMode == ReviewMode.ByCloud):
             self.updateFenCache(query)
             
         new_actions = {}
@@ -856,35 +855,38 @@ class MainWindow(QMainWindow):
         self.boardView.showMoveHint(best)
 
     #-----------------------------------------------------------
-    #Engine 输出
+    #Engine 最终着法输出
     def onTryEngineMove(self, engine_id, fenInfo):
         
         self.isRunEngine = False
         
         fen = trim_fen(fenInfo['fen'])
-        logging.debug(f'Engine[{engine_id}] BestMove {fenInfo}' )
+        iccs = fenInfo.get('iccs', '')
+
+        logging.info(f'Engine[{engine_id}] BestMove {iccs}' )
         
-        if (self.gameMode != GameMode.EndGame) \
-            and ((self.queryMode == QueryMode.EngineFirst) \
-                 or (self.reviewMode == ReviewMode.ByEngine)):
+        if (not self.isQueryCloud) or (self.reviewMode == ReviewMode.ByEngine):
             self.updateFenCache(fenInfo)
 
         if self.reviewMode == ReviewMode.ByEngine:
             self.onReviewGameStep()
             return
         
+        if self.moveEvent.is_set():
+            return
+    
         move_color = self.board.get_move_color()
-        
         #只有在最后一行时，引擎才会触发走子
         if self.isEndPosition() and (self.engineRunColor[move_color] == engine_id):
-            self.onMoveGo(fenInfo['iccs'])
-        else:
-            if (self.queryMode == QueryMode.EngineFirst):
-                self.showBestHint(fenInfo)
-            
+            self.moveEvent.set()
+            self.onMoveGo(iccs)
+            self.moveEvent.clear()
+        elif not self.isQueryCloud:
+            self.showBestHint(fenInfo)
+        
     def onEngineMoveInfo(self, engine_id, fenInfo):
         
-        #if (self.queryMode == QueryMode.EngineFirst) or (self.reviewMode == ReviewMode.ByEngine):
+        #if not self.isQueryCloud or (self.reviewMode == ReviewMode.ByEngine):
         #    self.updateFenCache(fenInfo)
 
         if not self.currPosition:
@@ -896,26 +898,30 @@ class MainWindow(QMainWindow):
         if fen != self.currPosition['fen']:
             return
 
-        board = ChessBoard(fen)
+        '''    
         currmove = fenInfo.get('currmove', None)
-        if (self.queryMode == QueryMode.EngineFirst) and currmove:
+        if (not self.isQueryCloud) and currmove:
             self.boardView.showMoveHint([cchess.iccs2pos(currmove)])
             return
+        '''
 
         moves = fenInfo.get('moves', None)
         if not moves:
             return
         
         iccs = moves[0]
+        board = ChessBoard(fen)
+        
         #引擎输出的历史数据,不处理
         if not board.is_valid_iccs_move(iccs):
             return
         
-        moveShow = [cchess.iccs2pos(x) for x in moves[:2]]
-            
-        if self.queryMode == QueryMode.EngineFirst:
+        '''
+        moveShow = [cchess.iccs2pos(x) for x in moves[:2]]    
+        if not self.isQueryCloud:
             self.boardView.showMoveHint(moveShow)
-           
+        '''
+
         self.engineView.onEngineMoveInfo(fenInfo)
 
     def onEngineReady(self, engine_id, name, engine_options):
@@ -939,6 +945,7 @@ class MainWindow(QMainWindow):
         self.detectRunEngine()
     
     def detectRunEngine(self):
+    
         if not self.currPosition:
             return
 
@@ -961,23 +968,30 @@ class MainWindow(QMainWindow):
             if 'move' in position:
                 fen_engine = position['move'].to_engine_fen()         
             params = self.engineView.getGoParams()
-            
-            ok = Globl.engineManager.goFrom(fen_engine, fen, params)
-            if ok:
-                self.isRunEngine = True
-            else:
-                QMessageBox.critical(self, f'{getTitle()}', '象棋引擎发送命令出错，请确认该程序能正常运行。')
-        
+            try:
+                ok = Globl.engineManager.goFrom(fen_engine, fen, params)
+                self.isRunEngine = ok
+            except EngineErrorException as e:
+                QMessageBox.critical(self, f'{getTitle()}', f'象棋引擎发送命令出错[{e}]，请重启引擎。')
+                
  
     #------------------------------------------------------------------------------
     #UI Events
     def onTryBoardMove(self,  move_from,  move_to):
+
+        if self.moveEvent.is_set():
+            return
+
+        self.moveEvent.set()
+            
         if not self.isEndPosition():
             step_index = self.currPosition['index']
             self.removeHistoryFollow(step_index)
 
         move_iccs = cchess.pos2iccs(move_from, move_to)
         self.onMoveGo(move_iccs)
+        
+        self.moveEvent.clear()
         
     def onTryBookMove(self, moveInfo):
         
@@ -1007,7 +1021,9 @@ class MainWindow(QMainWindow):
             if fen_count >= 2:
                 return
 
+        self.moveEvent.set()        
         self.onMoveGo(iccs)
+        self.moveEvent.clear()        
                 
     def onBoardRightMouse(self, is_mouse_pressed):
         
@@ -1025,18 +1041,10 @@ class MainWindow(QMainWindow):
         self.boardView.showMoveHint(best_next)    
 
     def removeHistoryFollow(self, step_index):
-
-        for position in reversed(self.positionList):
-            fen = position['fen']
-            index = position['index']
-            if index <= step_index:
-                break
-            #if fen in self.fenPosDict:    
-            #    del self.fenPosDict[fen]
-            self.historyView.inner.onRemovePosition(position)
-                
+        
         self.positionList = self.positionList[:step_index + 1]
         self.currPosition = self.positionList[-1]
+        self.historyView.inner.onRemoveHistoryFollow(step_index)
         
         if len(self.positionList) <= 1:
             self.isNeedSave = False
@@ -1056,7 +1064,7 @@ class MainWindow(QMainWindow):
             return
 
         self.currPosition = self.positionList[move_index]  
-        self.changePositionSignal.emit(False, False)
+        self.changePositionSignal.emit(False)
     
     
     #-------------------------------------------------------------------        
@@ -1065,14 +1073,16 @@ class MainWindow(QMainWindow):
 
         if not self.reviewMode:
             self.reviewMode = ReviewMode.ByCloud
-            self.cloudModeBtn.setEnabled(False)
-            self.engineModeBtn.setEnabled(False)
+            self.queryCloudBox.setEnabled(False)
+            #self.engineModeBtn.setEnabled(False)
         
             self.clearAllScore()
             self.showScoreBox.setChecked(True)
             self.reviewList = self.positionList[:]
-            self.historyView.inner.reviewByCloudBtn.setText('停止复盘')
             self.engineView.onReviewBegin(self.reviewMode)
+            self.historyView.inner.reviewByCloudBtn.setText('停止复盘')
+            logging.info('云库复盘开始')
+
             self.onReviewGameStep()
         else:
             self.onReviewGameEnd(isCanceled=True)
@@ -1082,8 +1092,8 @@ class MainWindow(QMainWindow):
         if not self.reviewMode:
             self.reviewMode = ReviewMode.ByEngine
             
-            self.cloudModeBtn.setEnabled(False)
-            self.engineModeBtn.setEnabled(False)
+            self.queryCloudBox.setEnabled(False)
+            #self.engineModeBtn.setEnabled(False)
             
             self.clearAllScore()
             self.showScoreBox.setChecked(True)
@@ -1091,6 +1101,7 @@ class MainWindow(QMainWindow):
             
             self.engineView.onReviewBegin(self.reviewMode)
             self.historyView.inner.reviewByEngineBtn.setText('停止复盘')
+            logging.info('引擎复盘开始')
             self.onReviewGameStep()
         else:
             self.onReviewGameEnd(isCanceled=True)
@@ -1101,7 +1112,7 @@ class MainWindow(QMainWindow):
             
             #print("OnReview", position['index'])
             self.currPosition = position
-            self.changePositionSignal.emit(False, True)
+            self.changePositionSignal.emit(True)
             QApplication.processEvents()
 
             if self.reviewMode == ReviewMode.ByCloud:
@@ -1121,17 +1132,18 @@ class MainWindow(QMainWindow):
             msgbox = TimerMessageBox("  复盘分析完成。  ", timeout=1)
             msgbox.exec()
         
+        logging.info('复盘结束')
         self.reviewMode = None
-        self.cloudModeBtn.setEnabled(True)
-        self.engineModeBtn.setEnabled(True)
+        self.queryCloudBox.setEnabled(True)
+        #self.engineModeBtn.setEnabled(True)
         
             
-    def setQueryMode(self, mode):
+    def setQueryCloud(self, yes):
         
-        if mode == self.queryMode: #模式未变
+        if yes == self.isQueryCloud: #模式未变
             return
 
-        self.queryMode = mode
+        self.isQueryCloud = yes
         
         #self.clearAllScore()
 
@@ -1139,22 +1151,24 @@ class MainWindow(QMainWindow):
         if self.currPosition:
             self.localSearch(self.currPosition)
 
-        if self.queryMode == QueryMode.EngineFirst:
+        if not self.isQueryCloud:
             self.historyView.inner.reviewByEngineBtn.setEnabled(True)
             self.historyView.inner.reviewByCloudBtn.setEnabled(False)
-            self.engineView.analysisBox.setChecked(True)
+            #self.engineView.analysisBox.setChecked(True)
 
-        elif self.queryMode == QueryMode.CloudFirst:
+        else:
             self.historyView.inner.reviewByEngineBtn.setEnabled(False)
             self.historyView.inner.reviewByCloudBtn.setEnabled(True)
-            self.engineView.analysisBox.setChecked(False)
-            
+            #self.engineView.analysisBox.setChecked(False)
+            if self.currPosition:
+                self.cloudQuery.startQuery(self.currPosition)
+
     #------------------------------------------------------------------------------
-    #UI Event Handler    
+    #UI Event Handler
     def onDoFreeGame(self):
         self.switchGameMode(GameMode.Free)
 
-    def onDoRobot(self):
+    def onDoFightRobot(self):
         self.switchGameMode(GameMode.Fight)
         
     def onDoEndGame(self):
@@ -1165,11 +1179,25 @@ class MainWindow(QMainWindow):
         self.switchGameMode(GameMode.EndGame)
 
     def onDoOnline(self):
-        #self.switchGameMode(GameMode.Online)
-        #dlg = OnlineDialog(self)
-        #dlg.show()
-        pass
 
+        self.switchGameMode(GameMode.Online)
+        self.update()
+
+        screen = QApplication.primaryScreen()
+        screen_size = screen.availableSize()
+        screen_width = screen_size.width() 
+        screen_height = screen_size.height()
+
+        win_rect = self.frameGeometry()
+        marge_size = self.boardView.getMargeSize()
+        new_x = self.pos().x() + (screen_width - win_rect.right() - 5) + marge_size[0]
+        self.move(new_x, 0)
+        self.update()
+        
+    def onDoCapture(self):
+        dlg = OnlineDialog(self)
+        dlg.show()
+        
     def onRestartGame(self):
 
         if (self.gameMode in [GameMode.Free, GameMode.Fight]) and self.isNeedSave:
@@ -1210,13 +1238,17 @@ class MainWindow(QMainWindow):
             return
 
         for iccs in moves[0]:
+            self.moveEvent.set()    
             self.onMoveGo(iccs, quickMode = True)
             #qApp.processEvents()
-
+            self.moveEvent.clear()    
+            
         self.isNeedSave = False
         self.updateTitle(name)
+        self.detectRunEngine()
 
     def loadBookmark(self, name, position):
+    
         if self.isNeedSave :
             steps = len(self.positionList) - 1
             if not self.getConfirm(f"当前棋谱已经走了 {steps} 步, 您确定要加载收藏并丢弃当前棋谱吗?"):
@@ -1228,10 +1260,11 @@ class MainWindow(QMainWindow):
         self.initGame(fen)
         
         moves = position.get('moves', [])
-        if moves:
-            for iccs in moves:
-                self.onMoveGo(iccs, quickMode = True)
-                    
+        for iccs in moves:
+            self.moveEvent.set()
+            self.onMoveGo(iccs, quickMode = True)
+            self.moveEvent.clear()
+                
         self.isNeedSave = False
         self.updateTitle(name)
         self.bookmarkView.setEnabled(True)
@@ -1252,7 +1285,10 @@ class MainWindow(QMainWindow):
         else:
             self.bookmarkView.show()
             self.bookmarkView.setFocus(Qt.TabFocusReason)
-
+    
+    def onCloudModeChanged(self, state):
+        self.setQueryCloud(self.queryCloudBox.isChecked())
+        
     def onFlipBoardChanged(self, state):
         self.boardView.setFlipBoard(state)
 
@@ -1260,8 +1296,7 @@ class MainWindow(QMainWindow):
         self.boardView.setMirrorBoard(state)
    
     def onShowBestMoveChanged(self, state):
-        showBestMove = (Qt.CheckState(state) == Qt.Checked)
-        self.boardView.setShowBestMove(showBestMove)
+        self.boardView.setShowBestMove((Qt.CheckState(state) == Qt.Checked))
     
     def onShowScoreChanged(self, state):
         self.historyView.inner.setShowScore((Qt.CheckState(state) == Qt.Checked))
@@ -1316,14 +1351,13 @@ class MainWindow(QMainWindow):
 
         if not fileName:
             return
-
-            
+       
     def onSaveFile(self):
         
         if not self.positionList:
             return
 
-        fileNameDefault = f"{self.getDefaultGameName()}.pgn"
+        fileNameDefault = f"{self.lastOpenFolder}\\{self.getDefaultGameName()}.pgn"
        
         options = QFileDialog.Options()
         #options |= QFileDialog.DontUseNativeDialog
@@ -1390,7 +1424,7 @@ class MainWindow(QMainWindow):
             board = ChessBoard(self.positionList[0]['fen'])
             game = Game(board.copy())
 
-            for pos in self.positionList[1:]:
+            for index, pos in enumerate(self.positionList[1:]):
                 #print(pos['index'], pos['iccs'])
                 move = board.move_iccs(pos['iccs'])
                 game.append_next_move(move)
@@ -1399,7 +1433,7 @@ class MainWindow(QMainWindow):
             game.save_to(file_name)
             self.isNeedSave = False
         except Exception as e:
-            msg = f"保存文件[{file_name}]出错：{traceback.format_exc()}"
+            msg = f"保存文件[{file_name}]{index}步{pos['iccs']}出错：{traceback.format_exc()}"
             logging.error(msg)
             msgbox = TimerMessageBox(msg)
             msgbox.exec()
@@ -1467,28 +1501,28 @@ class MainWindow(QMainWindow):
     def createActions(self):
 
         self.openFileAct = QAction(self.style().standardIcon(
-                                    QStyle.SP_FileDialogStart),
+                                    QStyle.SP_DialogOpenButton),
                                    "打开棋谱",
                                    self,
                                    statusTip="打开棋谱（库）文件",
                                    triggered=self.onOpenFile)
         
         self.openEndGameFileAct = QAction(self.style().standardIcon(
-                                    QStyle.SP_FileDialogStart),
+                                    QStyle.SP_DialogOpenButton),
                                    "打开残局挑战库",
                                    self,
                                    statusTip="打开残局挑战库文件（.CSV）",
                                    triggered=self.onOpenEndGameFile)
 
         self.useOpenBookAct = QAction(self.style().standardIcon(
-                                    QStyle.SP_FileDialogStart),
+                                    QStyle.SP_DialogOpenButton),
                                    "开局库选择",
                                    self,
                                    statusTip="选择开局库文件（yfk格式）",
                                    triggered=self.onUseOpenBookFile)
 
         self.saveFileAct = QAction(self.style().standardIcon(
-            QStyle.SP_DialogSaveButton),
+                                    QStyle.SP_DialogSaveButton),
                                    "保存棋谱",
                                    self,
                                    statusTip="保存棋谱文件(PGN 格式)",
@@ -1517,12 +1551,18 @@ class MainWindow(QMainWindow):
                                    "人机战斗",
                                    self,
                                    statusTip="人机战斗",
-                                   triggered=self.onDoRobot)
+                                   triggered=self.onDoFightRobot)
+
         self.doOnlineAct = QAction(QIcon(':ImgRes/online.png'),
                                    "连线分析",
                                    self,
                                    statusTip="连线分析",
                                    triggered=self.onDoOnline)
+        self.doCaptureAct = QAction(QIcon(':ImgRes/capture.png'),
+                                   "窗口截图",
+                                   self,
+                                   statusTip="截取对弈界面图形",
+                                   triggered=self.onDoCapture)
 
         self.restartAct = QAction(QIcon(':ImgRes/restart.png'),
                                   "重新开始",
@@ -1630,7 +1670,6 @@ class MainWindow(QMainWindow):
         self.fileBar = self.addToolBar("File")
         self.fileBar.setObjectName("File")
 
-        #self.fileBar.addAction(self.setupEngineAct)
         self.fileBar.addAction(self.openFileAct)
         self.fileBar.addAction(self.saveFileAct)
         self.fileBar.addAction(self.bookmarkAct)
@@ -1640,6 +1679,7 @@ class MainWindow(QMainWindow):
         ag.addAction(self.doOpenBookAct)
         ag.addAction(self.doEndGameAct)
         ag.addAction(self.doRobotAct)
+        ag.addAction(self.doOnlineAct)
 
         self.gameBar = self.addToolBar("Game")
         self.gameBar.setObjectName("Game")
@@ -1647,9 +1687,13 @@ class MainWindow(QMainWindow):
         self.gameBar.addAction(self.doOpenBookAct)
         self.gameBar.addAction(self.doRobotAct)
         self.gameBar.addAction(self.doEndGameAct)
-        
+        self.gameBar.addAction(self.doOnlineAct)
+        self.gameBar.addAction(self.doCaptureAct)
+            
         self.gameBar.addAction(self.restartAct)
         self.gameBar.addAction(self.editBoardAct)
+
+        #self.doOnlineAct.setEnabled(False)
         #self.gameBar.addAction(self.captureBoardAct)
         #self.gameBar.addAction(self.searchBoardAct)
 
@@ -1663,19 +1707,10 @@ class MainWindow(QMainWindow):
         self.mirrorBox.setToolTip('左右镜像')
         self.mirrorBox.stateChanged.connect(self.onMirrorBoardChanged)
 
-        self.cloudModeBtn = QRadioButton("云库优先")
-        #self.cloudModeBtn.setIcon(QIcon(':ImgRes/cloud.png'))
-        self.cloudModeBtn.setToolTip('云库优先模式')
-        self.cloudModeBtn.toggled.connect(lambda: self.setQueryMode(QueryMode.CloudFirst))
-
-        self.engineModeBtn = QRadioButton("引擎优先") 
-        #self.engineModeBtn.setIcon(QIcon(':ImgRes/engine.png'))
-        self.engineModeBtn.setToolTip('引擎优先模式')
-        self.engineModeBtn.toggled.connect(lambda: self.setQueryMode(QueryMode.EngineFirst))
-        
-        self.modeBtnGroup = QButtonGroup(self)
-        self.modeBtnGroup.addButton(self.cloudModeBtn, 1)      # ID 1
-        self.modeBtnGroup.addButton(self.engineModeBtn, 2)      # ID 2
+        self.queryCloudBox = QCheckBox("搜索云库")
+        self.queryCloudBox.setIcon(QIcon(':ImgRes/cloud.png'))
+        self.queryCloudBox.setToolTip('搜索云库着法')
+        self.queryCloudBox.toggled.connect(self.onCloudModeChanged)
 
         self.showBestBox = QCheckBox('最佳提示')  #"最佳提示")
         self.showBestBox.setIcon(QIcon(':ImgRes/info.png'))
@@ -1695,8 +1730,7 @@ class MainWindow(QMainWindow):
         self.showBar.addWidget(self.flipBox)
         self.showBar.addWidget(self.mirrorBox)
         self.showBar.addSeparator()
-        self.showBar.addWidget(self.cloudModeBtn)
-        self.showBar.addWidget(self.engineModeBtn)
+        self.showBar.addWidget(self.queryCloudBox)
         
         self.showBar.addSeparator()
         self.showBar.addWidget(self.showBestBox)
@@ -1773,11 +1807,7 @@ class MainWindow(QMainWindow):
         showScore = self.settings.value("showScore", True, type=bool)
         self.showScoreBox.setChecked(showScore)
         cloudMode = self.settings.value("cloudMode", True, type=bool)
-        if cloudMode:
-            self.cloudModeBtn.setChecked(True)
-        engineMode = self.settings.value("engineMode", False, type=bool)
-        if engineMode:
-            self.engineModeBtn.setChecked(True)
+        self.queryCloudBox.setChecked(cloudMode)
         
     def writeSettings(self):
         self.settings.setValue("geometry", self.saveGeometry())
@@ -1791,8 +1821,8 @@ class MainWindow(QMainWindow):
         self.settings.setValue("showBest", self.showBestBox.isChecked())
         self.settings.setValue("showScore", self.showScoreBox.isChecked())
 
-        self.settings.setValue("cloudMode", self.cloudModeBtn.isChecked())
-        self.settings.setValue("engineMode", self.engineModeBtn.isChecked())
+        self.settings.setValue("cloudMode", self.queryCloudBox.isChecked())
+        #self.settings.setValue("engineMode", self.engineModeBtn.isChecked())
         
         #self.settings.setValue("openBookFile", self.openBookFile)
         self.settings.setValue("lastOpenFolder", self.lastOpenFolder)

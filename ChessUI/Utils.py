@@ -11,7 +11,7 @@ from collections import OrderedDict
 import psutil
 import requests
 
-from PyQt5.QtCore import QTimer, QThread
+from PyQt5.QtCore import QTimer, QThread, Qt
 from PyQt5.QtWidgets import QMessageBox, QApplication
 
 #import numpy as np
@@ -43,6 +43,28 @@ class Position:
     index: int
     move_color: int
     move: Move
+
+
+#-----------------------------------------------------#
+def scaleImage(img, scale):
+
+    if scale == 1.0:
+        return img
+
+    new_height = int(img.height() * scale)
+    new_img = img.scaledToHeight(new_height, mode=Qt.SmoothTransformation)
+
+    return new_img
+
+#-----------------------------------------------------#
+def SvgToPixmap(svg, width, height):
+    pix = QPixmap(QSize(width, height))
+    pix.fill(Qt.transparent)
+    painter = QPainter(pix)
+    painter.setRenderHints(QPainter.Antialiasing)
+    svg.render(painter)
+    #pix.save('test.png')
+    return pix
 
 '''
 #-----------------------------------------------------#

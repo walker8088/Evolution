@@ -417,6 +417,7 @@ class EngineConfigDialog(QDialog):
         engineBox = QGroupBox("引擎配置")
         fbox = QFormLayout()    
         fbox.addRow('引擎路径:', self.enginePath)
+        #fbox.addRow('', QLabel())  
         fbox.addRow('引擎类别:', self.engineType)
         fbox.addRow('引擎棋规:', self.ruleCombo)
         fbox.addRow('思考方式:', self.ponderMode)

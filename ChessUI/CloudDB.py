@@ -90,11 +90,29 @@ class CloudDB(QObject):
         if not self.reply:
             return
         
+        ret = {}
+
         resp = self.reply.readAll().data().decode().rstrip('\0')
         #logging.info(f"Cloud Query Result: {resp}")
-    
-        if resp.lower() in ['', 'unknown']:
-            return {}
+        
+        resp = resp.lower()
+        if resp in ['', 'unknown']:
+            #TOFO fix return
+            return 
+        
+        #杀死
+        if resp == 'checkmate':
+            ret['index'] = self.index
+            ret['fen'] = self.fen
+            ret['score'] = 30000
+            ret['mate'] = 0
+            ret['actions'] = {}
+        
+            self.move_cache[self.fen] = ret
+            self.reply = None
+            self.query_result_signal.emit(ret)
+            
+            return
 
         move_color = self.board.get_move_color()    
         moves = []
@@ -151,8 +169,6 @@ class CloudDB(QObject):
                     
             moves_clean[it['iccs']] = it
             
-        ret = {}
-        
         ret['index'] = self.index
         ret['fen'] = self.fen
         ret['score'] = score_best

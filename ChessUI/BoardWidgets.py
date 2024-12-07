@@ -13,7 +13,7 @@ from PyQt5.QtSvg import QSvgRenderer
 import cchess
 from cchess import ChessBoard, iccs2pos
 
-from .Utils import TimerMessageBox
+from .Utils import TimerMessageBox, scaleImage, SvgToPixmap
 from .Resource import qt_resource_data
 
 from .Globl import *
@@ -22,27 +22,6 @@ DEFAULT_SKIN = '默认'
 #piece_names = ['wk', 'wa', 'wb', 'wr', 'wn', 'wc', 'wp', 'bk', 'ba', 'bb', 'br', 'bn', 'bc', 'bp']
 piece_names = ['rk', 'ra', 'rb', 'rr', 'rn', 'rc', 'rp', 'bk', 'ba', 'bb', 'br', 'bn', 'bc', 'bp']
 piece_base = piece_names[0]
-
-#-----------------------------------------------------#
-def scaleImage(img, scale):
-
-    if scale == 1.0:
-        return img
-
-    new_height = int(img.height() * scale)
-    new_img = img.scaledToHeight(new_height, mode=Qt.SmoothTransformation)
-
-    return new_img
-
-#-----------------------------------------------------#
-def SvgToPixmap(svg, width, height):
-    pix = QPixmap(QSize(width, height))
-    pix.fill(Qt.transparent)
-    painter = QPainter(pix)
-    painter.setRenderHints(QPainter.Antialiasing)
-    svg.render(painter)
-    #pix.save('test.png')
-    return pix
 
 #-----------------------------------------------------#
 def arrowCalc(from_x, from_y, to_x, to_y): 
@@ -304,6 +283,9 @@ class ChessBoardBaseWidget(QWidget):
     def clearPickup(self):
         self.last_pickup = None
         self.update()
+    
+    def getMargeSize(self):
+        return (self.board_start_x*2, self.board_start_y*2)
 
     def logic_to_board(self, x, y, bias = 0):
 
@@ -379,9 +361,6 @@ class ChessBoardBaseWidget(QWidget):
     def sizeHint(self):
         return QSize(self.base_board_width + 20, self.base_board_height + 10)
     
-    #def sizeHint(self):
-    #    return QSize(self.base_board_width + 20, self.base_board_height + 10)
-
 
 #-----------------------------------------------------#
 class ChessBoardWidget(ChessBoardBaseWidget):
@@ -508,7 +487,7 @@ class ChessBoardWidget(ChessBoardBaseWidget):
     
                 color = Qt.darkGreen
                 
-                painter.setPen(QPen(color,3))#,  Qt.DotLine))    
+                painter.setPen(QPen(color,5))#,  Qt.DotLine))    
                 painter.drawLine(from_x, from_y, to_x, to_y)        
                 painter.drawPolyline(arrowCalc(from_x, from_y, to_x,to_y))
         
@@ -519,7 +498,7 @@ class ChessBoardWidget(ChessBoardBaseWidget):
                 
                 color = Qt.darkGreen
                 
-                painter.setPen(QPen(color,3))#,  Qt.DotLine))    
+                painter.setPen(QPen(color,5))#,  Qt.DotLine))    
                 painter.drawLine(from_x, from_y, to_x, to_y)
                 painter.drawPolyline(arrowCalc(from_x, from_y, to_x,to_y))
         

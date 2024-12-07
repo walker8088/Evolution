@@ -1,4 +1,4 @@
-"""
+
 import time
 import json
 import datetime as dt
@@ -10,17 +10,17 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageOps, ImageGrab
 from PIL.ImageQt import ImageQt
 
-from PySide6 import *
-from PySide6.QtCore import *
-from PySide6.QtGui import *
-from PySide6.QtWidgets import *
+from PyQt5 import *
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
+from PyQt5.QtWidgets import *
 
-#from pywinauto import *
-
-import pygetwindow as gw
-#import pyscreenshot as ImageGrab
+import pygetwindow as getwindow
 
 import cchess
+from cchess import ChessBoard
+
+from .Utils import scaleImage
 
 #-----------------------------------------------------------------------------------------#      
 pieces_pos = {
@@ -42,13 +42,37 @@ FEN_FULL = 'rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR'
 FEN_FULL_LOWER = FEN_FULL.lower()
 
 
-#-----------------------------------------------------------------------------------------#      
+#-----------------------------------------------------------------------------------------#  
+def cv2qt_image(image):
+
+    size = image.shape
+    step = int(image.size / size[0])
+    qformat = QImage.Format_Indexed8
+
+    if len(size) == 3:
+        if size[2] == 4:
+            qformat = QImage.Format_RGBA8888
+        else:
+            qformat = QImage.Format_RGB888
+
+    img = QImage(image, size[1], size[0], step, qformat).rgbSwapped()
+
+    return img
+
+#-----------------------------------------------------------------------------------------#  
+def cv2pil_image(cv_img): 
+    return Image.fromarray(cv.cvtColor(cv_img, cv.COLOR_BGR2RGB))
+
+def pil2cv_image(pil_img): 
+    return cv.cvtColor(np.array(pil_img), cv.COLOR_RGB2BGR)
+
+#-----------------------------------------------------------------------------------------#  
 def cv_to_image(img: np.ndarray) -> Image:
     return Image.fromarray(cv.cvtColor(img, cv.COLOR_BGR2RGB))
     
 def image_to_cv(img: Image) -> np.ndarray:
     return cv.cvtColor(np.array(img), cv.COLOR_RGB2BGR)
-        
+
 #-----------------------------------------------------------------------------------------#      
 class NumpyArrayEncoder(JSONEncoder):
     def default(self, obj):
@@ -138,41 +162,326 @@ class ScreenSource():
     def __init__(self):
     
         self.app = None
-        self.win_main = None
+        self.win = None
         self.img = None
         
-    def connect(self):
-        self.app = Application(backend='win32')
-        
-        try:
-            self.app.connect(path="QQChess.exe")
-            self.win_main = self.app.top_window() #self.app['中国象棋2017']
-            self.win_main.set_focus()
-            
-        except Exception as e:
-            print(e)
+    def connect(self, window_title):
+
+        self.win = None
+        windows = getwindow.getWindowsWithTitle(window_title)
+        if len(windows) == 0:
             return False
-        return True    
+
+        self.win = windows[0]
+        
+        return True
     
+    def isConnected(self):
+        return not (self.win is None)
+
     def move_click(self, s_move):
-        print(s_move)
         mouse.click(button='left', coords = s_move[0])
         time.sleep(0.3)
         mouse.click(button='left', coords = s_move[1])
         time.sleep(0.2)
         mouse.move(coords=(0, 0))
         
-    def get_image(self, roi_rect = None ):
-        try:
-            pimg = self.win_main.capture_as_image()
-        except Exception as e:
-            print(e)
+    def grab(self, left_marge, top_marge):
+        self.win.activate()
+        
+        box = self.win.box
+
+        bbox = (box.left + left_marge, box.top + top_marge, box.left + box.width - left_marge, box.top + box.height - left_marge) 
+        print(box)
+        #2433, 1455
+        # 330, 120 -> 1405, 1315 
+        
+        left = int(box.width * 355 / 2625.0)
+        top = int(box.height * 60 / 1455.0)
+        right = int(box.width * 1515 / 2625.0)
+        bottom = int(box.height * 1255 / 1455.0)
+        
+        img = ImageGrab.grab(bbox)
+        #img_board = img.crop((left, top, right, bottom))
+        #img.save('tian.jpg')
+
+        return img #img_board
+        
+class ScreenBoardView(QWidget):
+    def __init__(self, parent = None):
+
+        super().__init__(parent)
+    
+        self.setAutoFillBackground(True)
+
+        p = self.palette()
+        p.setColor(self.backgroundRole(), QColor(40, 40, 40))
+        self.setPalette(p)
+    
+        self._board = ChessBoard()
+
+        self.flip_board = False
+        self.mirror_board = False
+
+        self.last_pickup = None
+
+        self.start_x = 0
+        self.start_y = 0
+        
+        self.base_space = 56
+        self.base_boader = 15
+        self.base_piece_size = 53
+        
+        self.img_width = 530
+        self.img_height = 586
+        
+        self.base_img = None
+        self.img_src = None
+
+    def to_fen(self):
+        return self._board.to_fen()
+
+    def logic_to_board(self, x, y,  bias = 0):
+
+        board_x = self.boader + x * self.space + self.start_x
+        board_y = self.boader + (9 - y) * self.space + self.start_y
+
+        return (board_x + bias, board_y + bias)
+
+    def board_to_logic(self, bx, by):
+
+        x = (bx - self.boader - self.start_x) // self.space
+        y = 9 - ((by - self.boader - self.start_y) // self.space)
+
+        if self.flip_board:
+            x = 8 - x
+            y = 9 - y
+
+        if self.mirror_board:
+            x = 8 - x
+
+        return (x, y)
+    
+    def setFlipBoard(self, fliped):
+
+        if fliped != self.flip_board:
+            self.flip_board = fliped
+            self.update()
+
+    def setMirrorBoard(self, mirrored):
+
+        if mirrored != self.mirror_board:
+            self.mirror_board = mirrored
+            self.update()
+
+    def resizeEvent(self, ev):
+        self.fitImage(ev.size())
+
+    def fitImage(self, size):
+        
+        new_width = size.width()
+        new_height = size.height()
+        
+        self.start_x = (new_width - self.img_width) // 2
+        if self.start_x < 0:
+            self.start_x = 0
+
+        self.start_y = (new_height - self.img_height) // 2
+        if self.start_y < 0:
+            self.start_y = 0
+                
+    def updateImage(self, img):
+        
+        self.cv_img = pil2cv_image(img)
+        self.img_src = None
+
+        im2 = img.convert("RGBA")
+        data = im2.tobytes("raw", "BGRA")
+        qimg = QImage(data, img.width, img.height, QImage.Format_ARGB32)
+        
+        #qimg = ImageQt(img)
+        self.base_img = QPixmap.fromImage(qimg)
+        
+        self.img_width =  self.base_img.width()
+        self.img_height =  self.base_img.height()
+        
+        self.fitImage(self.size())
+        
+        self.update()
+        
+    def paintEvent(self, ev):
+
+        painter = QPainter(self)
+        
+        if self.img_src:
+            painter.drawPixmap(self.start_x,  self.start_y, self.img_src)
+        elif self.base_img:
+            painter.drawPixmap(self.start_x,  self.start_y, self.base_img)
+
+    def detectBoard(self):
+        
+        self.gause_times = 2
+
+        img_src = self.cv_img.copy()
+    
+        # 图像预处理
+        gray = cv.cvtColor(img_src, cv.COLOR_BGR2GRAY)
+        for i in range(self.gause_times):
+            gray = cv.GaussianBlur(gray, (5, 5),0)
+        
+        r_min = img_src.shape[1] // 30
+        r_max = int(r_min * 1.5)
+        print(r_min, r_max)
+        
+        circles = cv.HoughCircles(gray,cv.HOUGH_GRADIENT,1, r_min, param1=100, param2=70, minRadius=r_min, maxRadius=r_max)
+        
+        if circles is None:
+            return 
+            
+        #圆检测
+        ims = []
+        y_counts = {}
+        #circles = np.uint16(np.around(circles))
+        for x, y, r in circles[0,:]: 
+            x, y, r = int(x), int(y), int(r) 
+            print(x, y, r)
+            cv.circle(img_src, (x, y), r, (0, 255, 0), 1, cv.LINE_AA)
+            #im = img_src[y - r : y + r, x - r : x + r] 
+            #ims.append((im, x, y, r))
+            
+            find_y = False
+            for y_key, y_count in y_counts.items():
+                if abs(y - y_key) < r_min:
+                    y_counts[y_key].append((x, y, r)) 
+                    find_y = True
+                    continue
+            if not find_y:
+                y_counts[y] = [(x, y, r)]
+
+     
+        qimg = cv2qt_image(img_src)
+        self.img_src = QPixmap.fromImage(qimg)
+
+        self.update()
+    
+    def mousePressEvent(self, mouseEvent):
+        pass
+        
+    def mouseMoveEvent(self, mouseEvent):
+        pass
+
+    def mouseReleaseEvent(self, mouseEvent):
+        pass
+    
+
+#-----------------------------------------------------#
+class OnlineDialog(QDialog):
+    def __init__(self, parent):
+        super().__init__(parent)
+
+        self.setWindowTitle("连线分析-窗口截图")
+        self.setMinimumSize(600, 800)
+        
+        self.screen = ScreenBoardView(self)
+        self.source = ScreenSource()
+
+        self.redMoveBtn = QRadioButton("红方走", self)
+        self.blackMoveBtn = QRadioButton("黑方走", self)
+        self.fenLabel = QLabel()
+
+        group1 = QButtonGroup(self)
+        group1.addButton(self.redMoveBtn)
+        group1.addButton(self.blackMoveBtn)
+
+        hbox1 = QHBoxLayout()
+        hbox1.addWidget(self.redMoveBtn, 0)
+        hbox1.addWidget(self.blackMoveBtn, 0)
+        hbox1.addWidget(QLabel(''), 1)
+
+        captureBtn = QPushButton("截取窗口", self)
+        captureBtn.clicked.connect(self.onCapture)
+        detectBtn = QPushButton("检测", self)
+        detectBtn.clicked.connect(self.onDetect)
+        okBtn = QPushButton("确定", self)
+        cancelBtn = QPushButton("取消", self)
+
+        vbox = QVBoxLayout()
+        vbox.addWidget(self.screen, 2)
+        #vbox.addWidget(self.fenLabel)
+        vbox.addLayout(hbox1)
+
+        hbox = QHBoxLayout()
+        #hbox.addWidget(self.redMoveBtn)
+        #hbox.addWidget(self.blackMoveBtn)
+        hbox.addWidget(captureBtn)
+        hbox.addWidget(detectBtn)
+        
+        hbox.addWidget(okBtn)
+        hbox.addWidget(cancelBtn)
+
+        vbox.addLayout(hbox)
+        self.setLayout(vbox)
+
+        #self.boardEdit.fenChangedSignal.connect(self.onBoardFenChanged)
+        self.redMoveBtn.clicked.connect(self.onRedMoveBtnClicked)
+        self.blackMoveBtn.clicked.connect(self.onBlackMoveBtnClicked)
+
+        okBtn.clicked.connect(self.accept)
+        cancelBtn.clicked.connect(self.close)
+
+        self.source.connect('天天象棋')
+        
+    def showEvent(self, event):
+        print(event)
+        if self.source.isConnected():
+            self.onCapture()
+        
+    def onCapture(self):
+        
+        win_rect = self.frameGeometry()
+        inner_rect = self.geometry()
+        
+        left_marge = inner_rect.x() - win_rect.x() 
+        top_marge = inner_rect.y() - win_rect.y()
+        
+        #print(left_marge, top_marge)
+
+        img = self.source.grab(left_marge, top_marge)
+        self.screen.updateImage(img)
+        
+        #img.save('tiantian.jpg')
+
+    def onDetect(self):
+        self.screen.detectBoard()
+        
+    def onRedMoveBtnClicked(self):
+        self.boardEdit.set_move_color(RED)
+
+    def onBlackMoveBtnClicked(self):
+        self.boardEdit.set_move_color(BLACK)
+
+    def onBoardFenChanged(self, fen):
+
+        self.fenLabel.setText(fen)
+
+        color = self.boardEdit.get_move_color()
+        if color == RED:
+            self.redMoveBtn.setChecked(True)
+        elif color == BLACK:
+            self.blackMoveBtn.setChecked(True)
+
+    def edit(self, fen_str):
+        self.boardEdit.from_fen(fen_str)
+
+        if self.exec_() == QDialog.Accepted:
+            return self.boardEdit.to_fen()
+        else:
             return None
             
-        self.img = image_to_cv(pimg)
-        
-        return self.img
-        
+    def get_image(self):
+        pass
+
+
 #-----------------------------------------------------------------------------------------------------
 class BoardScreen():
     def __init__(self, img = None, flip = False):
@@ -202,7 +511,10 @@ class BoardScreen():
         else:
             self.img_gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY) 
             b, g, self.img_red = cv.split(img) 
-        
+    
+    def sizeHint(self): 
+        return QSize(400, 400)
+    
     def calc_grid(self):
         self.grid_size = [ (self.board_end[0] - self.board_begin[0])/8.0, (self.board_end[1] - self.board_begin[1])/9.0 ]
         
@@ -612,7 +924,7 @@ class BoardScreen():
         cv.waitKey(0)
                 
 #-----------------------------------------------------------------------------------------#      
-
+"""
 class GameMaster():
     def __init__(self, screen, img_src, engine):
         
@@ -749,358 +1061,5 @@ class GameMaster():
                                 break    
                 
 
-
-
+"""
 #-----------------------------------------------------#
-class ScreenBoardView(QWidget):
-    def __init__(self, parent = None):
-
-        super().__init__(parent)
-    
-        self.setAutoFillBackground(True)
-
-        p = self.palette()
-        p.setColor(self.backgroundRole(), QColor(40, 40, 40))
-        self.setPalette(p)
-    
-        self._board = ChessBoard()
-
-        self.flip_board = False
-        self.mirror_board = False
-
-        self.last_pickup = None
-
-        self.start_x = 0
-        self.start_y = 0
-        self.paint_scale = 1.0
-
-        self.base_space = 56
-        self.base_boader = 15
-        self.base_piece_size = 53
-        
-        self.base_win_width = 530
-        self.win_width = 530
-        
-        self.base_win_height = 586
-        self.win_height = 586
-    
-        self.base_win_img = None
-        self.win_img = None
-
-    def scaleBoard(self, scale):
-
-        if scale < 0.5:
-            scale = 0.5
-
-        self.paint_scale = int(scale * 9) / 9.0
-        if self.base_win_img:
-            self.win_img = scaleImage(self.base_win_img, self.paint_scale)
-            self.win_width = self.win_img.width()
-            self.win_height = self.win_img.height()
-            
-    def to_fen(self):
-        return self._board.to_fen()
-
-    def logic_to_board(self, x, y,  bias = 0):
-
-        board_x = self.boader + x * self.space + self.start_x
-        board_y = self.boader + (9 - y) * self.space + self.start_y
-
-        return (board_x + bias, board_y + bias)
-
-    def board_to_logic(self, bx, by):
-
-        x = (bx - self.boader - self.start_x) // self.space
-        y = 9 - ((by - self.boader - self.start_y) // self.space)
-
-        if self.flip_board:
-            x = 8 - x
-            y = 9 - y
-
-        if self.mirror_board:
-            x = 8 - x
-
-        return (x, y)
-    
-    def setFlipBoard(self, fliped):
-
-        if fliped != self.flip_board:
-            self.flip_board = fliped
-            self.update()
-
-    def setMirrorBoard(self, mirrored):
-
-        if mirrored != self.mirror_board:
-            self.mirror_board = mirrored
-            self.update()
-
-    def resizeEvent(self, ev):
-
-        new_width = ev.size().width()
-        new_height = ev.size().height()
-        
-        new_scale = min(new_width / self.base_win_width,
-                        new_height / self.base_win_height)
-
-        self.scaleBoard(new_scale)
-
-        self.start_x = (new_width - self.win_width) // 2
-        if self.start_x < 0:
-            self.start_x = 0
-
-        self.start_y = (new_height - self.win_height) // 2
-        if self.start_y < 0:
-            self.start_y = 0
-
-    def updateImage(self, img):
-        
-        self.cv_img = pil2cv_image(img)
-        
-        self.base_win_img =  QPixmap.fromImage(ImageQt(img))
-        
-        self.base_win_width =  self.base_win_img.width()
-        self.base_win_height =  self.base_win_img.height()
-        
-        self.scaleBoard( self.paint_scale)
-
-        self.update()
-        
-    def paintEvent(self, ev):
-        painter = QPainter(self)
-        if self.win_img:
-            painter.drawPixmap(self.start_x,  self.start_y, self.win_img)
-
-    def detectBoard(self):
-        img_src = self.cv_img.copy()
-        
-        gray_img = cv.cvtColor(img_src, cv.COLOR_BGR2GRAY)
-        dst = cv.equalizeHist(gray_img)
-        # 高斯滤波降噪
-        gaussian = cv.GaussianBlur(dst, (5, 5), 0)
-        # 边缘检测
-        edges = cv.Canny(gaussian, 70, 150)
-        
-        # Hough 直线检测
-        # 重点注意第四个参数 阈值，只有累加后的值高于阈值时才被认为是一条直线，也可以把它看成能检测到的直线的最短长度（以像素点为单位）
-        # 在霍夫空间理解为：至少有多少条正弦曲线交于一点才被认为是直线
-        #lines = cv.HoughLines(edges, 1.0, np.pi/180, 150)
-        lines = cv.HoughLinesP(edges, 1.0, np.pi/180, 350)
-        
-        #for line in lines: # line[0]存储的是点到直线的极径和极角，其中极角是弧度表示的，theta是弧度 rho, theta = line[0] # 下述代码为获取 (x0,y0) 具体值 a = np.cos(theta) b = np.sin(theta) x0 = a*rho y0 = b*rho # 下图 1000 的目的是为了将线段延长 # 以 (x0,y0) 为基础，进行延长 x1 = int(x0+1000*(-b)) y1 = int(y0+1000*a) x2 = int(x0-1000*(-b)) y2 = int(y0-1000*a) cv.line(src, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        
-        
-        r_min = img_src.shape[1] // 60
-        r_max = int(r_min * 4)
-        print(r_min, r_max)
-        # 图像预处理
-        gray = cv.cvtColor(img_src, cv.COLOR_BGR2GRAY)
-        #img = cv.medianBlur(gray, 7)
-        gaussian = cv.GaussianBlur(gray, (7, 7),0)
-        circles = cv.HoughCircles(gaussian,cv.HOUGH_GRADIENT,1, r_min, param1=100, param2=50, minRadius=r_min, maxRadius=r_max)
-        
-        if circles is None:
-            return False
-            
-        #圆检测
-        ims = []
-        y_counts = {}
-        #circles = np.uint16(np.around(circles))
-        for x, y, r in circles[0,:]: 
-            x, y, r = int(x), int(y), int(r) 
-            print(x, y, r)
-            cv.circle(img_src, (x, y), r, (0, 255, 0), 1, cv.LINE_AA)
-            #im = img_src[y - r : y + r, x - r : x + r] 
-            #ims.append((im, x, y, r))
-            
-            find_y = False
-            for y_key, y_count in y_counts.items():
-                if abs(y - y_key) < r_min:
-                    y_counts[y_key].append((x, y, r)) 
-                    find_y = True
-                    continue
-            if not find_y:
-                y_counts[y] = [(x, y, r)]
-
-       # for line in lines: 
-       #    x1, y1, x2, y2 = line[0] 
-       #    cv.line(img_src, (x1, y1), (x2, y2), (0, 255, 0), 2)
-
-        #cv.imshow('CIRCLE BOARD', img_src)
-        #cv.waitKey(0)
-        '''
-        x_points = []
-        y_points = []
-        r_min = -1
-        
-        img_src = self.cv_img.copy()
-                
-        for y_key, it in y_counts.items():
-            if len(it) == 9:
-                for x, y, r in it:
-                    cv.circle(img_src, (x, y), r, (255, 0, 0), 1, cv.LINE_AA)
-                    x_points.append(x)
-                    y_points.append(y)
-                        
-                    if r_min < 0 or r < r_min:
-                        r_min = r
-    '''
-        #self.updateImage(cv2pil_image(edges))
-        self.updateImage(cv2pil_image(img_src))
-        return
-        
-        board_rect = [min(x_points), min(y_points), max(x_points), max(y_points)]
-        
-        self.img_size = self.cv_img.shape[:2]
-        self.board_begin = board_rect[:2]
-        self.board_end = board_rect[2:]
-        #self.calc_grid()
-        #self.piece_size = r_min
-        
-        #cv.rectangle(img_src, self.board_begin, self.board_end, (255, 0, 0), 2)
-        
-        
-        return
-        for x in range(9):
-            for y in range(10):
-                cv.circle(img_src, self.board_to_img(x, y), self.piece_size, (0, 0, 255), 1, cv.LINE_AA)
-                pass
-                
-        '''
-        cv.imshow('CIRCLE BOARD', img_src)
-        cv.waitKey(0)
-        
-        #使用红色分量检测红黑分界线
-        self.flip = False
-        
-        red_img = cv.split(self.get_piece_img(0, 0, gray = False))[2]
-        red_hist = cv.calcHist([red_img],[0],None,[256],[0,256])
-        red_sum = np.uint16(np.around(np.cumsum(red_hist)))
-        
-        black_img = cv.split(self.get_piece_img(0, 9, gray = False))[2]
-        black_hist = cv.calcHist([black_img],[0],None,[256],[0,256])
-        black_sum = np.uint16(np.around(np.cumsum(black_hist)))
-        
-        black_count = [0,0]
-        for i in range(200):
-            #print(black_sum[i],red_sum[i]) 
-            if black_sum[i] == 0 and red_sum[i] == 0:
-                black_count[0] = i
-            
-            elif black_sum[i] > 0 and red_sum[i] == 0: 
-                black_count[1] = i
-        #print('black_count', black_count)        
-        
-        self.black_index = (black_count[0] + black_count[1]) // 2
-        
-        self.init_pieces_template()
-
-        return True
-    ''' 
-
-    def mousePressEvent(self, mouseEvent):
-        pass
-        
-    def mouseMoveEvent(self, mouseEvent):
-        pass
-
-    def mouseReleaseEvent(self, mouseEvent):
-        pass
-    
-
-#-----------------------------------------------------#
-class OnlineDialog(QDialog):
-    def __init__(self, parent):
-        super().__init__(parent)
-
-        self.setWindowTitle("窗口截图")
-        
-        self.screen = ScreenBoardView(self)
-        
-        self.redMoveBtn = QRadioButton("红方走", self)
-        self.blackMoveBtn = QRadioButton("黑方走", self)
-        self.fenLabel = QLabel()
-
-        group1 = QButtonGroup(self)
-        group1.addButton(self.redMoveBtn)
-        group1.addButton(self.blackMoveBtn)
-
-        hbox1 = QHBoxLayout()
-        hbox1.addWidget(self.redMoveBtn, 0)
-        hbox1.addWidget(self.blackMoveBtn, 0)
-        hbox1.addWidget(QLabel(''), 1)
-
-        captureBtn = QPushButton("截取窗口", self)
-        captureBtn.clicked.connect(self.onCapture)
-        detectBtn = QPushButton("检测", self)
-        detectBtn.clicked.connect(self.onDetect)
-        okBtn = QPushButton("确定", self)
-        cancelBtn = QPushButton("取消", self)
-
-        vbox = QVBoxLayout()
-        vbox.addWidget(self.screen, 2)
-        #vbox.addWidget(self.fenLabel)
-        vbox.addLayout(hbox1)
-
-        hbox = QHBoxLayout()
-        #hbox.addWidget(self.redMoveBtn)
-        #hbox.addWidget(self.blackMoveBtn)
-        hbox.addWidget(captureBtn)
-        hbox.addWidget(detectBtn)
-        
-        hbox.addWidget(okBtn)
-        hbox.addWidget(cancelBtn)
-
-        vbox.addLayout(hbox)
-        self.setLayout(vbox)
-
-        #self.boardEdit.fenChangedSignal.connect(self.onBoardFenChanged)
-        self.redMoveBtn.clicked.connect(self.onRedMoveBtnClicked)
-        self.blackMoveBtn.clicked.connect(self.onBlackMoveBtnClicked)
-
-        okBtn.clicked.connect(self.accept)
-        cancelBtn.clicked.connect(self.close)
-
-    def onCapture(self):
-        
-        #win = gw.getWindowsWithTitle("22081281AC")[0]
-        win = gw.getWindowsWithTitle("BLA-AL00")[0]
-        
-        win.activate()
-        
-        #print( win.width,  win.height)
-        
-        x1, y1, x2, y2 = win.left, win.top, win.left + win.width, win.top + win.height
-
-        img = ImageGrab.grab(bbox=(x1, y1, x2, y2))
-        
-        self.screen.update_img(img)
-        
-    def onDetect(self):
-        self.screen.detectBoard()
-        
-    def onRedMoveBtnClicked(self):
-        self.boardEdit.set_move_color(RED)
-
-    def onBlackMoveBtnClicked(self):
-        self.boardEdit.set_move_color(BLACK)
-
-    def onBoardFenChanged(self, fen):
-
-        self.fenLabel.setText(fen)
-
-        color = self.boardEdit.get_move_color()
-        if color == RED:
-            self.redMoveBtn.setChecked(True)
-        elif color == BLACK:
-            self.blackMoveBtn.setChecked(True)
-
-    def edit(self, fen_str):
-        self.boardEdit.from_fen(fen_str)
-
-        if self.exec_() == QDialog.Accepted:
-            return self.boardEdit.to_fen()
-        else:
-            return None
-            
-    def get_image(self):
-        pass

@@ -52,13 +52,13 @@ class HistoryWidget(QWidget):
 
         self.positionView = QTreeWidget()
         self.positionView.setColumnCount(1)
-        self.positionView.setHeaderLabels(["序号", "着法", "红优分", '', "备注"])
+        self.positionView.setHeaderLabels(["序号", "着法", "红优分", ''])
         self.positionView.setColumnWidth(0, 90)
         #self.positionView.setTextAlignment(0, Qt.AlignLeft)
         self.positionView.setColumnWidth(1, 120)
         self.positionView.setColumnWidth(2, 80)
         self.positionView.setColumnWidth(3, 20)
-        self.positionView.setColumnWidth(4, 20)
+        #self.positionView.setColumnWidth(4, 20)
 
         self.positionView.itemSelectionChanged.connect(self.onSelectionChanged)
         #self.positionView.itemActivated.connect(self.onItemActivated)
@@ -71,9 +71,9 @@ class HistoryWidget(QWidget):
         splitter.setOrientation(Qt.Vertical)
         splitter.addWidget(self.positionView)
         
-        splitter.addWidget(self.annotationView)
-        splitter.setStretchFactor(0, 90)
-        splitter.setStretchFactor(1, 10)
+        #splitter.addWidget(self.annotationView)
+        #splitter.setStretchFactor(0, 90)
+        #splitter.setStretchFactor(1, 10)
 
         self.firstBtn = QPushButton(
             self.style().standardIcon(QStyle.SP_ArrowUp), '')
@@ -123,6 +123,8 @@ class HistoryWidget(QWidget):
 
         self.setLayout(vbox)
 
+        self.viewItems = []
+        
         self.clear()
 
     def contextMenuEvent(self, event):
@@ -156,6 +158,8 @@ class HistoryWidget(QWidget):
     def onClearFollowBtnClick(self):
         if self.selectionIndex < 0:
             return
+
+        #self.onRemoveHistoryFollow(self.selectionIndex)
         self.parent.removeHistoryFollow(self.selectionIndex)
         
     def onItemClicked(self, item, col):
@@ -163,11 +167,11 @@ class HistoryWidget(QWidget):
         self.positionSelSignal.emit(self.selectionIndex)
 
     def selectIndex(self, index, fireEvent = True):
-        if (self.selectionIndex == index) or (index < 0 ) or (index >= len(self.items)):
+        if (self.selectionIndex == index) or (index < 0 ) or (index >= len(self.viewItems)):
             return
         
         self.selectionIndex = index
-        item = self.items[self.selectionIndex]
+        item = self.viewItems[self.selectionIndex]
         self.positionView.setCurrentItem(item)
         
         if fireEvent:
@@ -184,11 +188,11 @@ class HistoryWidget(QWidget):
         self.selectIndex(0)
        
     def onLastBtnClick(self):
-        self.selectIndex(len(self.items) - 1)
+        self.selectIndex(len(self.viewItems) - 1)
        
     def onNextBtnClick(self):
         if (self.selectionIndex < 0) or \
-                (self.selectionIndex >= (len(self.items) -1)):
+                (self.selectionIndex >= (len(self.viewItems) -1)):
             return
 
         self.selectIndex(self.selectionIndex + 1)
@@ -243,28 +247,36 @@ class HistoryWidget(QWidget):
     def getCurrPosition(self):
         if self.selectionIndex < 0:
             return None
-        item = self.items[self.selectionIndex]
+        item = self.viewItems[self.selectionIndex]
         return item.data(1, Qt.UserRole)
         
     def onNewPostion(self, position):
         item = QTreeWidgetItem(self.positionView)
         item.setTextAlignment(2, Qt.AlignRight)
-        self.items.append(item)
+        self.viewItems.append(item)
         self.updatePositionItem(item, position)
         
         self.selectionIndex = position['index']
         self.positionView.setCurrentItem(item)
         
+    '''
     def onRemovePosition(self, position):
         root = self.positionView.invisibleRootItem()
-        it = self.items[-1]
+        it = self.viewItems[-1]
         index = it.data(0, Qt.UserRole)
         if index == position['index']:
-            item = self.items.pop(-1)
+            item = self.viewItems.pop(-1)
             root.removeChild(item)
+    '''
 
+    def onRemoveHistoryFollow(self, index):
+        root = self.positionView.invisibleRootItem()
+        while len(self.viewItems) > (index + 1): 
+            item = self.viewItems.pop(-1)    
+            root.removeChild(item)
+            
     def onUpdatePosition(self, position):
-        for it in self.items:
+        for it in self.viewItems:
             index = it.data(0, Qt.UserRole)
             if index == position['index']:
                 self.updatePositionItem(it, position)
@@ -318,12 +330,12 @@ class HistoryWidget(QWidget):
     
     def setShowScore(self, yes):
         self.isShowScore = yes
-        for it in self.items:
+        for it in self.viewItems:
             position = it.data(1, Qt.UserRole)
             self.updatePositionItem(it, position)
 
     def clear(self):
-        self.items = []
+        self.viewItems = []
         self.positionView.clear()
         self.selectionIndex = -1
 
@@ -373,6 +385,9 @@ class EngineWidget(QDockWidget):
         super().__init__("引擎", parent)    
         self.setObjectName("ChessEngine")
         
+        self.dockedWidget = QWidget(self)
+        self.setWidget(self.dockedWidget)
+        
         self.parent = parent
         self.engineManager = engineMgr
         self.gameMode = None
@@ -381,13 +396,8 @@ class EngineWidget(QDockWidget):
         self.MAX_MEM = 5000
         self.MAX_THREADS = os.cpu_count()
         
-        self.dockedWidget = QWidget(self)
-        self.setWidget(self.dockedWidget)
-        
         self.params = {}
         
-        self.params['EnginePath'] = self.parent.config['MainEngine']['engine_exec']
-        self.params['EngineType'] = self.parent.config['MainEngine']['engine_type'].lower()
         self.params['EngineRule'] = 'ChineseRule'
         self.params['EnginePonder'] = 'false'
 
@@ -545,75 +555,9 @@ class EngineWidget(QDockWidget):
     def onViewBranch(self):
         self.parent.onViewBranch()
 
-    def onEngineMoveInfo(self, fenInfo):
-        
-        if "moves" not in fenInfo:
-            return
-
-        iccs_str = ','.join(fenInfo["moves"])
-        fenInfo['iccs_str'] = iccs_str
-
-        fen = fenInfo['fen']
-        
-        ok, moves_text = getStepsTextFromFenMoves(fen, fenInfo["moves"])
-        if not ok:
-            #logging.warning(f'{fen}, moves {fenInfo["moves"]}')
-            return
-
-        fenInfo['move_text'] = ','.join(moves_text)
-
-        found = False
-        for i in range(self.positionView.topLevelItemCount()):
-            it = self.positionView.topLevelItem(i)
-            iccs_it = it.data(0, Qt.UserRole)
-            if iccs_str.find(iccs_it) == 0:  #新的步骤提示比已有的长
-                self.updateNode(it, fenInfo, True)
-                found = True
-                break
-            elif iccs_it.find(iccs_str) == 0:  #新的步骤提示比已有的短
-                self.updateNode(it, fenInfo, False)
-                found = True
-
-        if not found:
-            it = QTreeWidgetItem(self.positionView)
-            self.updateNode(it, fenInfo, True)
-
-        self.positionView.sortItems(0, Qt.DescendingOrder)  #Qt.AscendingOrder)
-
-    def updateNode(self, it, fenInfo, is_new_text=True):
-
-        if 'seldepth' in fenInfo:
-            depth = int(fenInfo['seldepth'])
-            it.setText(0, f'{depth:02d}')
-        
-        move_color = fenInfo['color']
-        mate = fenInfo.get('mate', None)
-        if mate is not None:
-            if mate == 0:
-                it.setText(1, '杀死')
-            else:
-                red_killer = True if move_color == cchess.RED else False
-                if mate < 0:
-                    red_killer = not red_killer
-                killer = '红优' if red_killer else '黑优'
-                    
-                it.setText(1, f'{killer}{mate}步杀')
-            
-        elif 'score' in fenInfo: 
-            score = fenInfo['score']
-            #换算到红方分
-            if move_color == cchess.BLACK:     
-                score = -score
-            it.setText(1, str(score))
-
-        if is_new_text and self.analysisBox.isChecked():
-            it.setText(2, fenInfo['move_text'])
-
-        it.setData(0, Qt.UserRole, fenInfo['iccs_str'])
-
     def onEngineReady(self, engine_id, name, engine_options):
-        
-        self.engineLabel.setText(name)        
+        self.setWindowTitle(f'引擎 {name}')
+        #self.engineLabel.setText(name)        
 
         self.engineManager.setOption('ScoreType','PawnValueNormalized')
         self.engineManager.setOption('Threads', self.params['EngineThreads'])
@@ -635,8 +579,8 @@ class EngineWidget(QDockWidget):
             return
 
         if self.gameMode == GameMode.Free:
-            self.redBox.setChecked(False)
-            self.blackBox.setChecked(False)
+            #self.redBox.setChecked(False)
+            #self.blackBox.setChecked(False)
             
             self.engineElo = self.params['EngineElo']
             self.engineGoDepth = self.params['EngineGoDepth']
@@ -645,8 +589,8 @@ class EngineWidget(QDockWidget):
             self.engineManager.setOption('MultiPV', self.params['EngineMultiPV'])
             
         elif self.gameMode == gameMode.Fight:
-            self.redBox.setChecked(False)
-            self.blackBox.setChecked(True)
+            #self.redBox.setChecked(False)
+            #self.blackBox.setChecked(True)
             self.analysisBox.setChecked(False)
             
             self.engineElo = self.params['EngineEloFight']
@@ -655,6 +599,17 @@ class EngineWidget(QDockWidget):
             self.engineManager.setOption('UCI_LimitStrength', True)
             self.engineManager.setOption('UCI_Elo', self.engineElo)
             self.engineManager.setOption('MultiPV', self.params['EngineMultiPV'])
+        
+        elif self.gameMode == gameMode.Online:
+            #self.redBox.setChecked(False)
+            #self.blackBox.setChecked(True)
+            self.analysisBox.setChecked(True)
+            
+            self.engineElo = self.params['EngineElo']
+            self.engineGoDepth = self.params['EngineGoDepth']
+            self.engineGoMoveTime = self.params['EngineGoMoveTime']
+            self.engineManager.setOption('UCI_LimitStrength', False)
+            self.engineManager.setOption('MultiPV', 1)
             
         elif self.gameMode == GameMode.EndGame:
             self.redBox.setChecked(False)
@@ -697,8 +652,10 @@ class EngineWidget(QDockWidget):
         self.analysisBox.setChecked(self.savedCheckState)
         
     def onConfigEngine(self):
-        #params = {} # self.engineManager.get_config()
 
+        self.params['EnginePath'] = self.parent.config['MainEngine']['engine_exec']
+        self.params['EngineType'] = self.parent.config['MainEngine']['engine_type']
+        
         dlg = EngineConfigDialog(self.parent)
         change_params = dlg.config(self.params)
         if len(change_params) > 0:
@@ -732,10 +689,80 @@ class EngineWidget(QDockWidget):
             red_checked = self.redBox.isChecked()
             if red_checked == black_checked:
                 self.redBox.setChecked(not black_checked)
+        elif self.gameMode in [GameMode.Free,]:
+            self.analysisBox.setChecked(True)
         
     def onAnalysisBoxChanged(self, state):
         self.parent.enginePlayColor(self.engineManager.id, 0, (Qt.CheckState(state) == Qt.Checked))
         
+    def onEngineMoveInfo(self, fenInfo):
+        
+        if "moves" not in fenInfo:
+            return
+
+        iccs_str = ','.join(fenInfo["moves"])
+        fenInfo['iccs_str'] = iccs_str
+
+        fen = fenInfo['fen']
+        
+        ok, moves_text = getStepsTextFromFenMoves(fen, fenInfo["moves"])
+        if not ok:
+            #logging.warning(f'{fen}, moves {fenInfo["moves"]}')
+            return
+
+        fenInfo['move_text'] = ','.join(moves_text)
+
+        found = False
+        for i in range(self.positionView.topLevelItemCount()):
+            it = self.positionView.topLevelItem(i)
+            iccs_it = it.data(0, Qt.UserRole)
+            if iccs_str.find(iccs_it) == 0:  #新的步骤提示比已有的长
+                self.updateNode(it, fenInfo, True)
+                found = True
+                break
+            elif iccs_it.find(iccs_str) == 0:  #新的步骤提示比已有的短
+                self.updateNode(it, fenInfo, False)
+                found = True
+
+        if not found:
+            it = QTreeWidgetItem(self.positionView)
+            self.updateNode(it, fenInfo, True)
+
+        self.positionView.sortItems(0, Qt.DescendingOrder)  #Qt.AscendingOrder)
+
+    def updateNode(self, it, fenInfo, is_new_text=True):
+
+        if 'seldepth' in fenInfo:
+            depth = int(fenInfo['seldepth'])
+            it.setText(0, f'{depth:02d}')
+        
+        #着法及分数显示只受analysisBox控制，这样在fight模式下也不会看到分数，减少分心        
+        if self.analysisBox.isChecked():
+            move_color = fenInfo['color']
+            mate = fenInfo.get('mate', None)
+            if mate is not None:
+                if mate == 0:
+                    it.setText(1, '杀死')
+                else:
+                    red_killer = True if move_color == cchess.RED else False
+                    if mate < 0:
+                        red_killer = not red_killer
+                    killer = '红优' if red_killer else '黑优'
+                        
+                    it.setText(1, f'{killer}{abs(mate)}步杀')
+                
+            elif 'score' in fenInfo: 
+                score = fenInfo['score']
+                #换算到红方分
+                if move_color == cchess.BLACK:     
+                    score = -score
+                it.setText(1, str(score))
+
+            if is_new_text:
+                it.setText(2, fenInfo['move_text'])
+
+        it.setData(0, Qt.UserRole, fenInfo['iccs_str'])
+
     def clear(self):
         self.positionView.clear()
 
