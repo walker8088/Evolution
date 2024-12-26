@@ -6,7 +6,7 @@ import uuid
 import traceback
 from enum import Enum, auto
 from dataclasses import dataclass
-from collections import OrderedDict
+from collections import OrderedDict #, namedturple
 
 import psutil
 import requests
@@ -44,6 +44,7 @@ class Position:
     move_color: int
     move: Move
 
+#Point = namedtuple('Point', ['x', 'y'])
 
 #-----------------------------------------------------#
 def scaleImage(img, scale):
@@ -89,13 +90,6 @@ def cv2pil_image(cv_img):
 
 def pil2cv_image(pil_img): 
     return cv.cvtColor(np.array(pil_img), cv.COLOR_RGB2BGR)
-
-#-----------------------------------------------------#
-def cv_to_image(img: np.ndarray) -> Image:
-    return Image.fromarray(cv.cvtColor(img, cv.COLOR_BGR2RGB))
-    
-def image_to_cv(img: Image) -> np.ndarray:
-    return cv.cvtColor(np.array(img), cv.COLOR_RGB2BGR)
 
 '''    
 #-----------------------------------------------------#

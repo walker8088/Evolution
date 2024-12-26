@@ -133,8 +133,9 @@ class HistoryWidget(QWidget):
 
         clearFollowAction = menu.addAction("删除后续着法")
         menu.addSeparator()
-        copyFenAction =  menu.addAction("复制(Fen)")
-        copyImageAction =  menu.addAction("复制(图片)")
+        copyFenAction =  menu.addAction("复制-FEN")
+        copyImageAction =  menu.addAction("复制-图片")
+        saveImageAction =  menu.addAction("保存图片到文件")
         menu.addSeparator()
         bookmarkPositionAction =  menu.addAction("收藏局面")
         bookmarkBookAction =  menu.addAction("收藏棋谱")
@@ -148,6 +149,9 @@ class HistoryWidget(QWidget):
             Globl.boardView.copyFenToClipboard()
         elif action == copyImageAction:
             Globl.boardView.copyImageToClipboard()
+        elif action == saveImageAction:
+            #Globl.boardView.copyImageToClipboard()
+            self.parent.saveImageToFile()
         elif action == bookmarkPositionAction:
             self.onAddBookmarkBtnClick()
         elif action == bookmarkBookAction:

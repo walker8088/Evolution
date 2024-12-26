@@ -47,7 +47,7 @@ class EngineManager(QObject):
             return True 
         else:
             return False
-
+            
     def setOption(self, name, value):
         
         if not self.isReady:

@@ -15,7 +15,7 @@ from configparser import ConfigParser
 #from PyQt5 import 
 from PyQt5.QtCore import Qt, pyqtSignal, QByteArray, QSettings, QUrl
 from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QApplication,QMainWindow, QStyle, QSizePolicy, QMessageBox, QWidget, QCheckBox, QRadioButton, \
+from PyQt5.QtWidgets import QApplication,QMainWindow, QStyle, QSizePolicy, QMessageBox, QWidget, QCheckBox, QRadioButton, QComboBox,\
                             QFileDialog, QButtonGroup, QActionGroup, QAction
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent,QAudioOutput
 
@@ -24,7 +24,7 @@ from cchess import ChessBoard, Game, EngineErrorException
 
 from .Version import release_version
 from .Resource import qt_resource_data
-from .Manager import EngineManager
+from .Engine import EngineManager
 
 from .Storage import EndBookStore
 from .CloudDB import CloudDB
@@ -39,7 +39,7 @@ from .Dialogs import PositionEditDialog, PositionHistDialog, ImageToBoardDialog,
 from .SnippingWidget import SnippingWidget
 from .Ecco import getBookEcco
 
-from .Online import * #OnlineDialog
+from .Online import OnlineManager, OnlineDialog
 
 from . import Globl
 
@@ -122,6 +122,9 @@ class MainWindow(QMainWindow):
         
         Globl.engineManager = EngineManager(self, id = 1)
         
+        self.onlineManager = OnlineManager(self)
+        self.onlineManager.load_schema_file(Path(gamePath, 'online.json'))
+
         self.board = ChessBoard()
         self.changePositionSignal.connect(self.onChangePosition)
 
@@ -129,6 +132,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.boardView)
         self.boardView.tryMoveSignal.connect(self.onTryBoardMove)
         self.boardView.rightMouseSignal.connect(self.onBoardRightMouse)
+
         #全局可访问
         Globl.boardView = self.boardView
 
@@ -194,6 +198,7 @@ class MainWindow(QMainWindow):
         ok = self.initEngine()
         if not ok:
             sys.exit(-1)
+        
 
         Globl.engineManager.start()
             
@@ -217,8 +222,6 @@ class MainWindow(QMainWindow):
         self.switchGameMode(GameMode.NoEngine)
         
         self.readSettingsAfterGameInit()
-
-        #splash.finish()
 
     #-----------------------------------------------------------------------
     #初始化
@@ -248,13 +251,13 @@ class MainWindow(QMainWindow):
         
     def initEngine(self):
         try:
-            engine_type = self.config['MainEngine']['engine_type'].lower()
-            engine_exec = Path(self.config['MainEngine']['engine_exec'])
+            self.engine_type = self.config['MainEngine']['engine_type'].lower()
+            self.engine_exec = Path(self.config['MainEngine']['engine_exec'])
         except Exception as e:
             QMessageBox.critical(self, f'{getTitle()}', f'配置文件[{self.config_file}]格式错误：{e}')
             return False
-        
-        ok = Globl.engineManager.loadEngine(engine_exec, engine_type)
+    
+        ok = Globl.engineManager.loadEngine(self.engine_exec, self.engine_type)
         if not ok:
             QMessageBox.critical(self, f'{getTitle()}', f'加载象棋引擎[{engine_exec.absolute()}]出错，请确认该程序能在您的电脑上正确运行。')
         
@@ -370,10 +373,10 @@ class MainWindow(QMainWindow):
 
         #模式未变
         if self.gameMode == gameMode:
-            if (self.gameMode == GameMode.Free) and self.isNeedSave:
-                steps = len(self.positionList) - 1
-                if self.getConfirm(f"当前棋谱已经走了 {steps} 步, 您确定要重新开始并清空棋谱吗?"):
-                    self.initGame(cchess.FULL_INIT_FEN)
+            #if (self.gameMode == GameMode.Free) and self.isNeedSave:
+            #    steps = len(self.positionList) - 1
+            #    if self.getConfirm(f"当前棋谱已经走了 {steps} 步, 您确定要重新开始并清空棋谱吗?"):
+            #        self.initGame(cchess.FULL_INIT_FEN)
             return
         
         logging.info(f"Switching to [{gameMode}]")
@@ -451,7 +454,7 @@ class MainWindow(QMainWindow):
             self.showBestBox.setChecked(True)
         
             self.openFileAct.setEnabled(False)
-            self.editBoardAct.setEnabled(False)
+            self.editBoardAct.setEnabled(True)
             
             self.initGame(cchess.FULL_INIT_FEN)
 
@@ -961,7 +964,8 @@ class MainWindow(QMainWindow):
         fen_engine = fen = position['fen']      
         if cchess.EMPTY_BOARD in fen:
             return 
-        
+
+        reload = False
         move_color = cchess.get_move_color(fen)
         if (self.engineRunColor[0] > 0) or (self.engineRunColor[move_color] > 0):
             #首行会没有move项
@@ -973,7 +977,13 @@ class MainWindow(QMainWindow):
                 self.isRunEngine = ok
             except EngineErrorException as e:
                 QMessageBox.critical(self, f'{getTitle()}', f'象棋引擎发送命令出错[{e}]，请重启引擎。')
+                reload = True
                 
+        if reload:
+            ok = Globl.engineManager.loadEngine(self.engine_exec, self.engine_type)
+            if not ok:
+                QMessageBox.critical(self, f'{getTitle()}', f'加载象棋引擎[{engine_exec.absolute()}]出错，请确认该程序能在您的电脑上正确运行。')
+                       
  
     #------------------------------------------------------------------------------
     #UI Events
@@ -1192,10 +1202,16 @@ class MainWindow(QMainWindow):
         marge_size = self.boardView.getMargeSize()
         new_x = self.pos().x() + (screen_width - win_rect.right() - 5) + marge_size[0]
         self.move(new_x, 0)
+
+        self.onlineSchemeCombo.clear()
+        names = self.onlineManager.get_schema_names()
+        print(names)
+        self.onlineSchemeCombo.addItems(names)
+        
         self.update()
         
     def onDoCapture(self):
-        dlg = OnlineDialog(self)
+        dlg = OnlineDialog(self, self.onlineManager)
         dlg.show()
         
     def onRestartGame(self):
@@ -1287,8 +1303,11 @@ class MainWindow(QMainWindow):
             self.bookmarkView.setFocus(Qt.TabFocusReason)
     
     def onCloudModeChanged(self, state):
-        self.setQueryCloud(self.queryCloudBox.isChecked())
-        
+        yes = self.queryCloudBox.isChecked()
+        self.setQueryCloud(yes)
+        if yes:
+            self.actionsView.show()
+            
     def onFlipBoardChanged(self, state):
         self.boardView.setFlipBoard(state)
 
@@ -1302,7 +1321,7 @@ class MainWindow(QMainWindow):
         self.historyView.inner.setShowScore((Qt.CheckState(state) == Qt.Checked))
 
     def onEditBoard(self):
-        dlg = PositionEditDialog(self)
+        dlg = PositionEditDialog(self, self.skin_folder)
         new_fen = dlg.edit(self.board.to_fen())
         if new_fen:
             self.initGame(new_fen)
@@ -1375,6 +1394,29 @@ class MainWindow(QMainWindow):
         self.saveToFile(fileName)
         self.lastOpenFolder = str(Path(fileName).parent)
         
+    def saveImageToFile(self):
+        
+        if not self.positionList:
+            return
+
+        fileNameDefault = f"{self.lastOpenFolder}\\{self.getDefaultGameName()}.jpg"
+       
+        options = QFileDialog.Options()
+        #options |= QFileDialog.DontUseNativeDialog
+
+        fileName, _ = QFileDialog.getSaveFileName(
+            self,
+            "保存局面图片文件",
+            fileNameDefault,
+            "图像文件(*.jpg)",
+            options=options)
+        
+        if not fileName:
+            return
+
+        if self.boardView.saveImageToFile(fileName):
+            self.lastOpenFolder = str(Path(fileName).parent)
+    
     def openFile(self, file_name):
         
         fileName = Path(file_name)
@@ -1464,14 +1506,20 @@ class MainWindow(QMainWindow):
             return True
 
         if skin in self.skins:
-            skin_folder = self.skins[skin]['Folder']
-            if self.boardView.fromSkinFolder(skin_folder):
+            self.skin_folder = self.skins[skin]['Folder']
+            if self.boardView.fromSkinFolder(self.skin_folder):
                 self.skins[skin]['action'].setChecked(True)
                 self.skin = skin
                 return True
                     
         return False            
-
+    
+    #------------------------------------------------------------------------------
+    #Online
+    def onOnlineSchemeChanged(self, index):
+        name = self.onlineSchemeCombo.currentText()
+        self.onlineManager.use_schema(name)
+        
     #------------------------------------------------------------------------------
     #Drag & Drop
     def dragEnterEvent(self, event):
@@ -1558,10 +1606,11 @@ class MainWindow(QMainWindow):
                                    self,
                                    statusTip="连线分析",
                                    triggered=self.onDoOnline)
+
         self.doCaptureAct = QAction(QIcon(':ImgRes/capture.png'),
-                                   "窗口截图",
+                                   "对弈窗口截图",
                                    self,
-                                   statusTip="截取对弈界面图形",
+                                   statusTip="截图对弈界面",
                                    triggered=self.onDoCapture)
 
         self.restartAct = QAction(QIcon(':ImgRes/restart.png'),
@@ -1688,7 +1737,6 @@ class MainWindow(QMainWindow):
         self.gameBar.addAction(self.doRobotAct)
         self.gameBar.addAction(self.doEndGameAct)
         self.gameBar.addAction(self.doOnlineAct)
-        self.gameBar.addAction(self.doCaptureAct)
             
         self.gameBar.addAction(self.restartAct)
         self.gameBar.addAction(self.editBoardAct)
@@ -1736,6 +1784,14 @@ class MainWindow(QMainWindow):
         self.showBar.addWidget(self.showBestBox)
         self.showBar.addWidget(self.showScoreBox)
         #self.showBar.addAction(self.quickStartAct)
+        
+        self.onlineBar = self.addToolBar("Online")
+        self.onlineBar.setObjectName("Online")
+        self.onlineSchemeCombo = QComboBox(self)
+        self.onlineSchemeCombo.currentIndexChanged.connect(self.onOnlineSchemeChanged)
+        self.onlineBar.addWidget(self.onlineSchemeCombo)
+        self.onlineBar.addAction(self.doCaptureAct)
+        
         self.sysBar = self.addToolBar("System")
         self.sysBar.setObjectName("System")
 
@@ -1814,7 +1870,12 @@ class MainWindow(QMainWindow):
         self.settings.setValue("windowState", self.saveState())
         
         self.settings.setValue("soundVolume", self.soundVolume)
-        self.settings.setValue("gameMode", self.gameMode)
+        
+        #在线模式不保存，下次启动后进入自由练棋模式
+        gameMode = self.gameMode
+        if gameMode == GameMode.Online:
+            gameMode = GameMode.Free
+        self.settings.setValue("gameMode", gameMode)
         
         self.settings.setValue("flip", self.flipBox.isChecked())
         self.settings.setValue("mirror", self.mirrorBox.isChecked())

@@ -52,12 +52,12 @@ class NumSlider(QWidget):
             
 #-----------------------------------------------------#
 class PositionEditDialog(QDialog):
-    def __init__(self, parent):
+    def __init__(self, parent, skinFolder = None):
         super().__init__(parent)
 
         self.setWindowTitle("局面编辑")
 
-        self.boardEdit = ChessBoardEditWidget()
+        self.boardEdit = ChessBoardEditWidget(self, skinFolder)
         self.redMoveBtn = QRadioButton("红方走", self)
         self.blackMoveBtn = QRadioButton("黑方走", self)
         self.fenLabel = QLabel()
@@ -112,8 +112,9 @@ class PositionEditDialog(QDialog):
         self.boardEdit.from_fen(cchess.FULL_INIT_FEN)
 
     def onClearBoard(self):
-        self.boardEdit.from_fen(cchess.EMPTY_FEN)
-
+        fen = '4k4/9/9/9/9/9/9/9/9/4K4 w'
+        self.boardEdit.from_fen(fen)
+        
     def onRedMoveBtnClicked(self):
         self.boardEdit.set_move_color(cchess.RED)
 
@@ -295,8 +296,8 @@ class ImageToBoardDialog(QDialog):
         hbox1.addWidget(self.blackMoveBtn, 0)
         hbox1.addWidget(QLabel(''), 1)
 
-        initBtn = QPushButton("初始棋盘", self)
-        clearBtn = QPushButton("清空棋盘", self)
+        initBtn = QPushButton("铺满", self)
+        clearBtn = QPushButton("清空", self)
         #openImgBtn = QPushButton("打开图片", self)
         initBtn.clicked.connect(self.onInitBoard)
         clearBtn.clicked.connect(self.onClearBoard)
@@ -330,13 +331,12 @@ class ImageToBoardDialog(QDialog):
         cancelBtn.clicked.connect(self.close)
     
     def onInitBoard(self):
-        #self.boardEdit.from_fen(cchess.FULL_INIT_FEN)
-        pass
-
+        self.boardEdit.from_fen(cchess.FULL_INIT_FEN)
+        
     def onClearBoard(self):
-        #self.boardEdit.from_fen(cchess.EMPTY_FEN)
-        pass
-
+        fen = '4k4/9/9/9/9/9/9/9/9/4K4 w'
+        self.boardEdit.from_fen(fen)
+        
     def onRedMoveBtnClicked(self):
         #self.boardEdit.set_move_color(cchess.RED)
         pass

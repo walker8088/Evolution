@@ -3,6 +3,7 @@
 import math
 from pathlib import Path
 from configparser import ConfigParser
+from dataclasses import dataclass
 
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QPoint, QSize, QRect
 from PyQt5.QtGui import QPixmap, QCursor, QPen, QColor, QPainter, QPolygon
@@ -11,7 +12,7 @@ from PyQt5.QtWidgets import qApp
 from PyQt5.QtSvg import QSvgRenderer
 
 import cchess
-from cchess import ChessBoard, iccs2pos
+from cchess import ChessBoard, Piece, iccs2pos
 
 from .Utils import TimerMessageBox, scaleImage, SvgToPixmap
 from .Resource import qt_resource_data
@@ -24,10 +25,23 @@ piece_names = ['rk', 'ra', 'rb', 'rr', 'rn', 'rc', 'rp', 'bk', 'ba', 'bb', 'br',
 piece_base = piece_names[0]
 
 #-----------------------------------------------------#
+def piece_name_to_fench(name):
+    if name[0] == 'r':
+        return name[1].upper()
+    else:
+        return name[1]
+
+def fench_to_piece_name(fench):
+    if fench.islower():
+        return f'b{fench}'
+    else:
+        return f'r{fench.lower()}'
+
+#-----------------------------------------------------#
 def arrowCalc(from_x, from_y, to_x, to_y): 
     
-    _arrow_height = 10
-    _arrow_width = 4
+    _arrow_height = 15
+    _arrow_width = 8
     
     dx = from_x - to_x
     dy = from_y - to_y
@@ -37,20 +51,23 @@ def arrowCalc(from_x, from_y, to_x, to_y):
     # normalize
     normX = dx / leng   
     normY = dy / leng
+
     # perpendicular vector
     perpX = -normY
     perpY = normX
     
-    leftX = to_x + _arrow_height * normX + _arrow_width * perpX
-    leftY = to_y + _arrow_height * normY + _arrow_width * perpY
+    leftX = int(to_x + _arrow_height * normX + _arrow_width * perpX)
+    leftY = int(to_y + _arrow_height * normY + _arrow_width * perpY)
 
-    rightX = to_x +_arrow_height * normX - _arrow_width * perpX
-    rightY = to_y + _arrow_height * normY - _arrow_width * perpY
+    rightX = int(to_x +_arrow_height * normX - _arrow_width * perpX)
+    rightY = int(to_y + _arrow_height * normY - _arrow_width * perpY)
     
     p_from = QPoint(from_x, from_y)
     p_to = QPoint(to_x, to_y)
+    p_left = QPoint(leftX, leftY)
+    p_right = QPoint(rightX, rightY)
 
-    return QPolygon([p_from, p_to, QPoint(int(leftX), int(leftY)), QPoint(int(rightX), int(rightY)), p_to])
+    return QPolygon([p_from, p_to, p_left, p_to, p_right, p_to])
 
 #-----------------------------------------------------#
 class ChessBoardBaseWidget(QWidget):
@@ -258,13 +275,20 @@ class ChessBoardBaseWidget(QWidget):
         clipboard = QApplication.clipboard()
         clipboard.clear()
         clipboard.setText(fen)
-
+    
+    def getImage(self):
+        return self.grab(self.getBoardRect())
+        
     def copyImageToClipboard(self):
-        pixmap = self.grab(self.getBoardRect())
+        pixmap = self.getImage()
         clipboard = QApplication.clipboard()
         clipboard.clear()
         clipboard.setPixmap(pixmap)
-
+    
+    def saveImageToFile(self, file_name):
+        pixmap = self.getImage()
+        pixmap.save(file_name)
+                
     def getBoardRect(self):
         return QRect(self.board_start_x, self.board_start_y, self.board_width, self.board_height)
 
@@ -287,7 +311,7 @@ class ChessBoardBaseWidget(QWidget):
     def getMargeSize(self):
         return (self.board_start_x*2, self.board_start_y*2)
 
-    def logic_to_board(self, x, y, bias = 0):
+    def board_to_view(self, x, y, bias = 0):
 
         if self.flip_board:
             x = 8 - x
@@ -301,7 +325,7 @@ class ChessBoardBaseWidget(QWidget):
 
         return (int(board_x + bias), int(board_y + bias))
 
-    def board_to_logic(self, bx, by):
+    def view_to_board(self, bx, by):
 
         x = (bx - self.border_x - self.board_start_x) // int(self.space_x)
         y = 9 - ((by - self.border_y - self.board_start_y) // int(self.space_y))
@@ -333,7 +357,7 @@ class ChessBoardBaseWidget(QWidget):
     def paintGrid(self, painter):
         for x in range(9):
             for y in range(10):
-                board_x, board_y = self.logic_to_board(x, y)   
+                board_x, board_y = self.board_to_view(x, y)   
                 painter.drawRect(board_x, board_y, self.space_x, self.space_y)        
                 
     def paintEvent(self, ev):
@@ -344,16 +368,15 @@ class ChessBoardBaseWidget(QWidget):
         #self.paintGrid(painter)
         
         for piece in self._board.get_pieces():
-            board_x, board_y = self.logic_to_board(piece.x, piece.y)
+            board_x, board_y = self.board_to_view(piece.x, piece.y)
 
             painter.drawPixmap(
                 QPoint(board_x, board_y), self.pieces_img[piece.get_color_fench()],
                 QRect(0, 0, self.piece_size - 1, self.piece_size - 1))
 
             if (piece.x, piece.y) == self.last_pickup:
-                painter.drawPixmap(
-                    QPoint(board_x, board_y), self.select_img,
-                    QRect(0, 0, self.select_img.width() - 1, self.select_img.height() - 1))
+                painter.drawPixmap(board_x, board_y, self.select_img)
+                    #QRect(0, 0, self.select_img.width() - 1, self.select_img.height() - 1))
 
     def showContextMenu(self, pos):
         pass
@@ -457,33 +480,28 @@ class ChessBoardWidget(ChessBoardBaseWidget):
 
         '''
         for move_it in self.last_pickup_moves:
-            board_x, board_y = self.logic_to_board(*move_it[1])
+            board_x, board_y = self.board_to_view(*move_it[1])
             painter.drawPixmap(
                 QPoint(board_x, board_y), self.point_img,
                 QRect(0, 0, self.piece_size - 1, self.piece_size - 1))
         '''
         
         for pos in  self.move_pieces:
-            board_x, board_y = self.logic_to_board(*pos)
-            painter.drawPixmap(
-                QPoint(board_x, board_y), self.step_img,
-                QRect(0, 0, self.step_img.width() - 1, self.step_img.height() - 1))
-    
+            board_x, board_y = self.board_to_view(*pos)
+            painter.drawPixmap(board_x, board_y, self.step_img)
+            
 
         if len(self.move_steps_show) > 0:
             piece, step_point = self.move_steps_show.pop(0)
-            painter.drawPixmap(
-                QPoint(step_point[0], step_point[1]),
-                self.pieces_img[piece.get_color_fench()],
-                QRect(0, 0, self.piece_size - 1, self.piece_size - 1))
-        
+            painter.drawPixmap(step_point[0], step_point[1], self.pieces_img[piece.get_color_fench()] )
+            
         if self.is_show_best_move:
             for p_from, p_to in self.best_moves: 
                 
                 r = self.space_x//2
                 
-                from_x, from_y = self.logic_to_board(*p_from,r)   
-                to_x, to_y = self.logic_to_board(*p_to, r)   
+                from_x, from_y = self.board_to_view(*p_from,r)   
+                to_x, to_y = self.board_to_view(*p_to, r)   
     
                 color = Qt.darkGreen
                 
@@ -493,8 +511,8 @@ class ChessBoardWidget(ChessBoardBaseWidget):
         
             for p_from, p_to in self.best_next_moves: 
                 r = int(self.space_x//2)
-                from_x, from_y = self.logic_to_board(*p_from,r)   
-                to_x, to_y = self.logic_to_board(*p_to, r)   
+                from_x, from_y = self.board_to_view(*p_from,r)   
+                to_x, to_y = self.board_to_view(*p_to, r)   
                 
                 color = Qt.darkGreen
                 
@@ -568,7 +586,7 @@ class ChessBoardWidget(ChessBoardBaseWidget):
             return
 
         pos = mouseEvent.pos()
-        key = x, y = self.board_to_logic(pos.x(), pos.y())
+        key = x, y = self.view_to_board(pos.x(), pos.y())
 
         #数据合法校验
         if key[0] < 0 or key[0] > 8:
@@ -605,8 +623,8 @@ class ChessBoardWidget(ChessBoardBaseWidget):
 
         move_man = self._board.get_piece(p_from)
 
-        board_p_from = self.logic_to_board(p_from[0], p_from[1])
-        board_p_to = self.logic_to_board(p_to[0], p_to[1])
+        board_p_from = self.board_to_view(p_from[0], p_from[1])
+        board_p_to = self.board_to_view(p_to[0], p_to[1])
 
         step = ((board_p_to[0] - board_p_from[0]) // step_diff,
                 (board_p_to[1] - board_p_from[1]) // step_diff)
@@ -647,45 +665,52 @@ class ChessBoardWidget(ChessBoardBaseWidget):
 
 
 #---------------------------------------------------------#
-class PiecesDialog(QDialog):
-    def __init__(self, parent):
-        super().__init__(parent)
+@dataclass
+class PieceFreeItem:
+    fench: str
+    count: int
+    rect: QRect
+    
 
-        self.setWindowTitle("局面编辑")
-        
-        hbox1 = QHBoxLayout()
-        hbox1.addWidget(self.redMoveBtn, 0)
-        hbox1.addWidget(self.blackMoveBtn, 0)
-        hbox1.addWidget(QLabel(''), 1)
-
-        vbox = QVBoxLayout()
-        vbox.addLayout(hbox1)
-
-        hbox = QHBoxLayout()
-        
-        vbox.addLayout(hbox)
-        self.setLayout(vbox)
-
-#---------------------------------------------------------#
 class ChessBoardEditWidget(ChessBoardBaseWidget):
     fenChangedSignal = pyqtSignal(str)
 
-    def __init__(self):
+    def __init__(self, parent, skinFolder = None):
 
         super().__init__(ChessBoard())
         
         self.last_selected = None
         self._new_pos = None
+        self.fromSkinFolder(skinFolder)
+
         self.fenChangedSignal.connect(self.onFenChanged)
+        
+        
+        self.selected_name = None
+        self.selected_pos = None
+        
+        self.pieces_off = {}
+        for name in piece_names:
+            self.pieces_off[name] = PieceFreeItem(piece_name_to_fench(name), 0, None)
+        
+        self.calc_free_pieces()
     
-    def selectPiecesDlg(self):
-        #dlg = QPoint()
-        pass
+    def calc_free_pieces(self):
 
-
+        for name, item in self.pieces_off.items():
+            
+            fench = piece_name_to_fench(name)
+            pos_list = self._board.get_fenchs(fench)
+            
+            #兵卒是五个，其他是两个
+            count = 5 if fench.lower() == 'p' else 2
+            if fench.lower() == 'k':
+                count = 1
+            item.count = count - len(pos_list)
+    
     def showContextMenu(self, pos):
 
-        x, y = self.board_to_logic(pos.x(), pos.y())
+        x, y = self.view_to_board(pos.x(), pos.y())
         
         if x < 0 or x > 8:
             return
@@ -713,83 +738,7 @@ class ChessBoardEditWidget(ChessBoardBaseWidget):
         if not self.last_selected:
             actionDel.setEnabled(False)
 
-        readMenu = self.contextMenu.addMenu('添加红方棋子')
-
-        actionAdd_RK = readMenu.addAction("帅")
-        if fen_str.count("K") > 0:
-            actionAdd_RK.setEnabled(False)
-
-        actionAdd_RA = readMenu.addAction("仕")
-        if fen_str.count("A") > 1:
-            actionAdd_RA.setEnabled(False)
-
-        actionAdd_RB = readMenu.addAction("相")
-        if fen_str.count("B") > 1:
-            actionAdd_RB.setEnabled(False)
-
-        actionAdd_RN = readMenu.addAction("马")
-        if fen_str.count("N") > 1:
-            actionAdd_RN.setEnabled(False)
-
-        actionAdd_RR = readMenu.addAction("车")
-        if fen_str.count("R") > 1:
-            actionAdd_RR.setEnabled(False)
-
-        actionAdd_RC = readMenu.addAction("炮")
-        if fen_str.count("C") > 1:
-            actionAdd_RC.setEnabled(False)
-
-        actionAdd_RP = readMenu.addAction("兵")
-        if fen_str.count("P") > 4:
-            actionAdd_RP.setEnabled(False)
-
-        blackMenu = self.contextMenu.addMenu('添加黑方棋子')
-
-        actionAdd_BK = blackMenu.addAction("将")
-        if fen_str.count("k") > 0:
-            actionAdd_BK.setEnabled(False)
-
-        actionAdd_BA = blackMenu.addAction("士")
-        if fen_str.count("a") > 1:
-            actionAdd_BA.setEnabled(False)
-
-        actionAdd_BB = blackMenu.addAction("象")
-        if fen_str.count("b") > 1:
-            actionAdd_BB.setEnabled(False)
-
-        actionAdd_BN = blackMenu.addAction("马")
-        if fen_str.count("n") > 1:
-            actionAdd_BN.setEnabled(False)
-
-        actionAdd_BR = blackMenu.addAction("车")
-        if fen_str.count("r") > 1:
-            actionAdd_BR.setEnabled(False)
-
-        actionAdd_BC = blackMenu.addAction("炮")
-        if fen_str.count("c") > 1:
-            actionAdd_BC.setEnabled(False)
-
-        actionAdd_BP = blackMenu.addAction("卒")
-        if fen_str.count("p") > 4:
-            actionAdd_BP.setEnabled(False)
-
         actionDel.triggered.connect(self.onActionDel)
-
-        actionAdd_RK.triggered.connect(self.onActionAdd_RK)
-        actionAdd_RA.triggered.connect(self.onActionAdd_RA)
-        actionAdd_RB.triggered.connect(self.onActionAdd_RB)
-        actionAdd_RN.triggered.connect(self.onActionAdd_RN)
-        actionAdd_RR.triggered.connect(self.onActionAdd_RR)
-        actionAdd_RC.triggered.connect(self.onActionAdd_RC)
-        actionAdd_RP.triggered.connect(self.onActionAdd_RP)
-
-        actionAdd_BK.triggered.connect(self.onActionAdd_BK)
-        actionAdd_BA.triggered.connect(self.onActionAdd_BA)
-        actionAdd_BB.triggered.connect(self.onActionAdd_BB)
-        actionAdd_BN.triggered.connect(self.onActionAdd_BN)
-        actionAdd_BR.triggered.connect(self.onActionAdd_BR)
-        actionAdd_BC.triggered.connect(self.onActionAdd_BC)
-        actionAdd_BP.triggered.connect(self.onActionAdd_BP)
 
         self.contextMenu.move(QCursor.pos())
         self.contextMenu.show()
@@ -808,49 +757,7 @@ class ChessBoardEditWidget(ChessBoardBaseWidget):
             self.removePiece(self.last_selected)
             self.last_selected = None
             self.update()
-
-    def onActionAdd_RK(self):
-        self.onActionAddPiece('K')
-
-    def onActionAdd_BK(self):
-        self.onActionAddPiece('k')
-
-    def onActionAdd_RA(self):
-        self.onActionAddPiece('A')
-
-    def onActionAdd_BA(self):
-        self.onActionAddPiece('a')
-
-    def onActionAdd_RB(self):
-        self.onActionAddPiece('B')
-
-    def onActionAdd_BB(self):
-        self.onActionAddPiece('b')
-
-    def onActionAdd_RN(self):
-        self.onActionAddPiece('N')
-
-    def onActionAdd_BN(self):
-        self.onActionAddPiece('n')
-
-    def onActionAdd_RR(self):
-        self.onActionAddPiece('R')
-
-    def onActionAdd_BR(self):
-        self.onActionAddPiece('r')
-
-    def onActionAdd_RC(self):
-        self.onActionAddPiece('C')
-
-    def onActionAdd_BC(self):
-        self.onActionAddPiece('c')
-
-    def onActionAdd_RP(self):
-        self.onActionAddPiece('P')
-
-    def onActionAdd_BP(self):
-        self.onActionAddPiece('p')
-
+            
     def onActionAddPiece(self, fench):
 
         if not self._new_pos:
@@ -863,8 +770,15 @@ class ChessBoardEditWidget(ChessBoardBaseWidget):
 
     def from_fen(self, fen):
         super().from_fen(fen)
+        self.calc_free_pieces()
         self.fenChangedSignal.emit(self.to_fen())
     
+    def is_king(self, pos):
+        fench = self._board.get_fench(pos)
+        if not fench:
+            return False 
+        return fench.lower() == 'k'
+
     def set_move_color(self, color):
         self._board.set_move_color(color)
         self.fenChangedSignal.emit(self.to_fen())
@@ -874,31 +788,115 @@ class ChessBoardEditWidget(ChessBoardBaseWidget):
 
     def newPiece(self, fench, pos):
         self._board.put_fench(fench, pos)
+        self.calc_free_pieces()
         self.fenChangedSignal.emit(self.to_fen())
 
     def removePiece(self, pos):
-        self._board.remove_fench(pos)
+        self._board.pop_fench(pos)
+        self.calc_free_pieces()
         self.fenChangedSignal.emit(self.to_fen())
     
     def onFenChanged(self, fen):
         self.update()
-        
+    
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+
+        self.piece_off_pos = [(self.board_start_x - self.piece_size - 20,  self.board_start_y), 
+                              (self.board_start_x + self.board_width + 20, self.board_start_y),
+                              ]
+
+        for index, name in enumerate(piece_names):
+            
+            col_index  = index // 7       
+            pos_x = self.piece_off_pos[col_index][0] 
+            pos_y = self.piece_off_pos[col_index][1] + int(self.piece_size * 1.2 * ((index % 7)+1)) 
+            
+            item =  self.pieces_off[name]
+            item.rect = QRect(pos_x, pos_y, self.piece_size, self.piece_size)
+                      
     def paintEvent(self, ev):
         super().paintEvent(ev)
-        #painter = QPainter(self)
-
+        painter = QPainter(self)
+        
+        #painter.drawPixmap(self.board_start_x, self.board_start_y, self._board_img)
+        
+        for name, item in self.pieces_off.items():    
+            img = self.pieces_img[name]
+            rect = item.rect
+            if item.count > 0:    
+                painter.drawPixmap(rect.x(), rect.y(), img) 
+        
+        if self.selected_name:
+            sel_img = self.pieces_img[self.selected_name]
+            pos = self.selected_pos
+            painter.drawPixmap(pos.x(), pos.y(), sel_img) 
+        
     def mousePressEvent(self, mouseEvent):
+        
         if (mouseEvent.button() != Qt.LeftButton):
             return
+        
+        #print('mousePressEvent', self.selected_name)
 
         pos = mouseEvent.pos()
+        
+        #先处理自由棋子选择
+        for name, free_item in self.pieces_off.items():    
+            if free_item.rect.contains(pos) and free_item.count > 0:
+                self.selected_name = name
+                self.last_pickup = None
+                break
 
-        x, y = self.board_to_logic(pos.x(), pos.y())
+        key = x, y = self.view_to_board(pos.x(), pos.y())
+
+        #点击在棋盘上
+        if (0 <= x <= 8) and (0 <= y <= 9):
+            if not self.selected_name:
+                fench = self._board.pop_fench(key)
+                if fench:
+                    self.selected_name = fench_to_piece_name(fench)
+                    self.last_pickup = key
+                    
+        if self.selected_name:
+            self.selected_pos = QPoint(pos.x()-self.piece_size//2, pos.y()-self.piece_size//2)
+                                
         self.update()
 
     def mouseMoveEvent(self, mouseEvent):
-        pass
+        
+        if not self.selected_name:
+            return
+        
+        pos = mouseEvent.pos()
+        self.selected_pos = QPoint(pos.x() - self.piece_size//2, pos.y() - self.piece_size//2)
+        self.update()
 
     def mouseReleaseEvent(self, mouseEvent):
-        pass
+        
+        #print('mouseReleaseEvent', self.selected_name)
+
+        if not self.selected_name:
+            return
+        
+        free_item = self.pieces_off[self.selected_name]
+        
+        pos = mouseEvent.pos()
+        key = x, y = self.view_to_board(pos.x(), pos.y())
+        
+        if (0 <= x <= 8) and (0 <= y <= 9):
+            piece = Piece.create(self._board, free_item.fench, key)
+            if piece.is_valid_pos(key):
+                self._board.put_fench(free_item.fench, key)
+            elif self.last_pickup:
+                self._board.put_fench(free_item.fench, self.last_pickup)
+            
+        self.last_pickup = None     
+        self.selected_name = None
+        self.calc_free_pieces()
+        
+        self.update()
+
+    def sizeHint(self):
+        return QSize(int(self.base_board_width / 9 * 11) + 50, self.base_board_height + 10)
 
