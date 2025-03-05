@@ -27,7 +27,7 @@ from .Resource import qt_resource_data
 from .Engine import EngineManager
 
 from .Storage import EndBookStore
-from .CloudDB import CloudDB
+from .CloudDB import CloudDB, MyScoreDB
 from .LocalDB import OpenBookYfk, OpenBookPF, MasterBook, LocalBook
 
 from .Utils import GameMode, ReviewMode, TimerMessageBox, getTitle, getStepsFromFenMoves, trim_fen
@@ -99,21 +99,6 @@ class MainWindow(QMainWindow):
         #self.openBook = MasterBook()
         #self.openBook.open(Path('Game', 'openbook.edb'))
         
-        book_file = Path('Game', 'openbook.yfk')
-        if book_file.is_file():
-            self.openBook = OpenBookYfk()
-            self.openBook.open(book_file)
-            logging.info(f'加载开局库：{book_file}')
-        else:
-            book_file = Path('Game', 'openbook.pfbook')
-            if book_file.is_file():
-                self.openBook = OpenBookPF()
-                self.openBook.open(book_file)
-                logging.info(f'加载开局库：{book_file}')
-            else:
-                self.openBook = OpenBookPF()
-                logging.info('无开局库')
-
         Globl.endbookStore = EndBookStore(Path(gamePath, 'endbooks.json'))
         #Globl.localbookStore = LocalBookStore(Path(gamePath, 'localbooks.json'))
        
@@ -203,24 +188,16 @@ class MainWindow(QMainWindow):
         Globl.engineManager.start()
             
         self.readSettingsBeforeGameInit()
-        
-        '''
-        if self.openBookFile.is_file():
-            if not self.openBook.open(self.openBookFile):
-                msgbox = TimerMessageBox(f"打开开局库文件【{self.openBookFile}】出错, 请重新配置开局库。")
-                msgbox.exec()
-        else:
-            msgbox = TimerMessageBox(f"开局库文件【{self.openBookFile}】不存在, 请重新配置开局库。")
-            msgbox.exec()
-        '''
-
+        self.loadOpenBook(self.openBookFile)
+    
         #self.quickBooks = self.loadQuickBook(Path('Game', 'quick_book.txt'))
         #self.bookmarkView.addQuickBooks(self.quickBooks)
+
+        #self.cloudQuery = MyScoreDB(self) #CloudDB(self)
         self.cloudQuery = CloudDB(self)
         self.cloudQuery.query_result_signal.connect(self.onCloudQueryResult)
-        
+
         self.switchGameMode(GameMode.NoEngine)
-        
         self.readSettingsAfterGameInit()
 
     #-----------------------------------------------------------------------
@@ -279,10 +256,25 @@ class MainWindow(QMainWindow):
         '''
 
     def loadOpenBook(self, file_name):
-        self.openBook.close()
-        if self.openBook.open(file_name):
-            self.openBookFile = Path(file_name)
-   
+        
+        if not file_name.is_file():
+            return 
+        
+        ext = file_name.suffix.lower()
+        if ext == '.yfk':
+            self.openBook = OpenBookYfk()
+            self.openBook.open(file_name)
+            logging.info(f'加载开局库：{file_name}')
+            self.openBookFile = file_name
+        elif ext == '.pfbook':
+            self.openBook = OpenBookPF()
+            self.openBook.open(file_name)
+            self.openBookFile = file_name
+            logging.info(f'加载开局库：{file_name}')
+        else:
+            self.openBook = OpenBookPF()
+            logging.info('无开局库')
+
     def loadSkins(self):
         
         skins = {}
@@ -394,7 +386,7 @@ class MainWindow(QMainWindow):
             self.endBookView.hide()
             self.actionsView.show()
             
-            self.queryCloudBox.setChecked(True)
+            #self.queryCloudBox.setChecked(True)
             self.showBestBox.setChecked(True)
             self.showScoreBox.setChecked(True)
             
@@ -544,7 +536,8 @@ class MainWindow(QMainWindow):
                 ecco = getBookEcco(self.positionList)
                 eccos = '-'.join(ecco[1:])
                 self.positionList[0]['ecco'] = eccos
-                self.updateTitle(eccos)  
+            
+            self.updateTitle(eccos)  
             
     def onMoveGo(self, move_iccs, quickMode = False): #, score = None):
         
@@ -689,6 +682,8 @@ class MainWindow(QMainWindow):
 
         #本着法的其他更好的招法    
         for act in actions.values():
+            if 'score' not in act:
+                continue
             new_fen = act['new_fen']
 
             info = { 'score': act['score'], 'diff':act['diff'] }
@@ -772,7 +767,10 @@ class MainWindow(QMainWindow):
                 f_act.update(l_act)
             else:
                 final_actions[iccs] = l_act
-            
+
+        for iccs, o_act in openbook_actions.items():
+            o_act['score'] = ''
+
         '''        
         #更新分数 
         for act in final_actions.values():
@@ -869,7 +867,12 @@ class MainWindow(QMainWindow):
         logging.info(f'Engine[{engine_id}] BestMove {iccs}' )
         
         if (not self.isQueryCloud) or (self.reviewMode == ReviewMode.ByEngine):
-            self.updateFenCache(fenInfo)
+            try:
+                self.updateFenCache(fenInfo)
+            except Exception as e:
+                logging.error(f'updateFenCache error {e}')
+                logging.error(f'{fenInfo}')
+                return
 
         if self.reviewMode == ReviewMode.ByEngine:
             self.onReviewGameStep()
@@ -976,7 +979,7 @@ class MainWindow(QMainWindow):
                 ok = Globl.engineManager.goFrom(fen_engine, fen, params)
                 self.isRunEngine = ok
             except EngineErrorException as e:
-                QMessageBox.critical(self, f'{getTitle()}', f'象棋引擎发送命令出错[{e}]，请重启引擎。')
+                QMessageBox.critical(self, f'{getTitle()}', f'象棋引擎发送命令出错[{e}]，自动重启引擎。')
                 reload = True
                 
         if reload:
@@ -1076,6 +1079,15 @@ class MainWindow(QMainWindow):
         self.currPosition = self.positionList[move_index]  
         self.changePositionSignal.emit(False)
     
+    def copyEngineFenToClipboard(self):
+        
+        if (not self.currPosition) or ('move' not in self.currPosition): 
+            return
+    
+        fen_engine = self.currPosition['move'].to_engine_fen()         
+        clipboard = QApplication.clipboard()
+        clipboard.clear()
+        clipboard.setText(fen_engine)
     
     #-------------------------------------------------------------------        
     #Game Review 
@@ -1161,18 +1173,15 @@ class MainWindow(QMainWindow):
         if self.currPosition:
             self.localSearch(self.currPosition)
 
-        if not self.isQueryCloud:
-            self.historyView.inner.reviewByEngineBtn.setEnabled(True)
-            self.historyView.inner.reviewByCloudBtn.setEnabled(False)
-            #self.engineView.analysisBox.setChecked(True)
-
-        else:
+        if self.isQueryCloud:
             self.historyView.inner.reviewByEngineBtn.setEnabled(False)
             self.historyView.inner.reviewByCloudBtn.setEnabled(True)
-            #self.engineView.analysisBox.setChecked(False)
             if self.currPosition:
                 self.cloudQuery.startQuery(self.currPosition)
-
+        else:
+            self.historyView.inner.reviewByEngineBtn.setEnabled(True)
+            self.historyView.inner.reviewByCloudBtn.setEnabled(False)
+                
     #------------------------------------------------------------------------------
     #UI Event Handler
     def onDoFreeGame(self):
@@ -1189,7 +1198,11 @@ class MainWindow(QMainWindow):
         self.switchGameMode(GameMode.EndGame)
 
     def onDoOnline(self):
-
+        if (self.gameMode != GameMode.EndGame) and self.isNeedSave:
+            steps = len(self.positionList) - 1
+            if not self.getConfirm(f"当前棋谱已经走了 {steps} 步, 您确定要切换到 [残局挑战] 模式并丢弃当前棋谱吗?"):
+                return
+        
         self.switchGameMode(GameMode.Online)
         self.update()
 
@@ -1203,19 +1216,18 @@ class MainWindow(QMainWindow):
         new_x = self.pos().x() + (screen_width - win_rect.right() - 5) + marge_size[0]
         self.move(new_x, 0)
 
-        self.onlineSchemeCombo.clear()
-        names = self.onlineManager.get_schema_names()
-        print(names)
-        self.onlineSchemeCombo.addItems(names)
-        
+        #self.onlineSchemeCombo.clear()
+        #names = self.onlineManager.get_schema_names()
+        #self.onlineSchemeCombo.addItems(names)
+
         self.update()
-        
+        #self.onDoCapture()
+
     def onDoCapture(self):
         dlg = OnlineDialog(self, self.onlineManager)
         dlg.show()
         
     def onRestartGame(self):
-
         if (self.gameMode in [GameMode.Free, GameMode.Fight]) and self.isNeedSave:
             steps = len(self.positionList) - 1
             if not self.getConfirm(f"当前棋谱已经走了 {steps} 步, 您确定要从新开始吗?"):
@@ -1487,7 +1499,7 @@ class MainWindow(QMainWindow):
         #options |= QFileDialog.DontUseNativeDialog
 
         fileName, _ = QFileDialog.getOpenFileName(
-            self, "打开文件", "", "YFK格式开局库(*.yfk);;所有文件(*.*)", options=options)
+            self, "打开文件", '', "YFK格式开局库(*.yfk);;pfBook格式开局库(*.pfBook);;所有文件(*.*)", options=options)
 
         if not fileName:
             return
@@ -1566,7 +1578,7 @@ class MainWindow(QMainWindow):
                                     QStyle.SP_DialogOpenButton),
                                    "开局库选择",
                                    self,
-                                   statusTip="选择开局库文件（yfk格式）",
+                                   statusTip="选择开局库文件",
                                    triggered=self.onUseOpenBookFile)
 
         self.saveFileAct = QAction(self.style().standardIcon(
@@ -1674,10 +1686,9 @@ class MainWindow(QMainWindow):
         self.fileMenu.addAction(self.openFileAct)
         self.fileMenu.addAction(self.saveFileAct)
         self.fileMenu.addSeparator()
+        self.fileMenu.addAction(self.useOpenBookAct)
         self.fileMenu.addAction(self.openEndGameFileAct)
         self.fileMenu.addSeparator()
-
-        #self.fileMenu.addAction(self.useOpenBookAct)
         #self.fileMenu.addSeparator()
         self.fileMenu.addAction(self.exitAct)
 
@@ -1759,7 +1770,7 @@ class MainWindow(QMainWindow):
         self.queryCloudBox.setIcon(QIcon(':ImgRes/cloud.png'))
         self.queryCloudBox.setToolTip('搜索云库着法')
         self.queryCloudBox.toggled.connect(self.onCloudModeChanged)
-
+        
         self.showBestBox = QCheckBox('最佳提示')  #"最佳提示")
         self.showBestBox.setIcon(QIcon(':ImgRes/info.png'))
         self.showBestBox.setChecked(True)
@@ -1787,10 +1798,10 @@ class MainWindow(QMainWindow):
         
         self.onlineBar = self.addToolBar("Online")
         self.onlineBar.setObjectName("Online")
+        self.onlineBar.addAction(self.doCaptureAct)
         self.onlineSchemeCombo = QComboBox(self)
         self.onlineSchemeCombo.currentIndexChanged.connect(self.onOnlineSchemeChanged)
         self.onlineBar.addWidget(self.onlineSchemeCombo)
-        self.onlineBar.addAction(self.doCaptureAct)
         
         self.sysBar = self.addToolBar("System")
         self.sysBar.setObjectName("System")
@@ -1847,10 +1858,9 @@ class MainWindow(QMainWindow):
                     
         self.savedGameMode = self.settings.value("gameMode", GameMode.Free)
         
-        #self.openBookFile = Path(self.settings.value("openBookFile", str(Path('game','openbook.yfk'))))
+        self.openBookFile = Path(self.settings.value("openBookFile", str(Path('game','openbook.yfk'))))
         self.lastOpenFolder = self.settings.value("lastOpenFolder", '')
         
-
         self.endBookView.readSettings(self.settings)
         
     def readSettingsAfterGameInit(self):
@@ -1885,7 +1895,7 @@ class MainWindow(QMainWindow):
         self.settings.setValue("cloudMode", self.queryCloudBox.isChecked())
         #self.settings.setValue("engineMode", self.engineModeBtn.isChecked())
         
-        #self.settings.setValue("openBookFile", self.openBookFile)
+        self.settings.setValue("openBookFile", str(self.openBookFile))
         self.settings.setValue("lastOpenFolder", self.lastOpenFolder)
         self.settings.setValue("boardSkin", self.skin)
         

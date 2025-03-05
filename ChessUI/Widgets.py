@@ -91,6 +91,7 @@ class HistoryWidget(QWidget):
         
 
         self.reviewByCloudBtn = QPushButton("云库复盘")
+        self.reviewByCloudBtn.setEnabled(False)
         self.reviewByEngineBtn = QPushButton("引擎复盘")
         
         self.addBookmarkBtn = QPushButton("收藏局面")
@@ -134,6 +135,7 @@ class HistoryWidget(QWidget):
         clearFollowAction = menu.addAction("删除后续着法")
         menu.addSeparator()
         copyFenAction =  menu.addAction("复制-FEN")
+        copyEngineFenAction =  menu.addAction("复制-引擎FEN")
         copyImageAction =  menu.addAction("复制-图片")
         saveImageAction =  menu.addAction("保存图片到文件")
         menu.addSeparator()
@@ -147,6 +149,8 @@ class HistoryWidget(QWidget):
             self.onClearFollowBtnClick()
         elif action == copyFenAction:
             Globl.boardView.copyFenToClipboard()
+        elif action == copyEngineFenAction:
+            self.parent.copyEngineFenToClipboard()
         elif action == copyImageAction:
             Globl.boardView.copyImageToClipboard()
         elif action == saveImageAction:
@@ -458,7 +462,13 @@ class EngineWidget(QDockWidget):
         self.skillLevelSpin.setValue(20)
         self.skillLevelSpin.valueChanged.connect(self.onSkillLevelChanged)
         '''
-        
+
+        self.multiPVSpin = QSpinBox()
+        self.multiPVSpin.setSingleStep(1)
+        self.multiPVSpin.setRange(1, 10)
+        self.multiPVSpin.setValue(1)
+        self.multiPVSpin.valueChanged.connect(self.onMultiPVChanged)
+
         self.redBox = QCheckBox("执红")
         self.blackBox = QCheckBox("执黑")
         self.analysisBox = QCheckBox("局面分析")
@@ -482,10 +492,9 @@ class EngineWidget(QDockWidget):
         '''
         #hbox.addWidget(QLabel(' 线程:'), 0)
         #hbox.addWidget(self.threadsSpin, 0)
-        #hbox.addWidget(QLabel(' 存储(MB):'), 0)
-        #hbox.addWidget(self.memorySpin, 0)
-        #hbox.addWidget(QLabel('MB  分支:'), 0)
-        #hbox.addWidget(self.multiPVSpin, 0)
+        
+        hbox.addWidget(QLabel('分支:'), 0)
+        hbox.addWidget(self.multiPVSpin, 0)
         
         hbox.addWidget(QLabel('   '), 0)
         hbox.addWidget(self.redBox, 0)
@@ -500,10 +509,12 @@ class EngineWidget(QDockWidget):
 
         self.positionView = QTreeWidget()
         self.positionView.setColumnCount(1)
-        self.positionView.setHeaderLabels(["深度", "红优分", "着法"])
+        self.positionView.setHeaderLabels(["深度", "分支", "红优分", "着法", "后续"])
         self.positionView.setColumnWidth(0, 80)
-        self.positionView.setColumnWidth(1, 100)
-        self.positionView.setColumnWidth(2, 380)
+        self.positionView.setColumnWidth(1, 40)
+        self.positionView.setColumnWidth(2, 70)
+        self.positionView.setColumnWidth(3, 220)
+        self.positionView.setColumnWidth(4, 380)
 
         vbox.addWidget(self.positionView)
 
@@ -673,7 +684,11 @@ class EngineWidget(QDockWidget):
                 self.engineManager.setOption('Ponder', self.params['EnginePonder'])
      
             self.onSwitchGameMode(self.gameMode)
-            
+    
+    def onMultiPVChanged(self, state):
+        v = self.multiPVSpin.value()
+        self.engineManager.setOption('MultiPV', v)
+
     def onRedBoxChanged(self, state):
         
         red_checked = self.redBox.isChecked()
@@ -704,8 +719,8 @@ class EngineWidget(QDockWidget):
         if "moves" not in fenInfo:
             return
 
-        iccs_str = ','.join(fenInfo["moves"])
-        fenInfo['iccs_str'] = iccs_str
+        #iccs_str = ','.join(fenInfo["moves"])
+        #fenInfo['iccs_str'] = iccs_str
 
         fen = fenInfo['fen']
         
@@ -714,58 +729,59 @@ class EngineWidget(QDockWidget):
             #logging.warning(f'{fen}, moves {fenInfo["moves"]}')
             return
 
-        fenInfo['move_text'] = ','.join(moves_text)
+        fenInfo['move_1'] = ','.join(moves_text[:2])
+        fenInfo['move_2'] = ','.join(moves_text[2:])
 
+        pv_index = fenInfo['multipv']
         found = False
         for i in range(self.positionView.topLevelItemCount()):
             it = self.positionView.topLevelItem(i)
-            iccs_it = it.data(0, Qt.UserRole)
-            if iccs_str.find(iccs_it) == 0:  #新的步骤提示比已有的长
-                self.updateNode(it, fenInfo, True)
+            it_pv = it.data(0, Qt.UserRole)
+            if pv_index == it_pv:
                 found = True
-                break
-            elif iccs_it.find(iccs_str) == 0:  #新的步骤提示比已有的短
-                self.updateNode(it, fenInfo, False)
-                found = True
-
+                break    
         if not found:
             it = QTreeWidgetItem(self.positionView)
-            self.updateNode(it, fenInfo, True)
-
-        self.positionView.sortItems(0, Qt.DescendingOrder)  #Qt.AscendingOrder)
-
-    def updateNode(self, it, fenInfo, is_new_text=True):
-
-        if 'seldepth' in fenInfo:
-            depth = int(fenInfo['seldepth'])
-            it.setText(0, f'{depth:02d}')
         
+        self.updateNode(it, fenInfo)
+        self.positionView.sortItems(1, Qt.AscendingOrder)
+        
+    def updateNode(self, it, fenInfo):
+
+        depth = int(fenInfo['depth'])
+        it.setText(0, f'{depth:02d}')
+        pv_index = fenInfo['multipv']
+        it.setText(1, str(pv_index))
+        it.setData(0, Qt.UserRole, pv_index)
+        
+        #print(depth, pv_index, fenInfo['move_text'])
+
         #着法及分数显示只受analysisBox控制，这样在fight模式下也不会看到分数，减少分心        
         if self.analysisBox.isChecked():
             move_color = fenInfo['color']
             mate = fenInfo.get('mate', None)
             if mate is not None:
                 if mate == 0:
-                    it.setText(1, '杀死')
+                    it.setText(2, '杀死')
                 else:
                     red_killer = True if move_color == cchess.RED else False
                     if mate < 0:
                         red_killer = not red_killer
                     killer = '红优' if red_killer else '黑优'
                         
-                    it.setText(1, f'{killer}{abs(mate)}步杀')
+                    it.setText(2, f'{killer}{abs(mate)}步杀')
                 
-            elif 'score' in fenInfo: 
+            else: 
                 score = fenInfo['score']
                 #换算到红方分
                 if move_color == cchess.BLACK:     
                     score = -score
-                it.setText(1, str(score))
+                it.setText(2, str(score))
 
-            if is_new_text:
-                it.setText(2, fenInfo['move_text'])
+            it.setText(3, fenInfo['move_1'])
+            it.setText(4, fenInfo['move_2'])
 
-        it.setData(0, Qt.UserRole, fenInfo['iccs_str'])
+        #it.setData(0, Qt.UserRole, fenInfo['iccs_str'])
 
     def clear(self):
         self.positionView.clear()

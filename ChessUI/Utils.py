@@ -6,7 +6,7 @@ import uuid
 import traceback
 from enum import Enum, auto
 from dataclasses import dataclass
-from collections import OrderedDict #, namedturple
+from collections import OrderedDict, namedtuple
 
 import psutil
 import requests

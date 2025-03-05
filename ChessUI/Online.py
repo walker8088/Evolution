@@ -10,7 +10,7 @@ import cv2 as cv
 import numpy as np
 
 from PIL import Image, ImageDraw, ImageOps, ImageGrab
-from PIL.ImageQt import ImageQt
+#from PIL.ImageQt import ImageQt
 
 from PyQt5 import *
 from PyQt5.QtCore import *
@@ -212,6 +212,15 @@ class ScreenSource():
         mouse.move(coords=(0, 0))
         
     def grab(self):
+        
+        if not self.title:
+            return None
+
+        windows = gw.getWindowsWithTitle(self.title)
+        if len(windows) == 0:
+            return None
+        
+        self.win = windows[0]
         self.win.activate()
         
         box = self.win.box
@@ -398,14 +407,17 @@ class OnlineManager(QObject):
         
         return True
 
-    def match_board(self, board):
+    def match_board(self, board, is_flip = False):
         
         img_src = self.img_cv.copy()
 
         self.piece_tmpl = {}
         miss_count = 0
         for piece in board.get_pieces():
-            pos = self.point_board_to_image(Point(piece.x, piece.y))
+            xx = 8-piece.x if is_flip else piece.x
+            yy = 9-piece.y if is_flip else piece.y
+            pt = Point(xx, yy) 
+            pos = self.point_board_to_image(pt)
             color = (255, 0, 0) if piece.fench.islower() else (0, 0, 255)    
             left, top, right, bottom = circleInnerRect(pos.x, pos.y, self.piece_radius)
             #cv.rectangle(img_src, (left, top), (right, bottom), color, 1)
@@ -418,7 +430,7 @@ class OnlineManager(QObject):
                     found = True
                     fench = piece.fench
                     if fench not in self.piece_tmpl:
-                        self.piece_tmpl[fench] = self.get_piece_img(Point(piece.x, piece.y), gray = False, small = False)
+                        self.piece_tmpl[fench] = self.get_piece_img(pt, gray = False, small = False)
                         #cv.imwrite(str(Path('Online',f'{piece.get_color_fench()}.jpg')), self.piece_tmpl[fench])
                     break
             if not found:
@@ -758,7 +770,7 @@ class OnlineDialog(QDialog):
     def __init__(self, parent, manager):
         super().__init__(parent)
 
-        self.setWindowTitle("连线分析-窗口截图")
+        self.setWindowTitle("连线分析-方案编辑")
         self.setMinimumSize(600, 800)
         
         self.manager = manager
@@ -767,9 +779,9 @@ class OnlineDialog(QDialog):
         self.editModeBox = QCheckBox("方案编辑", self)
         self.editModeBox.stateChanged.connect(self.onEditModeBoxChanged)
     
-        self.projectCombo = QComboBox(self) #QLineEdit('天天象棋', self)
-        #self.projectCombo.setEditable(True)
-        self.projectCombo.currentIndexChanged.connect(self.onProjectChanged)
+        self.schemaNameEdit = QLineEdit('天天象棋', self)
+        #self.schemaNameEdit.setEditable(True)
+        #self.schemaNameEdit.currentIndexChanged.connect(self.onProjectChanged)
         
         self.titleEdit = QLineEdit('天天象棋', self)
         self.titleEdit.textChanged.connect(self.onTitleChanged)
@@ -782,7 +794,7 @@ class OnlineDialog(QDialog):
         hbox1.addWidget(QLabel('窗口:'), 0)
         hbox1.addWidget(self.titleEdit, 0)
         hbox1.addWidget(QLabel('连线方案:'), 0)
-        hbox1.addWidget(self.projectCombo, 0)
+        hbox1.addWidget(self.schemaNameEdit, 0)
         hbox1.addWidget(self.editModeBox, 0)
         hbox1.addWidget(QLabel(''), 1)
 
@@ -839,7 +851,7 @@ class OnlineDialog(QDialog):
         
         #self.editModeBox.setChecked(True)
         #templ_names = self.manager.get_schema_names()
-        #self.projectCombo.addItems(templ_names)
+        #self.schemaNameEdit.addItems(templ_names)
         
         self.onEditModeBoxChanged(False)
 
@@ -862,15 +874,15 @@ class OnlineDialog(QDialog):
                 if ('象棋' in title) and ('神机象棋' not in title):
                     win = gw.getWindowsWithTitle(title)[0]
                     win.activate()
-                    top = win.topleft[0]
-                    win.moveTo(0, top)
+                    #top = win.topleft[0]
+                    #win.moveTo(0, top)
                     #print(win.topleft)
                     self.titleEdit.setText(title)
                     
                     names = self.manager.get_schema_names(title)
-                    self.projectCombo.clear()
-                    self.projectCombo.addItems(names)
-                    self.projectCombo.setCurrentIndex(0)
+                    #self.schemaNameEdit.clear()
+                    #self.schemaNameEdit.addItems(names)
+                    #self.schemaNameEdit.setCurrentIndex(0)
 
                     break
         
@@ -880,12 +892,12 @@ class OnlineDialog(QDialog):
 
     def onTitleChanged(self, text):
         names = self.manager.get_schemas(text)
-        self.projectCombo.clear()
-        self.projectCombo.addItems(names)
-        self.projectCombo.setCurrentIndex(0)
+        #self.schemaNameEdit.clear()
+        #self.schemaNameEdit.addItems(names)
+        #self.schemaNameEdit.setCurrentIndex(0)
 
     def onProjectChanged(self, index):
-        name = self.projectCombo.currentText()
+        name = self.schemaNameEdit.text()
         if not self.manager.use_schema(name):
             return
 
@@ -914,8 +926,15 @@ class OnlineDialog(QDialog):
                 msgbox = TimerMessageBox(f"查找窗口【{title}】失败。")
                 msgbox.exec()
                 return
-
+        
+        print(self.manager.source.title)
+                
         img = self.manager.grab_image()
+        if img is None:
+            msgbox = TimerMessageBox(f"截图【{title}】失败。请确认窗口是否存在。")
+            msgbox.exec()
+            return
+            
         self.boardImageView.updateImage(img)
         
         if not self.editModeBox.isChecked():
@@ -945,12 +964,12 @@ class OnlineDialog(QDialog):
 
         if self.manager.detect_board():
             board = self.parent().board
-            self.manager.match_board(board)
+            self.manager.match_board(board, self.blackDownBox.isChecked())
             self.boardImageView.updateImage(self.manager.img_roi)
         
     def onMatch(self):
         board = self.parent().board
-        self.manager.match_board(board)
+        self.manager.match_board(board, self.blackDownBox.isChecked())    
         self.boardImageView.updateImage(self.manager.img_roi)
         
     def onImageToFen(self):
@@ -967,7 +986,7 @@ class OnlineDialog(QDialog):
         pass
 
     def onSave(self):
-        self.manager.to_schema(self.projectCombo.currentText())
+        self.manager.to_schema(self.schemaNameEdit.text())
         self.manager.save_schema()
 
     def onBlackDownBoxChanged(self, state):

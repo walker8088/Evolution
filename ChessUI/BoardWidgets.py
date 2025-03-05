@@ -681,20 +681,20 @@ class ChessBoardEditWidget(ChessBoardBaseWidget):
         
         self.last_selected = None
         self._new_pos = None
-        self.fromSkinFolder(skinFolder)
-
-        self.fenChangedSignal.connect(self.onFenChanged)
-        
         
         self.selected_name = None
         self.selected_pos = None
         
+        self.fromSkinFolder(skinFolder)
         self.pieces_off = {}
         for name in piece_names:
             self.pieces_off[name] = PieceFreeItem(piece_name_to_fench(name), 0, None)
         
+
         self.calc_free_pieces()
-    
+        
+        self.fenChangedSignal.connect(self.onFenChanged)
+        
     def calc_free_pieces(self):
 
         for name, item in self.pieces_off.items():

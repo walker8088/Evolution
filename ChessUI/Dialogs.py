@@ -405,14 +405,14 @@ class EngineConfigDialog(QDialog):
 
         self.threadsSpin = NumSlider(self, 1, self.MAX_THREADS, 1)
         self.memorySpin  = NumSlider(self, 500, self.MAX_MEM, 100)
-        self.multiPVSpin = NumSlider(self, 1, 10, 1)
+        self.multiPVSpin = NumSlider(self, 1, 7, 1)
     
-        self.depthSpin = NumSlider(self, 0, 50, 1)
-        self.moveTimeSpin = NumSlider(self, 0, 360, 1)
+        self.depthSpin = NumSlider(self, 0, 40, 2)
+        self.moveTimeSpin = NumSlider(self, 0, 120, 5)
            
         self.scoreFightSlider = NumSlider(self, 1280, 3150, 50)
-        self.depthFightSpin = NumSlider(self, 0, 50, 1)
-        self.moveTimeFightSpin = NumSlider(self, 0, 360, 1)
+        self.depthFightSpin = NumSlider(self, 0, 40, 2)
+        self.moveTimeFightSpin = NumSlider(self, 0, 120, 5)
         
         engineBox = QGroupBox("引擎配置")
         fbox = QFormLayout()    
