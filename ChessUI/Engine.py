@@ -27,12 +27,15 @@ class EngineManager(QObject):
         super().__init__()
         self.id = id
         self.parent = parent
+        
+        self.options = {}
 
         self.fen = None
         self.fen_engine = None
         
         self.isRunning = False
         self.isReady = False
+        
 
     def loadEngine(self, engine_path, engine_type):
         if engine_type == 'uci':
@@ -50,11 +53,14 @@ class EngineManager(QObject):
             
     def setOption(self, name, value):
         
+        self.options[name] = value
+
         if not self.isReady:
             return False
 
         logging.info(f'Engine[{self.id}] setOption: {name} = {value}')
         self.engine.set_option(name, value)
+        
         return True
         
     def goFrom(self, fen_engine, fen = None, params = {}):
@@ -102,7 +108,8 @@ class EngineManager(QObject):
         self.stop()
         time.sleep(0.2)
         self.engine.quit()
-
+        logging.info(f'Engine[{self.id}] quit.')
+        
     def run(self):
         self.isRunning = True
         while self.isRunning:

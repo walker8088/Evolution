@@ -30,7 +30,7 @@ from .Storage import EndBookStore
 from .CloudDB import CloudDB, MyScoreDB
 from .LocalDB import OpenBookYfk, OpenBookPF, MasterBook, LocalBook
 
-from .Utils import GameMode, ReviewMode, TimerMessageBox, getTitle, getStepsFromFenMoves, trim_fen
+from .Utils import GameMode, ReviewMode, TimerMessageBox, QGameManager, getTitle, getStepsFromFenMoves, trim_fen
 from .BoardWidgets import ChessBoardWidget, DEFAULT_SKIN
 from .Widgets import EngineWidget, BookmarkWidget, \
                     BoardActionsWidget, EndBookWidget, DockHistoryWidget, GameLibWidget
@@ -43,14 +43,6 @@ from .Online import OnlineManager, OnlineDialog
 
 from . import Globl
 
-#-----------------------------------------------------#
-GameTitle = {
-    GameMode.NoEngine: '无引擎模式',
-    GameMode.Free:     '自由练棋', 
-    GameMode.Fight:    '人机对战', 
-    GameMode.EndGame:  '杀法挑战', 
-    GameMode.Online:   '连线分析',          
-}
 
 #-----------------------------------------------------#
 class ActionType(Enum):
@@ -59,10 +51,6 @@ class ActionType(Enum):
     CHECKING = auto()
     MATE = auto()
         
-#-----------------------------------------------------#
-#class QueryMode(Enum):
-#    CloudFirst = auto()
-#    EngineFirst = auto()
 
 #-----------------------------------------------------#
 
@@ -70,6 +58,7 @@ GAME_FILE_TYPES = ['.xqf','.pgn', '.cbr']
 GAME_LIB_TYPES = ['.cbl']
 GAME_TYPES_ALL = GAME_FILE_TYPES + GAME_LIB_TYPES
 
+#-----------------------------------------------------#
 class MainWindow(QMainWindow):
     initGameSignal = pyqtSignal(str)
     newBoardSignal = pyqtSignal()
@@ -90,6 +79,9 @@ class MainWindow(QMainWindow):
             #在Windows状态栏上正确显示图标
             myappid = 'mycompany.myproduct.subproduct.version'
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+        
+        Globl.gameManager = QGameManager()
+        Globl.gameManager.game_mode_changed_signal.connect(self.onGameModeChanged)
 
         self.readConfig()
         
@@ -167,7 +159,7 @@ class MainWindow(QMainWindow):
         self.createMenus()
         self.createToolBars()
 
-        self.gameMode = None
+        
         self.reviewMode = None
         self.isQueryCloud = False
         self.lastOpenFolder = ''
@@ -180,24 +172,20 @@ class MainWindow(QMainWindow):
 
         self.clearAll()
         
-        ok = self.initEngine()
-        if not ok:
-            sys.exit(-1)
-        
-
-        Globl.engineManager.start()
-            
         self.readSettingsBeforeGameInit()
         self.loadOpenBook(self.openBookFile)
-    
-        #self.quickBooks = self.loadQuickBook(Path('Game', 'quick_book.txt'))
-        #self.bookmarkView.addQuickBooks(self.quickBooks)
-
         #self.cloudQuery = MyScoreDB(self) #CloudDB(self)
         self.cloudQuery = CloudDB(self)
         self.cloudQuery.query_result_signal.connect(self.onCloudQueryResult)
 
         self.switchGameMode(GameMode.NoEngine)
+        
+        ok = self.initEngine()
+        if not ok:
+            sys.exit(-1)
+        
+        Globl.engineManager.start()
+                    
         self.readSettingsAfterGameInit()
 
     #-----------------------------------------------------------------------
@@ -345,7 +333,7 @@ class MainWindow(QMainWindow):
     
     def updateTitle(self, subText = ''):
        
-        title = f'{Globl.app.APP_NAME_TEXT} - {GameTitle[self.gameMode]}'
+        title = f'{Globl.app.APP_NAME_TEXT} - {Globl.gameManager.getGameModeText()}'
         if subText:
             title = f'{title} - {subText}'
 
@@ -361,59 +349,49 @@ class MainWindow(QMainWindow):
     
     #-----------------------------------------------------------------------
     #Game 相关
-    def switchGameMode(self, gameMode):
-
-        #模式未变
-        if self.gameMode == gameMode:
-            #if (self.gameMode == GameMode.Free) and self.isNeedSave:
-            #    steps = len(self.positionList) - 1
-            #    if self.getConfirm(f"当前棋谱已经走了 {steps} 步, 您确定要重新开始并清空棋谱吗?"):
-            #        self.initGame(cchess.FULL_INIT_FEN)
-            return
+    def switchGameMode(self, mode):
+        Globl.gameManager.setGameMode(mode)
         
-        logging.info(f"Switching to [{gameMode}]")
+    def onGameModeChanged(self, new_mode, old_mode):
+        
+        #if new_mode == old_mode:
+        #    return
 
-        self.lastGameMode = self.gameMode    
-        self.gameMode = gameMode
+        logging.info(f"Switching to [{new_mode}]")
         self.updateTitle()
         
-        self.engineView.onSwitchGameMode(gameMode)
-        
-        if self.gameMode == GameMode.NoEngine:
+        if new_mode == GameMode.NoEngine:
             self.doCaptureAct.setEnabled(False)
             self.myGamesAct.setEnabled(True)
             self.bookmarkAct.setEnabled(True)
             self.endBookView.hide()
             self.actionsView.show()
             
-            #self.queryCloudBox.setChecked(True)
             self.showBestBox.setChecked(True)
             self.showScoreBox.setChecked(True)
             
             self.openFileAct.setEnabled(True)
             self.editBoardAct.setEnabled(True)
     
-            if self.lastGameMode not in [GameMode.Fight, ]:        
-                self.initGame(cchess.FULL_INIT_FEN)
+            self.initGame(cchess.FULL_INIT_FEN)
         
-        elif self.gameMode == GameMode.Free:
+        elif new_mode == GameMode.Free:
             self.doCaptureAct.setEnabled(False)
             self.myGamesAct.setEnabled(True)
             self.bookmarkAct.setEnabled(True)
             self.endBookView.hide()
             self.actionsView.show()
             
-            #self.queryCloudBox.setChecked(True)
             self.showScoreBox.setChecked(True)
             self.showBestBox.setChecked(True)
             
             self.openFileAct.setEnabled(True)
             self.editBoardAct.setEnabled(True)
-    
-            if self.lastGameMode in [GameMode.EndGame, None]:      
+            
+            if old_mode in [GameMode.EndGame, ]:
                 self.initGame(cchess.FULL_INIT_FEN)
         
-        elif self.gameMode == GameMode.Fight:
+        elif new_mode == GameMode.Fight:
             self.doCaptureAct.setEnabled(False)
             self.myGamesAct.setEnabled(True)
             self.bookmarkAct.setEnabled(False)
@@ -429,10 +407,10 @@ class MainWindow(QMainWindow):
             self.openFileAct.setEnabled(True)
             self.editBoardAct.setEnabled(True)
         
-            if self.lastGameMode in [None, GameMode.EndGame]:
+            if old_mode in [GameMode.EndGame, ]:
                 self.initGame(cchess.FULL_INIT_FEN)
         
-        elif self.gameMode == GameMode.Online:
+        elif new_mode == GameMode.Online:
             self.doCaptureAct.setEnabled(True)
             self.myGamesAct.setEnabled(False)
             self.bookmarkAct.setEnabled(False)
@@ -450,7 +428,7 @@ class MainWindow(QMainWindow):
             
             self.initGame(cchess.FULL_INIT_FEN)
 
-        elif self.gameMode == GameMode.EndGame:
+        elif new_mode == GameMode.EndGame:
             self.myGamesAct.setEnabled(False)
             self.bookmarkAct.setEnabled(False)
             self.endBookView.show()
@@ -466,11 +444,10 @@ class MainWindow(QMainWindow):
             self.editBoardAct.setEnabled(False)
             
             self.endBookView.nextGame()
-        
-        
+            
     def onGameOver(self, win_side):
         
-        if self.gameMode == GameMode.EndGame:
+        if Globl.gameManager.gameMode == GameMode.EndGame:
             if win_side == cchess.BLACK:
                 msgbox = TimerMessageBox("挑战失败, 重新再来!")
                 msgbox.exec()
@@ -625,7 +602,7 @@ class MainWindow(QMainWindow):
                 self.cloudQuery.startQuery(position)
             
             #引擎搜索 #TODO 根据checkbox状态搜索
-            if self.gameMode != GameMode.NoEngine:
+            if Globl.gameManager.gameMode != GameMode.NoEngine:
                 self.runEngine(position)
     
     def isEndPosition(self):
@@ -802,35 +779,27 @@ class MainWindow(QMainWindow):
                 
         if not query or not self.positionList:
             return
-        
-        index = query['index']
-        
-        #着法列表变短了
-        if index >= len(self.positionList):
-            return
-
-        fen = query['fen']
-        pos = self.positionList[index]
-        #同样索引下的局面变了
-        if fen != pos['fen']:
-            return
             
         if self.isQueryCloud or (self.reviewMode == ReviewMode.ByCloud):
             self.updateFenCache(query)
-            
-        new_actions = {}
-        if pos == self.currPosition: #查询返回的结果与当前局面一致
-            actions = query['actions']
-            for iccs, act in actions.items():
-                #print(iccs, act)
-                if iccs in self.boardActions:
-                    old_act = self.boardActions.pop(iccs)
-                    old_act.update(act)
-                    new_actions[iccs] = old_act 
-                else:    
-                    new_actions[iccs] = act
-                    
+        
+        fen = query['fen']    
         move_color = cchess.get_move_color(fen)
+        new_actions = {}
+
+        if fen != self.currPosition['fen']:
+            return
+
+        actions = query['actions']
+        for iccs, act in actions.items():
+            #print(iccs, act)
+            if iccs in self.boardActions:
+                old_act = self.boardActions.pop(iccs)
+                old_act.update(act)
+                new_actions[iccs] = old_act 
+            else:    
+                new_actions[iccs] = act
+                
         x = OrderedDict(sorted(new_actions.items(), key = sort_key, reverse = (move_color == cchess.RED)))
         for iccs, act in self.boardActions.items():
              x[iccs] = act
@@ -1093,7 +1062,8 @@ class MainWindow(QMainWindow):
     #Game Review 
     def onReviewByCloud(self):    
 
-        if not self.reviewMode:
+        if not Globl.gameManager.reviewMode:
+
             self.reviewMode = ReviewMode.ByCloud
             self.queryCloudBox.setEnabled(False)
             #self.engineModeBtn.setEnabled(False)
@@ -1191,14 +1161,14 @@ class MainWindow(QMainWindow):
         self.switchGameMode(GameMode.Fight)
         
     def onDoEndGame(self):
-        if (self.gameMode != GameMode.EndGame) and self.isNeedSave:
+        if (Globl.gameManager.gameMode != GameMode.EndGame) and self.isNeedSave:
             steps = len(self.positionList) - 1
             if not self.getConfirm(f"当前棋谱已经走了 {steps} 步, 您确定要切换到 [残局挑战] 模式并丢弃当前棋谱吗?"):
                 return
         self.switchGameMode(GameMode.EndGame)
 
     def onDoOnline(self):
-        if (self.gameMode != GameMode.EndGame) and self.isNeedSave:
+        if (Globl.gameManager.gameMode != GameMode.EndGame) and self.isNeedSave:
             steps = len(self.positionList) - 1
             if not self.getConfirm(f"当前棋谱已经走了 {steps} 步, 您确定要切换到 [残局挑战] 模式并丢弃当前棋谱吗?"):
                 return
@@ -1228,7 +1198,7 @@ class MainWindow(QMainWindow):
         dlg.show()
         
     def onRestartGame(self):
-        if (self.gameMode in [GameMode.Free, GameMode.Fight]) and self.isNeedSave:
+        if (Globl.gameManager.gameMode in [GameMode.Free, GameMode.Fight]) and self.isNeedSave:
             steps = len(self.positionList) - 1
             if not self.getConfirm(f"当前棋谱已经走了 {steps} 步, 您确定要从新开始吗?"):
                 return
@@ -1237,7 +1207,7 @@ class MainWindow(QMainWindow):
     
     def onSelectEndGame(self, game):
         
-        if self.gameMode != GameMode.EndGame:
+        if Globl.gameManager.gameMode != GameMode.EndGame:
             return
         
         self.currGame = game
@@ -1536,7 +1506,7 @@ class MainWindow(QMainWindow):
     #Drag & Drop
     def dragEnterEvent(self, event):
 
-        if self.gameMode != GameMode.Free:
+        if Globl.gameManager.gameMode != GameMode.Free:
             return
 
         #TODO 先询问是否丢弃当前未保存的内容    
@@ -1548,7 +1518,7 @@ class MainWindow(QMainWindow):
 
     def dropEvent(self, event):
 
-        if self.gameMode != GameMode.Free:
+        if Globl.gameManager.gameMode != GameMode.Free:
             return
         
         fileName = Path(event.mimeData().urls()[0].toLocalFile())
@@ -1602,9 +1572,9 @@ class MainWindow(QMainWindow):
                                      triggered=self.onDoFreeGame)
 
         self.doEndGameAct = QAction(QIcon(':ImgRes/endbook.png'),
-                                    "杀法挑战",
+                                    "残局中局",
                                     self,
-                                    statusTip="入局杀法挑战",
+                                    statusTip="残局杀法，中局战术",
                                     triggered=self.onDoEndGame)
 
         self.doRobotAct = QAction(QIcon(':ImgRes/robot.png'),
@@ -1747,7 +1717,7 @@ class MainWindow(QMainWindow):
         self.gameBar.addAction(self.doOpenBookAct)
         self.gameBar.addAction(self.doRobotAct)
         self.gameBar.addAction(self.doEndGameAct)
-        self.gameBar.addAction(self.doOnlineAct)
+        #self.gameBar.addAction(self.doOnlineAct)
             
         self.gameBar.addAction(self.restartAct)
         self.gameBar.addAction(self.editBoardAct)
@@ -1796,13 +1766,15 @@ class MainWindow(QMainWindow):
         self.showBar.addWidget(self.showScoreBox)
         #self.showBar.addAction(self.quickStartAct)
         
+        '''
         self.onlineBar = self.addToolBar("Online")
         self.onlineBar.setObjectName("Online")
         self.onlineBar.addAction(self.doCaptureAct)
         self.onlineSchemeCombo = QComboBox(self)
         self.onlineSchemeCombo.currentIndexChanged.connect(self.onOnlineSchemeChanged)
         self.onlineBar.addWidget(self.onlineSchemeCombo)
-        
+        '''
+
         self.sysBar = self.addToolBar("System")
         self.sysBar.setObjectName("System")
 
@@ -1824,10 +1796,11 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         steps = len(self.positionList) - 1
-        if self.isNeedSave and (self.gameMode in [GameMode.Free, GameMode.Fight]):
+        if self.isNeedSave and (Globl.gameManager.gameMode in [GameMode.Free, GameMode.Fight]):
             if not self.getConfirm(f"当前棋谱已经走了 {steps} 步, 尚未保存，您确定要关闭程序吗?"):
                 event.ignore()
-
+                return
+                
         self.writeSettings()
         Globl.engineManager.stopThinking()
         Globl.engineManager.quit()
@@ -1882,7 +1855,7 @@ class MainWindow(QMainWindow):
         self.settings.setValue("soundVolume", self.soundVolume)
         
         #在线模式不保存，下次启动后进入自由练棋模式
-        gameMode = self.gameMode
+        gameMode = Globl.gameManager.gameMode
         if gameMode == GameMode.Online:
             gameMode = GameMode.Free
         self.settings.setValue("gameMode", gameMode)

@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import QStyle, QApplication, QMenu, QHBoxLayout, QVBoxLayou
 import cchess
 from cchess import ChessBoard
 
-from .Utils import GameMode, ReviewMode, getTitle, TimerMessageBox, getFreeMem, getStepsTextFromFenMoves, loadEglib, loadCsvlib
+from .Utils import Stage, GameMode, ReviewMode, getTitle, TimerMessageBox, getFreeMem, getStepsTextFromFenMoves, loadEglib, loadCsvlib
 from .BoardWidgets import ChessBoardWidget, ChessBoardEditWidget
 from .SnippingWidget import SnippingWidget
 from .Dialogs import EngineConfigDialog
@@ -398,6 +398,10 @@ class EngineWidget(QDockWidget):
         
         self.parent = parent
         self.engineManager = engineMgr
+
+        Globl.gameManager.game_mode_changed_signal.connect(self.onGameModeChanged)
+        Globl.gameManager.review_mode_changed_signal.connect(self.onReviewModeChanged)
+
         self.gameMode = None
         self.engineFightLevel = 20
         
@@ -465,7 +469,7 @@ class EngineWidget(QDockWidget):
 
         self.multiPVSpin = QSpinBox()
         self.multiPVSpin.setSingleStep(1)
-        self.multiPVSpin.setRange(1, 10)
+        self.multiPVSpin.setRange(1, 7)
         self.multiPVSpin.setValue(1)
         self.multiPVSpin.valueChanged.connect(self.onMultiPVChanged)
 
@@ -572,40 +576,37 @@ class EngineWidget(QDockWidget):
 
     def onEngineReady(self, engine_id, name, engine_options):
         self.setWindowTitle(f'引擎 {name}')
-        #self.engineLabel.setText(name)        
-
+        
         self.engineManager.setOption('ScoreType','PawnValueNormalized')
         self.engineManager.setOption('Threads', self.params['EngineThreads'])
         self.engineManager.setOption('Hash', self.params['EngineMemory'])
         self.engineManager.setOption('Repetition Rule', self.params['EngineRule'])
         self.engineManager.setOption('Ponder', self.params['EnginePonder'])
-     
-    def onSwitchGameMode(self, gameMode):
+        
+
+    def onGameModeChanged(self, gameMode, oldMode):
         
         #保存在人机模式下的engineSkillLevel
         #if self.gameMode == GameMode.Fight:
             #self.engineFightLevel = self.skillLevelSpin.value()
         
-        lastGameMode = self.gameMode   
         self.gameMode = gameMode
         
         #引擎尚未就绪则不发送命令
         if not self.engineManager.isReady:
             return
 
-        if self.gameMode == GameMode.Free:
-            #self.redBox.setChecked(False)
-            #self.blackBox.setChecked(False)
-            
+        if gameMode == GameMode.Free:
+            self.analysisBox.setChecked(True)
             self.engineElo = self.params['EngineElo']
             self.engineGoDepth = self.params['EngineGoDepth']
             self.engineGoMoveTime = self.params['EngineGoMoveTime']
             self.engineManager.setOption('UCI_LimitStrength', False)
             self.engineManager.setOption('MultiPV', self.params['EngineMultiPV'])
             
-        elif self.gameMode == gameMode.Fight:
-            #self.redBox.setChecked(False)
-            #self.blackBox.setChecked(True)
+            self.multiPVSpin.setValue(self.params['EngineMultiPV'])
+
+        elif gameMode == gameMode.Fight:
             self.analysisBox.setChecked(False)
             
             self.engineElo = self.params['EngineEloFight']
@@ -613,9 +614,10 @@ class EngineWidget(QDockWidget):
             self.engineGoMoveTime = self.params['EngineGoMoveTimeFight']
             self.engineManager.setOption('UCI_LimitStrength', True)
             self.engineManager.setOption('UCI_Elo', self.engineElo)
-            self.engineManager.setOption('MultiPV', self.params['EngineMultiPV'])
-        
-        elif self.gameMode == gameMode.Online:
+            self.engineManager.setOption('MultiPV', 1)
+            self.multiPVSpin.setValue(1)
+            
+        elif gameMode == gameMode.Online:
             #self.redBox.setChecked(False)
             #self.blackBox.setChecked(True)
             self.analysisBox.setChecked(True)
@@ -625,8 +627,9 @@ class EngineWidget(QDockWidget):
             self.engineGoMoveTime = self.params['EngineGoMoveTime']
             self.engineManager.setOption('UCI_LimitStrength', False)
             self.engineManager.setOption('MultiPV', 1)
+            self.multiPVSpin.setValue(1)
             
-        elif self.gameMode == GameMode.EndGame:
+        elif gameMode == GameMode.EndGame:
             self.redBox.setChecked(False)
             self.blackBox.setChecked(True)
             self.analysisBox.setChecked(False)
@@ -636,36 +639,46 @@ class EngineWidget(QDockWidget):
             self.engineGoMoveTime = self.params['EngineGoMoveTime']
             self.engineManager.setOption('UCI_LimitStrength', False)
             self.engineManager.setOption('MultiPV', 1)
-            
+            self.multiPVSpin.setValue(1)
+        else: 
+            self.multiPVSpin.setValue(0)
+               
     def onReviewBegin(self, mode):
-        
-        self.savedCheckState = self.analysisBox.isChecked()
-        self.redBox.setEnabled(False)
-        self.blackBox.setEnabled(False)
-        self.analysisBox.setEnabled(False)
-        
-        if mode == ReviewMode.ByEngine:
-            self.analysisBox.setChecked(True)
-            self.engineManager.setOption('UCI_LimitStrength', False)
-            
-        elif mode == ReviewMode.ByCloud:
-            self.analysisBox.setChecked(False)
-                
+        self.onReviewModeChanged(mode, Stage.Begin)
+    
     def onReviewEnd(self, mode):
-        
-        self.redBox.setEnabled(True)
-        self.blackBox.setEnabled(True)
-        self.analysisBox.setEnabled(True)
-        
-        if mode == ReviewMode.ByEngine:
-            if self.gameMode == GameMode.Fight:
-                self.engineManager.setOption('UCI_LimitStrength', True)
-                self.engineManager.setOption('UCI_Elo', self.engineElo)
-        elif mode == ReviewMode.ByCloud:
-            pass
+        self.onReviewModeChanged(mode, Stage.End)
 
-        self.analysisBox.setChecked(self.savedCheckState)
+    def onReviewModeChanged(self, mode, stage):        
         
+        if stage == Stage.Begin:
+            self.savedCheckState = self.analysisBox.isChecked()
+            self.redBox.setEnabled(False)
+            self.blackBox.setEnabled(False)
+            self.analysisBox.setEnabled(False)
+            
+            if mode == ReviewMode.ByEngine:
+                self.analysisBox.setChecked(True)
+                self.engineManager.setOption('UCI_LimitStrength', False)
+                self.engineManager.setOption('UCI_LimitStrength', False)
+                
+            elif mode == ReviewMode.ByCloud:
+                self.analysisBox.setChecked(False)
+        
+        elif stage == Stage.End:
+            self.redBox.setEnabled(True)
+            self.blackBox.setEnabled(True)
+            self.analysisBox.setEnabled(True)
+            
+            if mode == ReviewMode.ByEngine:
+                if self.gameMode == GameMode.Fight:
+                    self.engineManager.setOption('UCI_LimitStrength', True)
+                    self.engineManager.setOption('Threads', 1)
+            elif mode == ReviewMode.ByCloud:
+                pass
+
+            self.analysisBox.setChecked(self.savedCheckState)
+            
     def onConfigEngine(self):
 
         self.params['EnginePath'] = self.parent.config['MainEngine']['engine_exec']
@@ -683,11 +696,13 @@ class EngineWidget(QDockWidget):
             if 'EnginePonder' in change_params:
                 self.engineManager.setOption('Ponder', self.params['EnginePonder'])
      
-            self.onSwitchGameMode(self.gameMode)
+            self.onGameModeChanged(self.gameMode, self.gameMode)
     
     def onMultiPVChanged(self, state):
         v = self.multiPVSpin.value()
         self.engineManager.setOption('MultiPV', v)
+        if self.gameMode == GameMode.Free:
+            self.params['EngineMultiPV'] = v
 
     def onRedBoxChanged(self, state):
         
@@ -719,8 +734,8 @@ class EngineWidget(QDockWidget):
         if "moves" not in fenInfo:
             return
 
-        #iccs_str = ','.join(fenInfo["moves"])
-        #fenInfo['iccs_str'] = iccs_str
+        iccs_str = ','.join(fenInfo["moves"])
+        fenInfo['iccs_str'] = iccs_str
 
         fen = fenInfo['fen']
         
@@ -728,7 +743,7 @@ class EngineWidget(QDockWidget):
         if not ok:
             #logging.warning(f'{fen}, moves {fenInfo["moves"]}')
             return
-
+        
         fenInfo['move_1'] = ','.join(moves_text[:2])
         fenInfo['move_2'] = ','.join(moves_text[2:])
 
@@ -739,7 +754,8 @@ class EngineWidget(QDockWidget):
             it_pv = it.data(0, Qt.UserRole)
             if pv_index == it_pv:
                 found = True
-                break    
+                break   
+
         if not found:
             it = QTreeWidgetItem(self.positionView)
         

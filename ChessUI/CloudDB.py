@@ -39,21 +39,60 @@ def updateCache(qResult):
         
 
 #------------------------------------------------------------------------------
+class NetQuery(QObject):
+    query_ret_signal = pyqtSignal(str, str)
+    query_err_signal = pyqtSignal(str)
+    
+    def __init__(self, parent, url, fen):
+        super().__init__(parent)
+
+        self.url = url
+        self.net_mgr = QNetworkAccessManager()
+        
+        self.fen = fen
+        self.reply = None
+        self.tryCount = 0
+        
+    def startQuery(self):
+
+        url = QUrl(self.url)
+        query = QUrlQuery()
+        query.addQueryItem('board', self.fen)
+        query.addQueryItem("action", 'queryall')
+        url.setQuery(query)
+        
+        self.req = QNetworkRequest(url)
+        self.reply = self.net_mgr.get(self.req)
+        self.reply.finished.connect(self.onQueryFinished)
+        self.reply.errorOccurred.connect(self.onQueryError)
+        
+    def onQueryFinished(self):
+        resp = self.reply.readAll().data().decode().rstrip('\0')
+        self.query_ret_signal.emit(self.fen, resp)
+
+    def onQueryError(self, error):
+        self.reply = None
+        
+        self.tryCount += 1
+        if self.tryCount < 3:
+            logging.warning(f'Query From CloudDB Error, retry { self.tryCount}')
+            time.sleep(2)
+            self.reply = self.net_mgr.get(self.req)
+            self.reply.finished.connect(self.onQueryFinished)
+            self.reply.errorOccurred.connect(self.onQueryError)
+        else:
+            self.query_err_signal.emit(self.fen)
+    
 class CloudDB(QObject):
     query_result_signal = pyqtSignal(dict)
     
     def __init__(self, parent):
         super().__init__(parent)
         self.url = 'http://www.chessdb.cn/chessdb.php'
-        self.net_mgr = QNetworkAccessManager()
-        
-        self.reply = None
-        self.fen = None
-        self.board = ChessBoard()
-        self.tryCount = 0
         
         self.move_cache = {}
-        
+        self.query_worker = {}
+
     def startQuery(self, position, score_limit = 90):
 
         fen = position['fen']
@@ -64,37 +103,24 @@ class CloudDB(QObject):
             ret = self.move_cache[fen]
             self.query_result_signal.emit(ret)
             return 
-             
-        if (self.reply is not None) and (not self.reply.isFinished()):
-            self.reply.abort()
-        
-        self.index = position['index']
-        self.fen = fen
-        self.board.from_fen(fen)
-        self.score_limit = score_limit    
-        
-        url = QUrl(self.url)
-        query = QUrlQuery()
-        query.addQueryItem('board', fen)
-        query.addQueryItem("action", 'queryall')
-        url.setQuery(query)
-        
-        self.tryCount = 1
-        self.req = QNetworkRequest(url)
-        self.reply = self.net_mgr.get(self.req)
-        self.reply.finished.connect(self.onQueryFinished)
-        self.reply.errorOccurred.connect(self.onQueryError)
-        
-    def onQueryFinished(self):
-        
-        if not self.reply:
-            return
-        
-        ret = {}
 
-        resp = self.reply.readAll().data().decode().rstrip('\0')
-        #logging.info(f"Cloud Query Result: {resp}")
+        #还在工作尚未完成             
+        if fen in self.query_worker:
+            return
+
+        q = NetQuery(self, self.url, fen)
+        self.query_worker[fen] = q
+        q.query_ret_signal.connect(self.onQueryFinished)
+        q.query_err_signal.connect(self.onQueryError) 
+        q.startQuery()
+
+    def onQueryFinished(self, fen, resp):
         
+        self.score_limit = 90
+        ret = {}
+        
+        self.query_worker.pop(fen)
+
         #resp: 若局面代码错误，返回 invalid board ，
         #若所查询的局面没有已知着法，返回 unknown ，若走棋方被将死或困毙，返回 checkmate / stalemate
         resp = resp.lower()
@@ -104,21 +130,22 @@ class CloudDB(QObject):
         
         #杀死
         if resp == 'checkmate':
-            ret['index'] = self.index
-            ret['fen'] = self.fen
+            #ret['index'] = self.index
+            ret['fen'] = fen
             ret['score'] = 30000
             ret['mate'] = 0
             ret['actions'] = {}
         
-            self.move_cache[self.fen] = ret
+            self.move_cache[fen] = ret
             self.reply = None
             self.query_result_signal.emit(ret)
             
             return
 
-        move_color = self.board.get_move_color()    
+        board = ChessBoard(fen)    
+        move_color = board.get_move_color()    
         moves = []
-    
+        
         #数据分割
         try:
             steps = resp.split('|')
@@ -142,7 +169,7 @@ class CloudDB(QObject):
 
         score_best = int(moves[0]['score'])
         for act in moves:
-            move_it = self.board.copy().move_iccs(act['iccs'])
+            move_it = board.copy().move_iccs(act['iccs'])
             if move_it:
                 act['text'] = move_it.to_text()
             act['score'] = int(act['score']) 
@@ -171,31 +198,21 @@ class CloudDB(QObject):
                     
             moves_clean[it['iccs']] = it
             
-        ret['index'] = self.index
-        ret['fen'] = self.fen
+        #ret['index'] = self.index
+        ret['fen'] = fen
         ret['score'] = score_best
         ret['actions'] = moves_clean
             
-        self.move_cache[self.fen]  = ret
+        self.move_cache[fen]  = ret
         
         updateCache(ret)
 
         self.reply = None
         self.query_result_signal.emit(ret)
         
-    def onQueryError(self, error):
-        self.reply = None
-        
-        self.tryCount += 1
-        if self.tryCount < 5:
-            logging.warning(f'Query From CloudDB Error, retry { self.tryCount}')
-            time.sleep(2)
-            self.reply = self.net_mgr.get(self.req)
-            self.reply.finished.connect(self.onQueryFinished)
-            self.reply.errorOccurred.connect(self.onQueryError)
-        else:
-            self.query_result_signal.emit({})
-        
+    def onQueryError(self, fen):
+        self.query_worker.pop(fen)
+
 #------------------------------------------------------------------------------
 class MyScoreDB(QObject):
     query_result_signal = pyqtSignal(dict)

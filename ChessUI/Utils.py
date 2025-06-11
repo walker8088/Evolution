@@ -11,7 +11,7 @@ from collections import OrderedDict, namedtuple
 import psutil
 import requests
 
-from PyQt5.QtCore import QTimer, QThread, Qt
+from PyQt5.QtCore import QTimer, QThread, Qt, pyqtSignal, QObject
 from PyQt5.QtWidgets import QMessageBox, QApplication
 
 #import numpy as np
@@ -27,6 +27,53 @@ class GameMode(Enum):
     Fight = auto()
     EndGame = auto()
     Online = auto()
+
+GameTitle = {
+    GameMode.NoEngine: '无引擎模式',
+    GameMode.Free:     '自由练棋', 
+    GameMode.Fight:    '人机对战', 
+    GameMode.EndGame:  '杀法挑战', 
+    GameMode.Online:   '连线分析',          
+}
+
+#-----------------------------------------------------#
+class Stage(Enum):
+    Begin = auto()
+    End = auto()
+
+class ReviewMode(Enum):
+    ByEngine = auto()
+    ByCloud = auto()
+
+#-----------------------------------------------------#
+class QGameManager(QObject):
+    game_mode_changed_signal = pyqtSignal(GameMode, GameMode)
+    review_mode_changed_signal = pyqtSignal(ReviewMode, Stage)
+    
+    def __init__(self):
+        super().__init__()
+        self.gameMode = GameMode.NoEngine
+        self.reviewMode = None
+        self.reviewType = None
+
+    def getGameModeText(self):
+        return GameTitle[self.gameMode]
+
+    def setGameMode(self, mode):
+        last_mode = self.gameMode
+        self.gameMode = mode
+        self.game_mode_changed_signal.emit(self.gameMode, last_mode)
+
+    def reviewModeToggle(self, mode):
+        if self.reviewMode is None:
+            self.setReivewMode(mode, Stage.Begin)
+        else:
+            self.setReivewMode(mode, Stage.End)
+
+    def setReivewMode(self, mode, stage):
+        self.reviewMode = mode
+        self.reviewStage = stage
+        self.review_mode_changed_signal.emit(self.reviewMode, self.reviewStage)
 
 #-----------------------------------------------------#
 class ReviewMode(Enum):
