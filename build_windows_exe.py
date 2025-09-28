@@ -5,7 +5,7 @@ from pathlib import Path
 from ChessUI.Version import release_version
 
 #cmd = "pyinstaller.exe -F .\\Evolution.py -i images\\app.ico --noconsole --exclude-module PyQt5"
-cmd = "pyinstaller.exe .\\Evolution.py -i ImgRes\\app.ico --clean --noconsole --exclude-module=PySide6 \
+cmd = ".venv\\Scripts\\pyinstaller.exe .\\Evolution.py -i ImgRes\\app.ico --clean --noconsole --exclude-module=PySide6 \
             --exclude-module=nacl --exclude-module=psycopg2"
 
 ret = os.system(cmd)
@@ -39,12 +39,11 @@ for file in [
     '_brotli.cp311-win_amd64.pyd',
     'omptarget.rtl.opencl.dll',
     ]:
-    os.remove(F'dist/Evolution/_internal/{file}')
- 
-need_removes = Path('dist', 'Evolution', '_internal', 'cv2').glob(".//opencv_videoio_ffmpeg*.dll")
-for file in need_removes:
-    os.remove(file)
-    print(f'Deleted:{file}')
+    try:
+        os.remove(F'dist/Evolution/_internal/{file}')
+    except:
+        pass
+        
 
 for file in [    
     'opengl32sw.dll',
@@ -53,8 +52,10 @@ for file in [
     'Qt5Qml.dll',
     'd3dcompiler_47.dll',
     ]:
-    os.remove(F'dist/Evolution/_internal/PyQt5/Qt5/bin/{file}')
-
+    try:
+        os.remove(F'dist/Evolution/_internal/PyQt5/Qt5/bin/{file}')
+    except:
+        pass
 
 folders = ['Books', 'Game', 'Engine', 'Sound', 'Skins']
 for folder in folders:

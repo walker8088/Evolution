@@ -1,10 +1,10 @@
-
-#numpy
+cchess
 pyyaml
 cchess>=1.0
 psutil
+pyqt5
 pyside6
-#opencv-python
+opencv-python
 pillow
 requests
 peewee
